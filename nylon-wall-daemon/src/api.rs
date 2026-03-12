@@ -8,7 +8,7 @@ use axum::{
     routing::{get, post, put},
 };
 use futures_util::{SinkExt, StreamExt};
-use nylon_wall_common::conntrack::{ConnState, ConntrackInfo};
+use nylon_wall_common::conntrack::ConntrackInfo;
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::nat::NatEntry;
 use nylon_wall_common::route::{PolicyRoute, Route};
@@ -564,7 +564,7 @@ struct SystemStatus {
 async fn system_status(State(state): State<Arc<AppState>>) -> Json<SystemStatus> {
     Json(SystemStatus {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        ebpf_loaded: cfg!(target_os = "linux"),
+        ebpf_loaded: state.ebpf_loaded.load(std::sync::atomic::Ordering::Relaxed),
         uptime_seconds: state.started_at.elapsed().as_secs(),
     })
 }
@@ -606,68 +606,10 @@ async fn reorder_rules(
 // === Conntrack ===
 
 async fn list_conntrack(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> AppResult<Vec<ConntrackInfo>> {
-    // No real eBPF data yet; return mock/sample entries
-    let mock_entries = vec![
-        ConntrackInfo {
-            src_ip: "192.168.1.100".to_string(),
-            dst_ip: "10.0.0.1".to_string(),
-            src_port: 54321,
-            dst_port: 443,
-            protocol: "TCP".to_string(),
-            state: ConnState::Established,
-            packets_in: 1520,
-            packets_out: 980,
-            bytes_in: 2_048_000,
-            bytes_out: 512_000,
-            last_seen: chrono::Utc::now().timestamp() as u64,
-            timeout: 300,
-        },
-        ConntrackInfo {
-            src_ip: "192.168.1.101".to_string(),
-            dst_ip: "8.8.8.8".to_string(),
-            src_port: 12345,
-            dst_port: 53,
-            protocol: "UDP".to_string(),
-            state: ConnState::New,
-            packets_in: 1,
-            packets_out: 1,
-            bytes_in: 64,
-            bytes_out: 40,
-            last_seen: chrono::Utc::now().timestamp() as u64,
-            timeout: 30,
-        },
-        ConntrackInfo {
-            src_ip: "10.0.0.50".to_string(),
-            dst_ip: "192.168.1.100".to_string(),
-            src_port: 80,
-            dst_port: 49876,
-            protocol: "TCP".to_string(),
-            state: ConnState::Related,
-            packets_in: 350,
-            packets_out: 200,
-            bytes_in: 450_000,
-            bytes_out: 120_000,
-            last_seen: chrono::Utc::now().timestamp() as u64,
-            timeout: 120,
-        },
-        ConntrackInfo {
-            src_ip: "172.16.0.5".to_string(),
-            dst_ip: "192.168.1.1".to_string(),
-            src_port: 0,
-            dst_port: 0,
-            protocol: "ICMP".to_string(),
-            state: ConnState::Invalid,
-            packets_in: 5,
-            packets_out: 0,
-            bytes_in: 420,
-            bytes_out: 0,
-            last_seen: chrono::Utc::now().timestamp() as u64,
-            timeout: 10,
-        },
-    ];
-    Ok(Json(mock_entries))
+    let entries = crate::state::get_connections(&state).await;
+    Ok(Json(entries))
 }
 
 // === Logs ===
@@ -686,73 +628,6 @@ async fn list_logs(
         .map_err(internal_error)?;
 
     let mut logs: Vec<PacketLog> = results.into_iter().map(|(_, l)| l).collect();
-
-    // If no logs exist, generate sample entries for demo purposes
-    if logs.is_empty() {
-        let now = chrono::Utc::now().timestamp();
-        logs = vec![
-            PacketLog {
-                timestamp: now - 300,
-                src_ip: "192.168.1.100".to_string(),
-                dst_ip: "10.0.0.1".to_string(),
-                src_port: 54321,
-                dst_port: 443,
-                protocol: "TCP".to_string(),
-                action: "allow".to_string(),
-                rule_id: 1,
-                interface: "eth0".to_string(),
-                bytes: 1500,
-            },
-            PacketLog {
-                timestamp: now - 240,
-                src_ip: "10.0.0.50".to_string(),
-                dst_ip: "192.168.1.100".to_string(),
-                src_port: 80,
-                dst_port: 49876,
-                protocol: "TCP".to_string(),
-                action: "allow".to_string(),
-                rule_id: 2,
-                interface: "eth0".to_string(),
-                bytes: 2048,
-            },
-            PacketLog {
-                timestamp: now - 180,
-                src_ip: "172.16.0.5".to_string(),
-                dst_ip: "192.168.1.1".to_string(),
-                src_port: 0,
-                dst_port: 0,
-                protocol: "ICMP".to_string(),
-                action: "drop".to_string(),
-                rule_id: 3,
-                interface: "eth1".to_string(),
-                bytes: 84,
-            },
-            PacketLog {
-                timestamp: now - 120,
-                src_ip: "192.168.1.101".to_string(),
-                dst_ip: "8.8.8.8".to_string(),
-                src_port: 12345,
-                dst_port: 53,
-                protocol: "UDP".to_string(),
-                action: "allow".to_string(),
-                rule_id: 1,
-                interface: "eth0".to_string(),
-                bytes: 64,
-            },
-            PacketLog {
-                timestamp: now - 60,
-                src_ip: "203.0.113.10".to_string(),
-                dst_ip: "192.168.1.100".to_string(),
-                src_port: 44444,
-                dst_port: 22,
-                protocol: "TCP".to_string(),
-                action: "drop".to_string(),
-                rule_id: 5,
-                interface: "eth0".to_string(),
-                bytes: 60,
-            },
-        ];
-    }
 
     // Apply filters
     if let Some(ref src_ip) = params.src_ip {
@@ -893,14 +768,14 @@ async fn apply_config(
             .map(|r| crate::ebpf_loader::firewall_rule_to_ebpf(r))
             .collect();
 
-        // Note: This requires holding a reference to the Ebpf instance.
-        // For now, we log what would be applied. Full eBPF sync requires
-        // sharing the Ebpf handle via AppState (future improvement).
-        tracing::info!(
-            "Apply: {} ingress rules, {} egress rules ready for eBPF sync",
-            ebpf_ingress.len(),
-            ebpf_egress.len()
-        );
+        let mut ebpf_guard = state.ebpf.lock().await;
+        if let Some(ref mut bpf) = *ebpf_guard {
+            if let Err(e) = crate::ebpf_loader::sync_rules_to_maps(bpf, &ebpf_ingress, &ebpf_egress) {
+                return Err(internal_error(format!("Failed to sync eBPF maps: {}", e)));
+            }
+        } else {
+            tracing::warn!("eBPF not loaded — rules saved but not applied to datapath");
+        }
     }
 
     let total_rules = rules.len();

@@ -10,7 +10,8 @@ mod linux {
 
     const EBPF_OBJ_PATH: &str = "/usr/lib/nylon-wall/nylon-wall-ebpf";
 
-    pub async fn load_and_attach() -> anyhow::Result<()> {
+    /// Load eBPF programs and attach them. Returns the Ebpf handle for map access.
+    pub async fn load_and_attach() -> anyhow::Result<Ebpf> {
         info!("Loading eBPF bytecode from {}...", EBPF_OBJ_PATH);
 
         let data = std::fs::read(EBPF_OBJ_PATH).map_err(|e| {
@@ -58,7 +59,7 @@ mod linux {
         set_map_u32(&mut bpf, "EGRESS_RULE_COUNT", 0, 0)?;
 
         info!("eBPF programs loaded and attached successfully");
-        Ok(())
+        Ok(bpf)
     }
 
     /// Push firewall rules into eBPF maps using typed Array API.
@@ -79,6 +80,63 @@ mod linux {
             egress_rules.len()
         );
         Ok(())
+    }
+
+    /// Read all conntrack entries from the eBPF LRU HashMap.
+    pub fn read_conntrack(bpf: &mut Ebpf) -> Vec<nylon_wall_common::conntrack::ConntrackInfo> {
+        use nylon_wall_common::conntrack::{ConnState, ConntrackEntry, ConntrackKey, ConntrackInfo};
+
+        let map = match bpf.map_mut("CONNTRACK") {
+            Some(m) => m,
+            None => return Vec::new(),
+        };
+
+        let conntrack: aya::maps::HashMap<_, ConntrackKey, ConntrackEntry> =
+            match aya::maps::HashMap::try_from(map) {
+                Ok(m) => m,
+                Err(_) => return Vec::new(),
+            };
+
+        let mut entries = Vec::new();
+        for item in conntrack.iter() {
+            let (key, entry) = match item {
+                Ok(pair) => pair,
+                Err(_) => continue,
+            };
+
+            let src_ip = std::net::Ipv4Addr::from(u32::from_be(key.src_ip));
+            let dst_ip = std::net::Ipv4Addr::from(u32::from_be(key.dst_ip));
+
+            let protocol = match key.protocol {
+                6 => "TCP",
+                17 => "UDP",
+                1 => "ICMP",
+                _ => "Other",
+            };
+
+            let state = match entry.state {
+                0 => ConnState::New,
+                1 => ConnState::Established,
+                2 => ConnState::Related,
+                _ => ConnState::Invalid,
+            };
+
+            entries.push(ConntrackInfo {
+                src_ip: src_ip.to_string(),
+                dst_ip: dst_ip.to_string(),
+                src_port: key.src_port,
+                dst_port: key.dst_port,
+                protocol: protocol.to_string(),
+                state,
+                packets_in: entry.packets_in,
+                packets_out: entry.packets_out,
+                bytes_in: entry.bytes_in,
+                bytes_out: entry.bytes_out,
+                last_seen: entry.last_seen,
+                timeout: entry.timeout,
+            });
+        }
+        entries
     }
 
     fn write_rules_to_map(bpf: &mut Ebpf, map_name: &str, rules: &[EbpfRule]) -> anyhow::Result<()> {

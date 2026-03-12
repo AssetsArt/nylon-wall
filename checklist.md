@@ -149,7 +149,7 @@
 
 ### Daemon - Monitoring
 - [x] `nylon-wall-daemon/src/metrics.rs` - Prometheus metrics endpoint (`/metrics`)
-- [ ] Packet log reader (perf event ring buffer -> SlateDB)
+- [x] Packet log reader (perf event ring buffer -> SlateDB)
 - [x] API: `GET /api/v1/conntrack` - List active connections
 - [x] API: `GET /api/v1/logs` - Query packet logs (with filters)
 - [x] API: `WS /api/v1/ws/events` - WebSocket real-time event stream

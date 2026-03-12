@@ -16,6 +16,9 @@ pub struct AppState {
     pub rule_engine: tokio::sync::RwLock<rule_engine::RuleEngine>,
     pub event_tx: tokio::sync::broadcast::Sender<events::WsEvent>,
     pub started_at: Instant,
+    #[cfg(target_os = "linux")]
+    pub ebpf: tokio::sync::Mutex<Option<aya::Ebpf>>,
+    pub ebpf_loaded: std::sync::atomic::AtomicBool,
 }
 
 #[tokio::main]
@@ -36,27 +39,44 @@ async fn main() -> anyhow::Result<()> {
     // Initialize rule engine
     let rule_engine = rule_engine::RuleEngine::new();
 
-    // Load existing rules from DB
-    // TODO: rule_engine.load_from_db(&db).await?;
-
     // Create broadcast channel for WebSocket events (256 event buffer)
     let (event_tx, _) = tokio::sync::broadcast::channel::<events::WsEvent>(256);
+
+    let mut _ebpf_loaded = false;
+
+    #[cfg(target_os = "linux")]
+    let ebpf_handle = {
+        info!("Loading eBPF programs...");
+        match ebpf_loader::load_and_attach().await {
+            Ok(bpf) => {
+                info!("eBPF programs loaded");
+                _ebpf_loaded = true;
+                Some(bpf)
+            }
+            Err(e) => {
+                tracing::warn!("eBPF load failed (running in demo mode): {}", e);
+                None
+            }
+        }
+    };
 
     let state = Arc::new(AppState {
         db,
         rule_engine: tokio::sync::RwLock::new(rule_engine),
         event_tx,
         started_at: Instant::now(),
+        #[cfg(target_os = "linux")]
+        ebpf: tokio::sync::Mutex::new(ebpf_handle),
+        ebpf_loaded: std::sync::atomic::AtomicBool::new(_ebpf_loaded),
     });
 
-    // Start eBPF loader on Linux (graceful: daemon works without eBPF for demo/dev)
+    // Start perf event reader background task on Linux
     #[cfg(target_os = "linux")]
-    {
-        info!("Loading eBPF programs...");
-        match ebpf_loader::load_and_attach().await {
-            Ok(()) => info!("eBPF programs loaded"),
-            Err(e) => tracing::warn!("eBPF load failed (running in demo mode): {}", e),
-        }
+    if _ebpf_loaded {
+        let perf_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            state::perf_event_loop(perf_state).await;
+        });
     }
 
     #[cfg(not(target_os = "linux"))]
