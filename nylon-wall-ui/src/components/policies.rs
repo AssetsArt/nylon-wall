@@ -1,24 +1,41 @@
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 const ZONE_COLORS: [(&str, &str, &str); 4] = [
     ("border-l-blue-500", "bg-blue-500/10", "text-blue-400"),
     ("border-l-violet-500", "bg-violet-500/10", "text-violet-400"),
-    ("border-l-emerald-500", "bg-emerald-500/10", "text-emerald-400"),
+    (
+        "border-l-emerald-500",
+        "bg-emerald-500/10",
+        "text-emerald-400",
+    ),
     ("border-l-amber-500", "bg-amber-500/10", "text-amber-400"),
 ];
 
+const DAY_LABELS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+fn format_schedule(schedule: &Schedule) -> String {
+    let days: Vec<&str> = schedule
+        .days
+        .iter()
+        .filter_map(|&d| DAY_LABELS.get(d as usize).copied())
+        .collect();
+    format!(
+        "{} {}-{}",
+        days.join(","),
+        schedule.start_time,
+        schedule.end_time
+    )
+}
+
 #[component]
 pub fn Policies() -> Element {
-    let mut zones = use_resource(|| async {
-        api_client::get::<Vec<Zone>>("/zones").await
-    });
-    let mut policies = use_resource(|| async {
-        api_client::get::<Vec<NetworkPolicy>>("/policies").await
-    });
+    let mut zones = use_resource(|| async { api_client::get::<Vec<Zone>>("/zones").await });
+    let mut policies =
+        use_resource(|| async { api_client::get::<Vec<NetworkPolicy>>("/policies").await });
     let mut show_zone_form = use_signal(|| false);
     let mut show_policy_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
@@ -171,6 +188,7 @@ pub fn Policies() -> Element {
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "To" }
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Protocol" }
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Action" }
+                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Schedule" }
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Priority" }
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Log" }
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
@@ -208,6 +226,19 @@ pub fn Policies() -> Element {
                                                         RuleAction::Log => "LOG",
                                                         RuleAction::RateLimit => "RATE LIMIT",
                                                     }
+                                                }
+                                            }
+                                            td { class: "px-5 py-3 text-sm",
+                                                match &policy.schedule {
+                                                    Some(sched) => rsx! {
+                                                        span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20",
+                                                            Icon { width: 10, height: 10, icon: LdClock, class: "inline mr-1" }
+                                                            {format_schedule(sched)}
+                                                        }
+                                                    },
+                                                    None => rsx! {
+                                                        span { class: "text-slate-600 text-xs", "Always" }
+                                                    },
                                                 }
                                             }
                                             td { class: "px-5 py-3 text-sm text-cyan-400 font-mono", "{policy.priority}" }
@@ -251,13 +282,13 @@ pub fn Policies() -> Element {
                                     }
                                 },
                                 Some(Ok(_)) => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "9", "No policies configured" } }
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "10", "No policies configured" } }
                                 },
                                 Some(Err(e)) => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "9", "Failed to load policies: {e}" } }
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "10", "Failed to load policies: {e}" } }
                                 },
                                 None => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "9", "Loading..." } }
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "10", "Loading..." } }
                                 },
                             }
                         }
@@ -356,8 +387,37 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
+    // Schedule fields
+    let mut enable_schedule = use_signal(|| false);
+    let mut sched_days = use_signal(|| vec![false; 7]);
+    let mut sched_start = use_signal(|| "08:00".to_string());
+    let mut sched_end = use_signal(|| "18:00".to_string());
+
     let on_submit = move |_| {
         submitting.set(true);
+
+        let schedule = if enable_schedule() {
+            let days: Vec<u8> = sched_days()
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &checked)| if checked { Some(i as u8) } else { None })
+                .collect();
+            if days.is_empty() {
+                error.set(Some(
+                    "Please select at least one day for the schedule".to_string(),
+                ));
+                submitting.set(false);
+                return;
+            }
+            Some(Schedule {
+                days,
+                start_time: sched_start(),
+                end_time: sched_end(),
+            })
+        } else {
+            None
+        };
+
         let policy = NetworkPolicy {
             id: 0,
             name: name(),
@@ -366,10 +426,23 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
             to_zone: to_zone(),
             src_ip: None,
             dst_ip: None,
-            dst_port: if dst_port().is_empty() { None } else { dst_port().parse::<u16>().ok().map(PortRange::single) },
-            protocol: match protocol().as_str() { "TCP" => Some(Protocol::TCP), "UDP" => Some(Protocol::UDP), "ICMP" => Some(Protocol::ICMP), _ => None },
-            schedule: None,
-            action: match action().as_str() { "Drop" => RuleAction::Drop, "Log" => RuleAction::Log, _ => RuleAction::Allow },
+            dst_port: if dst_port().is_empty() {
+                None
+            } else {
+                dst_port().parse::<u16>().ok().map(PortRange::single)
+            },
+            protocol: match protocol().as_str() {
+                "TCP" => Some(Protocol::TCP),
+                "UDP" => Some(Protocol::UDP),
+                "ICMP" => Some(Protocol::ICMP),
+                _ => None,
+            },
+            schedule,
+            action: match action().as_str() {
+                "Drop" => RuleAction::Drop,
+                "Log" => RuleAction::Log,
+                _ => RuleAction::Allow,
+            },
             log: log(),
             priority: priority().parse().unwrap_or(100),
         };
@@ -462,6 +535,72 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
                     }
                 }
             }
+
+            // Schedule section
+            div { class: "mb-4",
+                label { class: "flex items-center gap-2 cursor-pointer mb-3",
+                    input {
+                        r#type: "checkbox",
+                        class: "w-4 h-4 rounded border-slate-700/60 bg-slate-900 text-blue-500 focus:ring-blue-500/60",
+                        checked: "{enable_schedule}",
+                        onchange: move |e| enable_schedule.set(e.checked()),
+                    }
+                    Icon { width: 14, height: 14, icon: LdClock, class: "text-slate-400" }
+                    span { class: "text-sm text-slate-400", "Time-based schedule" }
+                }
+
+                if enable_schedule() {
+                    div { class: "rounded-lg border border-slate-700/40 bg-slate-900/30 p-4",
+                        div { class: "mb-3",
+                            label { class: "text-xs font-medium text-slate-400 mb-2 block", "Active Days" }
+                            div { class: "flex gap-2",
+                                for (i, day_label) in DAY_LABELS.iter().enumerate() {
+                                    {
+                                        let is_checked = sched_days().get(i).copied().unwrap_or(false);
+                                        let btn_cls = if is_checked {
+                                            "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30 cursor-pointer transition-colors"
+                                        } else {
+                                            "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-500 border border-slate-700/40 cursor-pointer hover:border-slate-600 transition-colors"
+                                        };
+                                        rsx! {
+                                            button {
+                                                class: "{btn_cls}",
+                                                onclick: move |_| {
+                                                    let mut days = sched_days();
+                                                    if let Some(val) = days.get_mut(i) {
+                                                        *val = !*val;
+                                                    }
+                                                    sched_days.set(days);
+                                                },
+                                                "{day_label}"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        div { class: "grid grid-cols-2 gap-4",
+                            div {
+                                label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Start Time" }
+                                input {
+                                    class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                                    r#type: "time", value: "{sched_start}",
+                                    oninput: move |e| sched_start.set(e.value()),
+                                }
+                            }
+                            div {
+                                label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "End Time" }
+                                input {
+                                    class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                                    r#type: "time", value: "{sched_end}",
+                                    oninput: move |e| sched_end.set(e.value()),
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             button {
                 class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
                 disabled: submitting(),

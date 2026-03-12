@@ -3,6 +3,7 @@ mod db;
 mod ebpf_loader;
 mod events;
 mod rule_engine;
+mod schedule;
 mod state;
 
 use std::sync::Arc;

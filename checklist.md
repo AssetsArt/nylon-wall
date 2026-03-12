@@ -128,14 +128,14 @@
 - [x] API: `POST /api/v1/policies` - Create policy
 - [x] API: `PUT /api/v1/policies/{id}` - Update policy
 - [x] API: `DELETE /api/v1/policies/{id}` - Delete policy
-- [ ] Schedule-based policy evaluation (time/day matching)
+- [x] Schedule-based policy evaluation (time/day matching)
 - [x] SlateDB persistence: zones + policies (via generic CRUD)
 
 ### Dioxus UI - Policies
 - [x] `nylon-wall-ui/src/components/policies.rs` - Zone cards + inter-zone policy table
 - [x] Zone create/edit forms
 - [x] Policy create/edit forms
-- [ ] Schedule editor
+- [x] Schedule editor
 
 ---
 
