@@ -32,7 +32,7 @@ pub async fn perf_event_loop(state: std::sync::Arc<crate::AppState>) {
     let cpus = match online_cpus() {
         Ok(c) => c,
         Err(e) => {
-            tracing::error!("Failed to get online CPUs: {}", e);
+            tracing::error!("Failed to get online CPUs: {:?}", e);
             return;
         }
     };
