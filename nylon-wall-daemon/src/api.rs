@@ -119,6 +119,8 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         .route("/api/v1/system/interfaces", get(list_interfaces))
         .route("/api/v1/system/backup", post(backup_data))
         .route("/api/v1/system/restore", post(restore_data))
+        // Prometheus metrics
+        .route("/metrics", get(prometheus_metrics))
         .layer(CorsLayer::permissive())
         .with_state(state);
 
@@ -558,12 +560,21 @@ struct SystemStatus {
     uptime_seconds: u64,
 }
 
-async fn system_status() -> Json<SystemStatus> {
+async fn system_status(State(state): State<Arc<AppState>>) -> Json<SystemStatus> {
     Json(SystemStatus {
         version: env!("CARGO_PKG_VERSION").to_string(),
         ebpf_loaded: cfg!(target_os = "linux"),
-        uptime_seconds: 0, // TODO: track actual uptime
+        uptime_seconds: state.started_at.elapsed().as_secs(),
     })
+}
+
+async fn prometheus_metrics(State(state): State<Arc<AppState>>) -> (StatusCode, [(String, String); 1], String) {
+    let body = crate::metrics::collect(&state).await;
+    (
+        StatusCode::OK,
+        [("content-type".to_string(), "text/plain; version=0.0.4; charset=utf-8".to_string())],
+        body,
+    )
 }
 
 // === Rules Reorder ===

@@ -2,17 +2,20 @@ mod api;
 mod db;
 mod ebpf_loader;
 mod events;
+mod metrics;
 mod rule_engine;
 mod schedule;
 mod state;
 
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::info;
 
 pub struct AppState {
     pub db: db::Database,
     pub rule_engine: tokio::sync::RwLock<rule_engine::RuleEngine>,
     pub event_tx: tokio::sync::broadcast::Sender<events::WsEvent>,
+    pub started_at: Instant,
 }
 
 #[tokio::main]
@@ -43,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         db,
         rule_engine: tokio::sync::RwLock::new(rule_engine),
         event_tx,
+        started_at: Instant::now(),
     });
 
     // Start eBPF loader on Linux
