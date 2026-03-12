@@ -70,6 +70,13 @@ async fn main() -> anyhow::Result<()> {
         ebpf_loaded: std::sync::atomic::AtomicBool::new(_ebpf_loaded),
     });
 
+    // Sync existing rules from DB to eBPF maps on startup
+    #[cfg(target_os = "linux")]
+    if _ebpf_loaded {
+        info!("Syncing existing rules from DB to eBPF maps...");
+        api::sync_rules_to_ebpf(&state).await;
+    }
+
     // Start perf event reader background task on Linux
     #[cfg(target_os = "linux")]
     if _ebpf_loaded {

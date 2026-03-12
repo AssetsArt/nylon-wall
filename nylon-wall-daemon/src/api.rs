@@ -193,6 +193,7 @@ async fn create_rule(
         .await
         .map_err(internal_error)?;
     broadcast(&state, WsEvent::RuleCreated(serde_json::to_value(&rule).unwrap()));
+    sync_rules_to_ebpf(&state).await;
     Ok((StatusCode::CREATED, Json(rule)))
 }
 
@@ -226,6 +227,7 @@ async fn update_rule(
         .await
         .map_err(internal_error)?;
     broadcast(&state, WsEvent::RuleUpdated(serde_json::to_value(&rule).unwrap()));
+    sync_rules_to_ebpf(&state).await;
     Ok(Json(rule))
 }
 
@@ -241,6 +243,7 @@ async fn delete_rule(
         .await
         .map_err(internal_error)?;
     broadcast(&state, WsEvent::RuleDeleted { id });
+    sync_rules_to_ebpf(&state).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -258,6 +261,7 @@ async fn toggle_rule(
     rule.enabled = !rule.enabled;
     state.db.put(&key, &rule).await.map_err(internal_error)?;
     broadcast(&state, WsEvent::RuleToggled(serde_json::to_value(&rule).unwrap()));
+    sync_rules_to_ebpf(&state).await;
     Ok(Json(rule))
 }
 
@@ -600,6 +604,7 @@ async fn reorder_rules(
         state.db.put(&key, &rule).await.map_err(internal_error)?;
         updated_rules.push(rule);
     }
+    sync_rules_to_ebpf(&state).await;
     Ok(Json(updated_rules))
 }
 
@@ -765,17 +770,18 @@ fn mock_interfaces() -> Vec<NetworkInterface> {
     ]
 }
 
-// === Apply Configuration ===
+// === eBPF Auto-Sync ===
 
-async fn apply_config(
-    State(state): State<Arc<AppState>>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    // Load all rules from DB
-    let rules = state
-        .db
-        .scan_prefix::<FirewallRule>("rule:")
-        .await
-        .map_err(internal_error)?;
+/// Read all rules from DB, compile them, and push to eBPF maps.
+/// Called automatically after every rule mutation.
+pub async fn sync_rules_to_ebpf(state: &AppState) {
+    let rules = match state.db.scan_prefix::<FirewallRule>("rule:").await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to read rules for eBPF sync: {}", e);
+            return;
+        }
+    };
 
     let mut ingress_rules: Vec<FirewallRule> = Vec::new();
     let mut egress_rules: Vec<FirewallRule> = Vec::new();
@@ -789,11 +795,9 @@ async fn apply_config(
         }
     }
 
-    // Sort by priority
     ingress_rules.sort_by_key(|r| r.priority);
     egress_rules.sort_by_key(|r| r.priority);
 
-    // On Linux, sync rules to eBPF maps
     #[cfg(target_os = "linux")]
     {
         use nylon_wall_common::rule::EbpfRule;
@@ -808,15 +812,45 @@ async fn apply_config(
 
         let mut ebpf_guard = state.ebpf.lock().await;
         if let Some(ref mut bpf) = *ebpf_guard {
-            if let Err(e) = crate::ebpf_loader::sync_rules_to_maps(bpf, &ebpf_ingress, &ebpf_egress) {
-                return Err(internal_error(format!("Failed to sync eBPF maps: {}", e)));
+            match crate::ebpf_loader::sync_rules_to_maps(bpf, &ebpf_ingress, &ebpf_egress) {
+                Ok(_) => tracing::debug!(
+                    "Auto-synced {} ingress + {} egress rules to eBPF",
+                    ebpf_ingress.len(),
+                    ebpf_egress.len()
+                ),
+                Err(e) => tracing::error!("Failed to sync eBPF maps: {}", e),
             }
-        } else {
-            tracing::warn!("eBPF not loaded — rules saved but not applied to datapath");
         }
     }
 
-    let total_rules = rules.len();
+    #[cfg(not(target_os = "linux"))]
+    {
+        tracing::debug!(
+            "eBPF sync skipped (not Linux): {} ingress + {} egress rules",
+            ingress_rules.len(),
+            egress_rules.len()
+        );
+    }
+}
+
+// === Apply Configuration ===
+
+async fn apply_config(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Sync rules to eBPF
+    sync_rules_to_ebpf(&state).await;
+
+    // Gather stats
+    let rules = state
+        .db
+        .scan_prefix::<FirewallRule>("rule:")
+        .await
+        .map_err(internal_error)?;
+
+    let ingress_count = rules.iter().filter(|(_, r)| r.enabled && matches!(r.direction, nylon_wall_common::rule::Direction::Ingress)).count();
+    let egress_count = rules.iter().filter(|(_, r)| r.enabled && matches!(r.direction, nylon_wall_common::rule::Direction::Egress)).count();
+
     let nat_count = state
         .db
         .scan_prefix::<serde_json::Value>("nat:")
@@ -837,9 +871,9 @@ async fn apply_config(
 
     Ok(Json(serde_json::json!({
         "status": "applied",
-        "rules": total_rules,
-        "ingress_rules": ingress_rules.len(),
-        "egress_rules": egress_rules.len(),
+        "rules": rules.len(),
+        "ingress_rules": ingress_count,
+        "egress_rules": egress_count,
         "nat_entries": nat_count,
         "routes": route_count,
     })))
