@@ -13,7 +13,7 @@ pub fn Routes() -> Element {
     let mut error_msg = use_signal(|| None::<String>);
 
     rsx! {
-        div {
+        div { class: "pb-6",
             div { class: "flex items-center justify-between mb-6",
                 div {
                     h2 { class: "text-xl font-semibold text-white", "Routing Table" }
@@ -46,10 +46,7 @@ pub fn Routes() -> Element {
                 }
             }
 
-            // Policy Routes section
-            PolicyRoutes {}
-
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
+            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
                 table { class: "w-full text-left",
                     thead { class: "bg-slate-900/80",
                         tr {
@@ -118,6 +115,9 @@ pub fn Routes() -> Element {
                     }
                 }
             }
+
+            // Policy Routes section
+            PolicyRoutes {}
         }
     }
 }

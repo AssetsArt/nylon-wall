@@ -20,8 +20,7 @@ RUN mkdir -p nylon-wall-ui/src && echo "fn main() {}" > nylon-wall-ui/src/main.r
 RUN cd nylon-wall-ebpf && \
     cargo +nightly build \
       --target bpfel-unknown-none \
-      -Z build-std=core \
-      --release
+      -Z build-std=core
 
 # ── Daemon build stage ──────────────────────────────────
 FROM rust:1.93-bookworm AS builder
@@ -38,7 +37,7 @@ COPY nylon-wall-ui/Dioxus.toml nylon-wall-ui/Dioxus.toml
 RUN mkdir -p nylon-wall-ui/assets
 
 # Only build the daemon
-RUN cargo build -p nylon-wall-daemon --release
+RUN cargo build -p nylon-wall-daemon
 
 # ── Runtime stage ────────────────────────────────────────
 FROM debian:bookworm-slim
@@ -47,8 +46,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/nylon-wall-daemon /usr/local/bin/nylon-wall-daemon
-COPY --from=ebpf-builder /app/nylon-wall-ebpf/target/bpfel-unknown-none/release/nylon-wall-ebpf /usr/lib/nylon-wall/nylon-wall-ebpf
+COPY --from=builder /app/target/debug/nylon-wall-daemon /usr/local/bin/nylon-wall-daemon
+COPY --from=ebpf-builder /app/nylon-wall-ebpf/target/bpfel-unknown-none/debug/nylon-wall-ebpf /usr/lib/nylon-wall/nylon-wall-ebpf
 
 EXPOSE 9450
 

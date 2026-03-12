@@ -1,8 +1,8 @@
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 use nylon_wall_common::conntrack::ConnState;
 
 const PAGE_SIZE: usize = 25;
@@ -46,12 +46,19 @@ pub fn Connections() -> Element {
         _ => (vec![], 0),
     };
 
-    let total_pages = if total == 0 { 1 } else { (total + PAGE_SIZE - 1) / PAGE_SIZE };
-    let established = entries.iter().filter(|c| c.state == ConnState::Established).count();
+    let total_pages = if total == 0 {
+        1
+    } else {
+        (total + PAGE_SIZE - 1) / PAGE_SIZE
+    };
+    let established = entries
+        .iter()
+        .filter(|c| c.state == ConnState::Established)
+        .count();
     let new_count = entries.iter().filter(|c| c.state == ConnState::New).count();
 
     rsx! {
-        div {
+        div { class: "pb-6",
             div { class: "flex items-center justify-between mb-6",
                 div {
                     h2 { class: "text-xl font-semibold text-white", "Connections" }
@@ -200,7 +207,7 @@ pub fn Connections() -> Element {
 
             // Pagination controls
             if total_pages > 1 {
-                div { class: "flex items-center justify-between mt-4",
+                div { class: "flex items-center justify-between mt-4 mb-4",
                     div { class: "flex items-center gap-1",
                         button {
                             class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
