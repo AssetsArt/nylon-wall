@@ -3,6 +3,8 @@ mod app;
 mod components;
 mod models;
 
+use app::App;
+
 fn main() {
-    dioxus::launch(app::App);
+    dioxus::launch(App);
 }

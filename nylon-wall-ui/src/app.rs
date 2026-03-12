@@ -1,6 +1,11 @@
 use dioxus::prelude::*;
+use dioxus_free_icons::icons::ld_icons::*;
+use dioxus_free_icons::Icon;
 
 use crate::components::*;
+
+const MAIN_CSS: Asset = asset!("/assets/main.css");
+const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
 #[derive(Clone, Debug, PartialEq, Routable)]
 #[rustfmt::skip]
@@ -25,30 +30,110 @@ pub enum Route {
 #[component]
 pub fn App() -> Element {
     rsx! {
+        document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: TAILWIND_CSS }
         Router::<Route> {}
     }
 }
 
 #[component]
 fn Layout() -> Element {
+    let route: Route = use_route();
+
+    let nav_cls = |target: &Route| {
+        if *target == route {
+            "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-blue-400 bg-blue-500/10 ring-1 ring-blue-500/20"
+        } else {
+            "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
+        }
+    };
+    let sub_cls = |target: &Route| {
+        if *target == route {
+            "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-blue-400 bg-blue-500/10 ring-1 ring-blue-500/20"
+        } else {
+            "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
+        }
+    };
+
     rsx! {
-        div { class: "app-layout",
-            nav { class: "sidebar",
-                div { class: "sidebar-header",
-                    h2 { "Nylon Wall" }
+        div { class: "flex min-h-screen bg-slate-950",
+            // Sidebar
+            nav { class: "w-56 bg-slate-950 border-r border-slate-800/60 fixed top-0 left-0 bottom-0 flex flex-col",
+                // Brand
+                div { class: "px-4 py-5 border-b border-slate-800/60",
+                    div { class: "flex items-center gap-2.5",
+                        div { class: "w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20",
+                            Icon { width: 16, height: 16, icon: LdShield, class: "text-white" }
+                        }
+                        div {
+                            p { class: "text-sm font-bold text-white leading-tight", "Nylon Wall" }
+                            p { class: "text-[9px] font-medium text-slate-500 uppercase tracking-widest", "firewall" }
+                        }
+                    }
                 }
-                div { class: "sidebar-nav",
-                    Link { to: Route::Dashboard, class: "nav-item", "Dashboard" }
-                    Link { to: Route::Rules, class: "nav-item", "Firewall Rules" }
-                    Link { to: Route::Nat, class: "nav-item", "NAT" }
-                    Link { to: Route::Routes, class: "nav-item", "Routes" }
-                    Link { to: Route::Policies, class: "nav-item", "Policies" }
-                    Link { to: Route::Logs, class: "nav-item", "Logs" }
-                    Link { to: Route::Settings, class: "nav-item", "Settings" }
+
+                // Navigation
+                div { class: "flex-1 px-2 py-3 overflow-y-auto space-y-0.5",
+                    p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-0.5",
+                        "Overview"
+                    }
+                    Link { class: nav_cls(&Route::Dashboard), to: Route::Dashboard,
+                        Icon { width: 14, height: 14, icon: LdLayoutDashboard }
+                        "Dashboard"
+                    }
+
+                    p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",
+                        "Firewall"
+                    }
+                    Link { class: sub_cls(&Route::Rules), to: Route::Rules,
+                        Icon { width: 13, height: 13, icon: LdShieldCheck }
+                        "Rules"
+                    }
+                    Link { class: sub_cls(&Route::Nat), to: Route::Nat,
+                        Icon { width: 13, height: 13, icon: LdArrowLeftRight }
+                        "NAT"
+                    }
+
+                    p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",
+                        "Network"
+                    }
+                    Link { class: sub_cls(&Route::Routes), to: Route::Routes,
+                        Icon { width: 13, height: 13, icon: LdNetwork }
+                        "Routes"
+                    }
+                    Link { class: sub_cls(&Route::Policies), to: Route::Policies,
+                        Icon { width: 13, height: 13, icon: LdLayers }
+                        "Policies"
+                    }
+
+                    p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",
+                        "Monitor"
+                    }
+                    Link { class: sub_cls(&Route::Logs), to: Route::Logs,
+                        Icon { width: 13, height: 13, icon: LdScroll }
+                        "Logs"
+                    }
+
+                    p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",
+                        "System"
+                    }
+                    Link { class: sub_cls(&Route::Settings), to: Route::Settings,
+                        Icon { width: 13, height: 13, icon: LdSettings }
+                        "Settings"
+                    }
+                }
+
+                // Footer
+                div { class: "px-4 py-3 border-t border-slate-800/60",
+                    p { class: "text-[10px] text-slate-700 font-mono", "v0.1.0" }
                 }
             }
-            main { class: "main-content",
-                Outlet::<Route> {}
+
+            // Main content
+            main { class: "ml-56 flex-1 min-h-screen",
+                div { class: "max-w-screen-xl mx-auto px-8 py-8",
+                    Outlet::<Route> {}
+                }
             }
         }
     }
