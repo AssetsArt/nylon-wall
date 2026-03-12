@@ -10,6 +10,12 @@ services:
     environment:
       - RUST_LOG=nylon_wall_daemon=debug
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: nylon-wall-daemon/src
+        - action: rebuild
+          path: nylon-wall-common/src
 
   ui:
     build:
@@ -20,6 +26,14 @@ services:
     depends_on:
       - daemon
     restart: unless-stopped
+    develop:
+      watch:
+        - action: rebuild
+          path: nylon-wall-ui/src
+        - action: rebuild
+          path: nylon-wall-ui/assets
+        - action: rebuild
+          path: nylon-wall-common/src
 
 volumes:
   slatedb-data:
