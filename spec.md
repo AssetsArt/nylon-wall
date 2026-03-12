@@ -39,7 +39,8 @@ Nylon Wall เป็นระบบ Network Firewall ที่สร้างด
 | eBPF Framework | [aya](https://github.com/aya-rs/aya) | เขียน eBPF programs ใน Rust |
 | Web UI | [Dioxus](https://dioxuslabs.com/) | Fullstack web UI |
 | HTTP Server | axum | REST API backend |
-| Database | SQLite (rusqlite) | เก็บ rules, logs, config |
+| Database | [SlateDB](https://slatedb.io/) | Embedded KV store บน object storage เก็บ rules, logs, config |
+| Object Store | object_store (local filesystem / S3) | Storage backend สำหรับ SlateDB |
 | Serialization | serde + serde_json | Config & API payloads |
 | Logging | tracing | Structured logging |
 | IPC | Unix domain socket / gRPC (tonic) | Daemon <-> UI communication |
@@ -72,7 +73,7 @@ nylon-wall/
 │       ├── state.rs              # Connection tracking state
 │       ├── api.rs                # REST API (axum)
 │       ├── metrics.rs            # Prometheus-compatible metrics
-│       └── db.rs                 # SQLite persistence
+│       └── db.rs                 # SlateDB persistence (key-value store)
 ├── nylon-wall-ui/                # Dioxus Web UI
 │   ├── Cargo.toml
 │   ├── Dioxus.toml
@@ -308,7 +309,7 @@ struct ConntrackEntry {
 
 #### Packet Logging
 - Log matched packets ไปยัง ring buffer (eBPF perf event)
-- Daemon อ่าน events แล้วเขียนลง SQLite + stream ไป UI
+- Daemon อ่าน events แล้วเขียนลง SlateDB + stream ไป UI
 - Log fields: timestamp, src/dst IP, port, protocol, action, rule_id, interface
 
 #### Metrics (Prometheus-compatible)
@@ -362,6 +363,70 @@ struct ConntrackEntry {
 │ route_marks      │ HashMap - policy routing     │
 └──────────────────┴──────────────────────────────┘
 ```
+
+## SlateDB Storage Design
+
+SlateDB เป็น embedded key-value store ที่ใช้ object storage เป็น backend
+สำหรับ local deployment ใช้ filesystem, สำหรับ cloud ใช้ S3/GCS/ABS
+
+### Key Schema (prefix-based namespacing)
+
+```
+Key Pattern                          → Value (serde JSON bytes)
+─────────────────────────────────────────────────────────────
+rule:{id}                            → FirewallRule
+rule:index:priority                  → Vec<u32> (ordered rule IDs)
+nat:{id}                             → NatEntry
+route:{id}                           → Route
+route:policy:{id}                    → PolicyRoute
+zone:{id}                            → Zone
+policy:{id}                          → NetworkPolicy
+log:{timestamp}:{seq}                → PacketLog
+metric:{name}:{timestamp}            → MetricPoint
+config:{key}                         → ConfigValue
+backup:{timestamp}                   → SnapshotData
+```
+
+### Key Design Decisions
+
+- **Prefix scan** ใช้ SlateDB range scan เพื่อ list ข้อมูลตาม type
+  (e.g., scan `rule:` .. `rule:\xff` จะได้ rules ทั้งหมด)
+- **Log retention** ใช้ TTL ของ SlateDB เพื่อ auto-expire logs เก่า
+- **Serialization** ใช้ `serde_json` serialize structs เป็น bytes สำหรับ value
+- **Atomic updates** ใช้ SlateDB transactions สำหรับ multi-key updates
+  (e.g., อัปเดต rule + reorder priority index พร้อมกัน)
+- **Object store backend** - local filesystem สำหรับ single-node,
+  S3-compatible สำหรับ distributed/backup scenarios
+
+### Rust Usage Pattern
+
+```rust
+use slatedb::Db;
+use slatedb::object_store::local::LocalFileSystem;
+use std::sync::Arc;
+
+// Initialize
+let object_store = Arc::new(LocalFileSystem::new_with_prefix("/var/lib/nylon-wall/slatedb")?);
+let db = Db::open("/", object_store).await?;
+
+// Store a rule (serialize to JSON bytes)
+let rule = FirewallRule { id: 1, name: "block-ssh".into(), .. };
+let key = format!("rule:{}", rule.id);
+db.put(key.as_bytes(), serde_json::to_vec(&rule)?).await?;
+
+// Get a rule
+if let Some(value) = db.get(key.as_bytes()).await? {
+    let rule: FirewallRule = serde_json::from_slice(&value)?;
+}
+
+// List all rules (range scan)
+let mut iter = db.scan("rule:".as_bytes()..="rule:\xff".as_bytes()).await?;
+while let Ok(Some(entry)) = iter.next().await {
+    let rule: FirewallRule = serde_json::from_slice(&entry.value)?;
+}
+```
+
+---
 
 ## API Design
 
@@ -488,7 +553,7 @@ Base URL: `http://localhost:9450/api/v1`
 1. Implement ingress rules (XDP) + rule evaluation ใน eBPF
 2. Implement egress rules (TC)
 3. Connection tracking
-4. Rule CRUD API + SQLite persistence
+4. Rule CRUD API + SlateDB persistence
 5. Basic Dioxus UI - dashboard + rules page
 
 ### Phase 3: NAT & Routing
@@ -557,7 +622,7 @@ Default: `/etc/nylon-wall/config.toml`
 ```toml
 [daemon]
 listen_addr = "127.0.0.1:9450"
-db_path = "/var/lib/nylon-wall/nylon-wall.db"
+db_path = "/var/lib/nylon-wall/slatedb"   # SlateDB local object store path
 log_level = "info"
 
 [ebpf]
