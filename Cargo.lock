@@ -3336,6 +3336,7 @@ dependencies = [
 name = "nylon-wall-common"
 version = "0.1.0"
 dependencies = [
+ "aya",
  "serde",
  "serde_json",
 ]

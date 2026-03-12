@@ -63,3 +63,9 @@ pub struct ConntrackInfo {
     pub last_seen: u64,
     pub timeout: u32,
 }
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for ConntrackKey {}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for ConntrackEntry {}

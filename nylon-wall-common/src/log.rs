@@ -29,6 +29,9 @@ pub struct EbpfPacketEvent {
     pub bytes: u32,
 }
 
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfPacketEvent {}
+
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MetricPoint {

@@ -68,3 +68,6 @@ pub struct FirewallRule {
     pub created_at: i64,
     pub updated_at: i64,
 }
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfRule {}

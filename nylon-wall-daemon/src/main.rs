@@ -49,12 +49,14 @@ async fn main() -> anyhow::Result<()> {
         started_at: Instant::now(),
     });
 
-    // Start eBPF loader on Linux
+    // Start eBPF loader on Linux (graceful: daemon works without eBPF for demo/dev)
     #[cfg(target_os = "linux")]
     {
         info!("Loading eBPF programs...");
-        ebpf_loader::load_and_attach().await?;
-        info!("eBPF programs loaded");
+        match ebpf_loader::load_and_attach().await {
+            Ok(()) => info!("eBPF programs loaded"),
+            Err(e) => tracing::warn!("eBPF load failed (running in demo mode): {}", e),
+        }
     }
 
     #[cfg(not(target_os = "linux"))]
