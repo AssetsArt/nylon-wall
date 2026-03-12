@@ -9,7 +9,7 @@ use axum::{
 use nylon_wall_common::conntrack::{ConnState, ConntrackInfo};
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::nat::NatEntry;
-use nylon_wall_common::route::Route;
+use nylon_wall_common::route::{PolicyRoute, Route};
 use nylon_wall_common::rule::FirewallRule;
 use nylon_wall_common::zone::{NetworkPolicy, Zone};
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,15 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         // NAT
         .route("/api/v1/nat", get(list_nat).post(create_nat))
         .route("/api/v1/nat/{id}", put(update_nat).delete(delete_nat))
-        // Routes
+        // Routes (policy routes must be before {id} to avoid "policy" being matched as an id)
+        .route(
+            "/api/v1/routes/policy",
+            get(list_policy_routes).post(create_policy_route),
+        )
+        .route(
+            "/api/v1/routes/policy/{id}",
+            put(update_policy_route).delete(delete_policy_route),
+        )
         .route("/api/v1/routes", get(list_routes).post(create_route))
         .route(
             "/api/v1/routes/{id}",
@@ -304,6 +312,61 @@ async fn delete_route(
     state
         .db
         .remove_from_index("route:", &key)
+        .await
+        .map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// === Policy Routes ===
+
+async fn list_policy_routes(State(state): State<Arc<AppState>>) -> AppResult<Vec<PolicyRoute>> {
+    let results = state
+        .db
+        .scan_prefix::<PolicyRoute>("policy_route:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, r)| r).collect()))
+}
+
+async fn create_policy_route(
+    State(state): State<Arc<AppState>>,
+    Json(route): Json<PolicyRoute>,
+) -> Result<(StatusCode, Json<PolicyRoute>), (StatusCode, String)> {
+    let key = format!("policy_route:{}", route.id);
+    state.db.put(&key, &route).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("policy_route:", &key)
+        .await
+        .map_err(internal_error)?;
+    Ok((StatusCode::CREATED, Json(route)))
+}
+
+async fn update_policy_route(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut route): Json<PolicyRoute>,
+) -> AppResult<PolicyRoute> {
+    route.id = id;
+    let key = format!("policy_route:{}", id);
+    state.db.put(&key, &route).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("policy_route:", &key)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(route))
+}
+
+async fn delete_policy_route(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let key = format!("policy_route:{}", id);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("policy_route:", &key)
         .await
         .map_err(internal_error)?;
     Ok(StatusCode::NO_CONTENT)

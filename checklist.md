@@ -100,8 +100,8 @@
 - [x] API: `POST /api/v1/routes` - Add route
 - [x] API: `PUT /api/v1/routes/{id}` - Update route
 - [x] API: `DELETE /api/v1/routes/{id}` - Delete route
-- [ ] API: `GET /api/v1/routes/policy` - List policy routes
-- [ ] API: `POST /api/v1/routes/policy` - Add policy route
+- [x] API: `GET /api/v1/routes/policy` - List policy routes
+- [x] API: `POST /api/v1/routes/policy` - Add policy route
 - [x] SlateDB persistence: NAT + routes (via generic CRUD)
 
 ### Dioxus UI - NAT & Routes
@@ -133,8 +133,8 @@
 
 ### Dioxus UI - Policies
 - [x] `nylon-wall-ui/src/components/policies.rs` - Zone cards + inter-zone policy table
-- [ ] Zone create/edit forms
-- [ ] Policy create/edit forms
+- [x] Zone create/edit forms
+- [x] Policy create/edit forms
 - [ ] Schedule editor
 
 ---
@@ -156,7 +156,7 @@
 
 ### Dioxus UI - Monitoring
 - [x] `nylon-wall-ui/src/components/dashboard.rs` - Dashboard (stat cards, recent rules)
-- [ ] Dashboard: live charts, top talkers, blocked IPs
+- [x] Dashboard: recent logs, top blocked IPs
 - [x] `nylon-wall-ui/src/components/connections.rs` - Live conntrack table + stats
 - [x] `nylon-wall-ui/src/components/logs.rs` - Log viewer with refresh
 - [x] Logs: filters (src_ip, dst_ip, protocol, action)

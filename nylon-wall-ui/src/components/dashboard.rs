@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
+use std::collections::HashMap;
 use crate::api_client;
 use crate::models::*;
 
@@ -18,6 +19,12 @@ pub fn Dashboard() -> Element {
     let conns = use_resource(|| async {
         api_client::get::<Vec<ConntrackInfo>>("/conntrack").await
     });
+    let recent_logs = use_resource(|| async {
+        api_client::get::<Vec<PacketLog>>("/logs?limit=5").await
+    });
+    let blocked_logs = use_resource(|| async {
+        api_client::get::<Vec<PacketLog>>("/logs?action=drop&limit=50").await
+    });
 
     let rule_count = match &*rules.read() {
         Some(Ok(r)) => r.len(),
@@ -34,6 +41,23 @@ pub fn Dashboard() -> Element {
     let conn_count = match &*conns.read() {
         Some(Ok(c)) => c.len(),
         _ => 0,
+    };
+
+    // Aggregate top blocked IPs from blocked_logs
+    let top_blocked: Vec<(String, usize)> = match &*blocked_logs.read() {
+        Some(Ok(logs)) => {
+            let mut counts: HashMap<String, usize> = HashMap::new();
+            for log in logs.iter() {
+                let action_lower = log.action.to_lowercase();
+                if action_lower == "drop" {
+                    *counts.entry(log.src_ip.clone()).or_insert(0) += 1;
+                }
+            }
+            let mut sorted: Vec<(String, usize)> = counts.into_iter().collect();
+            sorted.sort_by(|a, b| b.1.cmp(&a.1));
+            sorted.into_iter().take(10).collect()
+        }
+        _ => Vec::new(),
     };
 
     rsx! {
@@ -110,7 +134,7 @@ pub fn Dashboard() -> Element {
             div { class: "mb-6",
                 h3 { class: "text-sm font-semibold text-white mb-3", "Recent Rules" }
             }
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
+            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
                 table { class: "w-full text-left",
                     thead { class: "bg-slate-900/80",
                         tr {
@@ -170,6 +194,110 @@ pub fn Dashboard() -> Element {
                                     }
                                 }
                             },
+                        }
+                    }
+                }
+            }
+
+            // Recent Logs section
+            div { class: "mb-6",
+                h3 { class: "text-sm font-semibold text-white mb-3", "Recent Logs" }
+            }
+            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
+                table { class: "w-full text-left",
+                    thead { class: "bg-slate-900/80",
+                        tr {
+                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Time" }
+                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Source" }
+                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Destination" }
+                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Protocol" }
+                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Action" }
+                        }
+                    }
+                    tbody {
+                        match &*recent_logs.read() {
+                            Some(Ok(list)) if !list.is_empty() => rsx! {
+                                for (i, log) in list.iter().enumerate() {
+                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
+                                        key: "{i}",
+                                        td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{log.timestamp}" }
+                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
+                                            span { class: "text-slate-300", "{log.src_ip}" }
+                                            span { class: "text-slate-600", ":{log.src_port}" }
+                                        }
+                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
+                                            span { class: "text-slate-300", "{log.dst_ip}" }
+                                            span { class: "text-slate-600", ":{log.dst_port}" }
+                                        }
+                                        td { class: "px-5 py-3 text-sm",
+                                            span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20",
+                                                "{log.protocol}"
+                                            }
+                                        }
+                                        td { class: "px-5 py-3 text-sm",
+                                            span {
+                                                class: if log.action == "DROP" {
+                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20"
+                                                } else {
+                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                },
+                                                "{log.action}"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            Some(Ok(_)) => rsx! {
+                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "No recent logs" } }
+                            },
+                            Some(Err(e)) => rsx! {
+                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "5", "Failed to load logs: {e}" } }
+                            },
+                            None => rsx! {
+                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "Loading..." } }
+                            },
+                        }
+                    }
+                }
+            }
+
+            // Top Blocked IPs section
+            div { class: "mb-6",
+                h3 { class: "text-sm font-semibold text-white mb-3", "Top Blocked IPs" }
+            }
+            if top_blocked.is_empty() {
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-8 text-center",
+                    match &*blocked_logs.read() {
+                        Some(Ok(_)) => rsx! {
+                            p { class: "text-sm text-slate-600", "No blocked traffic detected" }
+                        },
+                        Some(Err(e)) => rsx! {
+                            p { class: "text-sm text-red-400", "Failed to load data: {e}" }
+                        },
+                        None => rsx! {
+                            p { class: "text-sm text-slate-600", "Loading..." }
+                        },
+                    }
+                }
+            } else {
+                div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3",
+                    for (ip, count) in top_blocked.iter() {
+                        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-red-500/30 transition-colors",
+                            key: "{ip}",
+                            div { class: "flex items-center justify-between",
+                                div { class: "flex items-center gap-3",
+                                    div { class: "w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center",
+                                        Icon { width: 14, height: 14, icon: LdShieldAlert, class: "text-red-400" }
+                                    }
+                                    div {
+                                        p { class: "text-sm text-slate-300 font-mono font-medium", "{ip}" }
+                                        p { class: "text-[11px] text-slate-500", "blocked source" }
+                                    }
+                                }
+                                span { class: "px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20",
+                                    "{count}"
+                                }
+                            }
                         }
                     }
                 }
