@@ -605,11 +605,49 @@ async fn reorder_rules(
 
 // === Conntrack ===
 
+#[derive(Deserialize)]
+struct ConntrackQuery {
+    limit: Option<usize>,
+    offset: Option<usize>,
+    state: Option<String>,
+    protocol: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PaginatedConntrack {
+    total: usize,
+    offset: usize,
+    limit: usize,
+    entries: Vec<ConntrackInfo>,
+}
+
 async fn list_conntrack(
     State(state): State<Arc<AppState>>,
-) -> AppResult<Vec<ConntrackInfo>> {
-    let entries = crate::state::get_connections(&state).await;
-    Ok(Json(entries))
+    Query(params): Query<ConntrackQuery>,
+) -> AppResult<PaginatedConntrack> {
+    let mut entries = crate::state::get_connections(&state).await;
+
+    // Filter by state
+    if let Some(ref s) = params.state {
+        entries.retain(|e| format!("{}", e.state).eq_ignore_ascii_case(s));
+    }
+    // Filter by protocol
+    if let Some(ref p) = params.protocol {
+        entries.retain(|e| e.protocol.eq_ignore_ascii_case(p));
+    }
+
+    let total = entries.len();
+    let offset = params.offset.unwrap_or(0);
+    let limit = params.limit.unwrap_or(50);
+
+    let page: Vec<ConntrackInfo> = entries.into_iter().skip(offset).take(limit).collect();
+
+    Ok(Json(PaginatedConntrack {
+        total,
+        offset,
+        limit,
+        entries: page,
+    }))
 }
 
 // === Logs ===
