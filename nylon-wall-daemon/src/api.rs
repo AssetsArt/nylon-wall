@@ -660,7 +660,7 @@ async fn list_conntrack(
 async fn list_logs(
     State(state): State<Arc<AppState>>,
     Query(params): Query<LogQuery>,
-) -> AppResult<Vec<PacketLog>> {
+) -> AppResult<serde_json::Value> {
     let limit = params.limit.unwrap_or(100);
     let offset = params.offset.unwrap_or(0);
 
@@ -686,10 +686,17 @@ async fn list_logs(
         logs.retain(|l| l.action.eq_ignore_ascii_case(action));
     }
 
-    // Apply offset and limit
-    let logs: Vec<PacketLog> = logs.into_iter().skip(offset).take(limit).collect();
+    let total = logs.len();
 
-    Ok(Json(logs))
+    // Apply offset and limit
+    let entries: Vec<PacketLog> = logs.into_iter().skip(offset).take(limit).collect();
+
+    Ok(Json(serde_json::json!({
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "entries": entries,
+    })))
 }
 
 // === Network Interfaces ===

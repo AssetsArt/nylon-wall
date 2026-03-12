@@ -4,27 +4,54 @@ use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
 
+const PAGE_SIZE: usize = 25;
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PaginatedLogs {
+    total: usize,
+    offset: usize,
+    limit: usize,
+    entries: Vec<PacketLog>,
+}
+
 #[component]
 pub fn Logs() -> Element {
+    let mut current_page = use_signal(|| 0usize);
     let mut filter_src = use_signal(|| String::new());
     let mut filter_dst = use_signal(|| String::new());
     let mut filter_proto = use_signal(|| String::new());
     let mut filter_action = use_signal(|| String::new());
 
+    let page = current_page();
     let src = filter_src();
     let dst = filter_dst();
     let proto = filter_proto();
     let action = filter_action();
 
-    let mut logs = use_resource(use_reactive!(|(src, dst, proto, action)| async move {
-        let mut params = vec!["limit=200".to_string()];
+    let mut logs = use_resource(use_reactive!(|(page, src, dst, proto, action)| async move {
+        let offset = page * PAGE_SIZE;
+        let mut params = vec![
+            format!("limit={}", PAGE_SIZE),
+            format!("offset={}", offset),
+        ];
         if !src.is_empty() { params.push(format!("src_ip={}", src)); }
         if !dst.is_empty() { params.push(format!("dst_ip={}", dst)); }
         if !proto.is_empty() { params.push(format!("protocol={}", proto)); }
         if !action.is_empty() { params.push(format!("action={}", action)); }
         let query = params.join("&");
-        api_client::get::<Vec<PacketLog>>(&format!("/logs?{}", query)).await
+        api_client::get::<PaginatedLogs>(&format!("/logs?{}", query)).await
     }));
+
+    let (entries, total) = match &*logs.read() {
+        Some(Ok(data)) => (data.entries.clone(), data.total),
+        _ => (vec![], 0),
+    };
+
+    let total_pages = if total == 0 {
+        1
+    } else {
+        (total + PAGE_SIZE - 1) / PAGE_SIZE
+    };
 
     rsx! {
         div {
@@ -54,7 +81,7 @@ pub fn Logs() -> Element {
                             class: "w-full rounded-lg bg-slate-800/50 border border-slate-700/50 px-3 py-1.5 text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-500/50",
                             placeholder: "e.g. 192.168.1.100",
                             value: "{filter_src}",
-                            oninput: move |e| filter_src.set(e.value()),
+                            oninput: move |e| { filter_src.set(e.value()); current_page.set(0); },
                         }
                     }
                     div {
@@ -63,7 +90,7 @@ pub fn Logs() -> Element {
                             class: "w-full rounded-lg bg-slate-800/50 border border-slate-700/50 px-3 py-1.5 text-sm text-slate-300 placeholder-slate-600 focus:outline-none focus:border-blue-500/50",
                             placeholder: "e.g. 10.0.0.1",
                             value: "{filter_dst}",
-                            oninput: move |e| filter_dst.set(e.value()),
+                            oninput: move |e| { filter_dst.set(e.value()); current_page.set(0); },
                         }
                     }
                     div {
@@ -71,7 +98,7 @@ pub fn Logs() -> Element {
                         select {
                             class: "w-full rounded-lg bg-slate-800/50 border border-slate-700/50 px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-blue-500/50",
                             value: "{filter_proto}",
-                            onchange: move |e| filter_proto.set(e.value()),
+                            onchange: move |e| { filter_proto.set(e.value()); current_page.set(0); },
                             option { value: "", "All" }
                             option { value: "TCP", "TCP" }
                             option { value: "UDP", "UDP" }
@@ -83,7 +110,7 @@ pub fn Logs() -> Element {
                         select {
                             class: "w-full rounded-lg bg-slate-800/50 border border-slate-700/50 px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:border-blue-500/50",
                             value: "{filter_action}",
-                            onchange: move |e| filter_action.set(e.value()),
+                            onchange: move |e| { filter_action.set(e.value()); current_page.set(0); },
                             option { value: "", "All" }
                             option { value: "ALLOW", "Allow" }
                             option { value: "DROP", "Drop" }
@@ -100,6 +127,7 @@ pub fn Logs() -> Element {
                                 filter_dst.set(String::new());
                                 filter_proto.set(String::new());
                                 filter_action.set(String::new());
+                                current_page.set(0);
                             },
                             "Clear all filters"
                         }
@@ -107,14 +135,14 @@ pub fn Logs() -> Element {
                 }
             }
 
-            // Log count
-            if let Some(Ok(list)) = &*logs.read() {
-                div { class: "mb-3 text-xs text-slate-500",
-                    "Showing {list.len()} entries"
+            // Showing X–Y of Z
+            div { class: "flex items-center justify-between mb-3",
+                div { class: "text-xs text-slate-500",
+                    {format!("Showing {}\u{2013}{} of {}", page * PAGE_SIZE + 1, (page * PAGE_SIZE + entries.len()).min(total), total)}
                 }
             }
 
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
+            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-4",
                 table { class: "w-full text-left",
                     thead { class: "bg-slate-900/80",
                         tr {
@@ -130,8 +158,8 @@ pub fn Logs() -> Element {
                     }
                     tbody {
                         match &*logs.read() {
-                            Some(Ok(list)) if !list.is_empty() => rsx! {
-                                for (i, log) in list.iter().enumerate() {
+                            Some(Ok(data)) if !data.entries.is_empty() => rsx! {
+                                for (i, log) in data.entries.iter().enumerate() {
                                     tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
                                         key: "{i}",
                                         td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{log.timestamp}" }
@@ -174,6 +202,68 @@ pub fn Logs() -> Element {
                                 tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "8", "Loading..." } }
                             },
                         }
+                    }
+                }
+            }
+
+            // Pagination controls
+            if total_pages > 1 {
+                div { class: "flex items-center justify-between",
+                    div { class: "flex items-center gap-1",
+                        button {
+                            class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
+                            class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
+                            disabled: page == 0,
+                            onclick: move |_| { current_page.set(0); },
+                            Icon { width: 12, height: 12, icon: LdChevronsLeft }
+                        }
+                        button {
+                            class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
+                            class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
+                            disabled: page == 0,
+                            onclick: move |_| { current_page.set(page.saturating_sub(1)); },
+                            Icon { width: 12, height: 12, icon: LdChevronLeft }
+                        }
+
+                        // Page numbers
+                        {
+                            let start = page.saturating_sub(2);
+                            let end = (start + 5).min(total_pages);
+                            rsx! {
+                                for p in start..end {
+                                    button {
+                                        key: "{p}",
+                                        class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                                        class: if p == page {
+                                            "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                                        } else {
+                                            "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50"
+                                        },
+                                        onclick: move |_| { current_page.set(p); },
+                                        "{p + 1}"
+                                    }
+                                }
+                            }
+                        }
+
+                        button {
+                            class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
+                            class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
+                            disabled: page + 1 >= total_pages,
+                            onclick: move |_| { current_page.set(page + 1); },
+                            Icon { width: 12, height: 12, icon: LdChevronRight }
+                        }
+                        button {
+                            class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
+                            class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
+                            disabled: page + 1 >= total_pages,
+                            onclick: move |_| { current_page.set(total_pages - 1); },
+                            Icon { width: 12, height: 12, icon: LdChevronsRight }
+                        }
+                    }
+
+                    span { class: "text-xs text-slate-600",
+                        "Page {page + 1} of {total_pages}"
                     }
                 }
             }
