@@ -10,3 +10,6 @@ title = "Nylon Wall - Network Firewall"
 [web.watcher]
 reload_html = true
 watch_path = ["src", "assets"]
+
+[[web.proxy]]
+backend = "http://localhost:9450/api"
