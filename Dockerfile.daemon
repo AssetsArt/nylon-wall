@@ -1,12 +1,18 @@
 # ── Build stage ──────────────────────────────────────────
-FROM rust:1.86-bookworm AS builder
+FROM rust:1.93-bookworm AS builder
 
 WORKDIR /app
+
+# Copy entire workspace (UI sources needed for workspace resolution)
 COPY Cargo.toml Cargo.lock ./
 COPY nylon-wall-common/ nylon-wall-common/
 COPY nylon-wall-daemon/ nylon-wall-daemon/
+COPY nylon-wall-ui/Cargo.toml nylon-wall-ui/Cargo.toml
+COPY nylon-wall-ui/src/ nylon-wall-ui/src/
+COPY nylon-wall-ui/Dioxus.toml nylon-wall-ui/Dioxus.toml
+RUN mkdir -p nylon-wall-ui/assets
 
-# Build release binary
+# Only build the daemon
 RUN cargo build -p nylon-wall-daemon --release
 
 # ── Runtime stage ────────────────────────────────────────
