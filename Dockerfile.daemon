@@ -1,9 +1,34 @@
-# ── Build stage ──────────────────────────────────────────
+# ── eBPF build stage ─────────────────────────────────────
+FROM rust:1.93-bookworm AS ebpf-builder
+
+RUN rustup install nightly && \
+    rustup component add rust-src --toolchain nightly && \
+    cargo +nightly install bpf-linker
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock ./
+COPY nylon-wall-common/ nylon-wall-common/
+COPY nylon-wall-ebpf/ nylon-wall-ebpf/
+# Stub out workspace members that aren't needed for eBPF build
+COPY nylon-wall-daemon/Cargo.toml nylon-wall-daemon/Cargo.toml
+RUN mkdir -p nylon-wall-daemon/src && echo "fn main() {}" > nylon-wall-daemon/src/main.rs
+COPY nylon-wall-ui/Cargo.toml nylon-wall-ui/Cargo.toml
+RUN mkdir -p nylon-wall-ui/src && echo "fn main() {}" > nylon-wall-ui/src/main.rs
+
+# Build eBPF binary (excluded from workspace, build directly)
+RUN cd nylon-wall-ebpf && \
+    cargo +nightly build \
+      --target bpfel-unknown-none \
+      -Z build-std=core \
+      --release
+
+# ── Daemon build stage ──────────────────────────────────
 FROM rust:1.93-bookworm AS builder
 
 WORKDIR /app
 
-# Copy entire workspace (UI sources needed for workspace resolution)
+# Copy entire workspace
 COPY Cargo.toml Cargo.lock ./
 COPY nylon-wall-common/ nylon-wall-common/
 COPY nylon-wall-daemon/ nylon-wall-daemon/
@@ -19,10 +44,11 @@ RUN cargo build -p nylon-wall-daemon --release
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
+    ca-certificates iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/release/nylon-wall-daemon /usr/local/bin/nylon-wall-daemon
+COPY --from=ebpf-builder /app/nylon-wall-ebpf/target/bpfel-unknown-none/release/nylon-wall-ebpf /usr/lib/nylon-wall/nylon-wall-ebpf
 
 EXPOSE 9450
 

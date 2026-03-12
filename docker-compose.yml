@@ -9,6 +9,11 @@ services:
       - slatedb-data:/tmp/nylon-wall/slatedb
     environment:
       - RUST_LOG=nylon_wall_daemon=debug
+      - NYLON_WALL_IFACE=eth0
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - BPF
     restart: unless-stopped
     develop:
       watch:
@@ -16,6 +21,8 @@ services:
           path: nylon-wall-daemon/src
         - action: rebuild
           path: nylon-wall-common/src
+        - action: rebuild
+          path: nylon-wall-ebpf/src
 
   ui:
     build:
