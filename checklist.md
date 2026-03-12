@@ -3,34 +3,43 @@
 ## Phase 1: Foundation
 
 ### Workspace & Config
-- [ ] `Cargo.toml` - Workspace root (members: common, ebpf, daemon, ui)
+- [x] `Cargo.toml` - Workspace root (members: common, daemon, ui; exclude: ebpf)
 - [ ] `/etc/nylon-wall/config.toml` - Default config template
 
 ### nylon-wall-common
-- [ ] `nylon-wall-common/Cargo.toml`
-- [ ] `nylon-wall-common/src/lib.rs` - Re-exports
-- [ ] `nylon-wall-common/src/rule.rs` - `FirewallRule`, `Direction`, `Action`, `PortRange`
-- [ ] `nylon-wall-common/src/nat.rs` - `NatEntry`, `NatType`
-- [ ] `nylon-wall-common/src/route.rs` - `Route`, `PolicyRoute`
-- [ ] `nylon-wall-common/src/zone.rs` - `Zone`, `NetworkPolicy`, `Schedule`
-- [ ] `nylon-wall-common/src/conntrack.rs` - `ConntrackEntry`, `ConnState`
-- [ ] `nylon-wall-common/src/log.rs` - `PacketLog`, `MetricPoint`
-- [ ] `nylon-wall-common/src/protocol.rs` - `Protocol` enum, shared constants
+- [x] `nylon-wall-common/Cargo.toml`
+- [x] `nylon-wall-common/src/lib.rs` - Re-exports
+- [x] `nylon-wall-common/src/rule.rs` - `FirewallRule`, `Direction`, `RuleAction`, `PortRange`
+- [x] `nylon-wall-common/src/nat.rs` - `NatEntry`, `NatType`
+- [x] `nylon-wall-common/src/route.rs` - `Route`, `PolicyRoute`
+- [x] `nylon-wall-common/src/zone.rs` - `Zone`, `NetworkPolicy`, `Schedule`
+- [x] `nylon-wall-common/src/conntrack.rs` - `ConntrackEntry`, `ConnState`
+- [x] `nylon-wall-common/src/log.rs` - `PacketLog`, `MetricPoint`
+- [x] `nylon-wall-common/src/protocol.rs` - `Protocol` enum, shared constants
 
 ### nylon-wall-ebpf
-- [ ] `nylon-wall-ebpf/Cargo.toml`
-- [ ] `nylon-wall-ebpf/src/main.rs` - eBPF entrypoint
-- [ ] `nylon-wall-ebpf/src/common.rs` - Shared eBPF structs (repr(C))
-- [ ] Basic XDP program - pass all traffic
+- [x] `nylon-wall-ebpf/Cargo.toml`
+- [x] `nylon-wall-ebpf/src/main.rs` - eBPF entrypoint (XDP pass-all)
+- [x] `nylon-wall-ebpf/src/common.rs` - Shared eBPF constants
+- [x] `nylon-wall-ebpf/src/ingress.rs` - XDP ingress placeholder
+- [x] `nylon-wall-ebpf/src/egress.rs` - TC egress placeholder
 - [ ] ทดสอบ load/attach บน test interface
 
 ### nylon-wall-daemon
-- [ ] `nylon-wall-daemon/Cargo.toml`
-- [ ] `nylon-wall-daemon/src/main.rs` - Daemon entrypoint + tokio runtime
-- [ ] `nylon-wall-daemon/src/ebpf_loader.rs` - Load & attach eBPF programs
-- [ ] `nylon-wall-daemon/src/db.rs` - SlateDB init + helpers (open, get, put, scan, delete)
-- [ ] `nylon-wall-daemon/src/api.rs` - axum router skeleton
+- [x] `nylon-wall-daemon/Cargo.toml`
+- [x] `nylon-wall-daemon/src/main.rs` - Daemon entrypoint + tokio runtime
+- [x] `nylon-wall-daemon/src/ebpf_loader.rs` - Load & attach eBPF programs (stub)
+- [x] `nylon-wall-daemon/src/db.rs` - SlateDB init + helpers (open, get, put, scan, delete)
+- [x] `nylon-wall-daemon/src/api.rs` - axum router with full CRUD endpoints
+- [x] `nylon-wall-daemon/src/rule_engine.rs` - In-memory rule management
+- [x] `nylon-wall-daemon/src/state.rs` - Conntrack reader (stub)
 - [ ] ทดสอบ packet drop/allow บน test interface
+
+### Docker
+- [x] `docker-compose.yml` - Dev environment (daemon + UI)
+- [x] `Dockerfile.daemon` - Multi-stage build (rust → debian-slim)
+- [x] `Dockerfile.ui` - Multi-stage build (rust+dx → nginx)
+- [x] `nginx.conf` - SPA fallback + API reverse proxy
 
 ---
 
@@ -45,26 +54,28 @@
 - [ ] Connection tracking logic ใน eBPF (NEW/ESTABLISHED/RELATED/INVALID)
 
 ### Daemon - Rule Engine
-- [ ] `nylon-wall-daemon/src/rule_engine.rs` - Rule CRUD + compile to eBPF maps
-- [ ] `nylon-wall-daemon/src/state.rs` - Conntrack reader from eBPF maps
-- [ ] API: `GET /api/v1/rules` - List rules
-- [ ] API: `POST /api/v1/rules` - Create rule
-- [ ] API: `GET /api/v1/rules/{id}` - Get rule
-- [ ] API: `PUT /api/v1/rules/{id}` - Update rule
-- [ ] API: `DELETE /api/v1/rules/{id}` - Delete rule
-- [ ] API: `POST /api/v1/rules/{id}/toggle` - Enable/disable
+- [x] `nylon-wall-daemon/src/rule_engine.rs` - Rule CRUD + compile to eBPF maps
+- [x] `nylon-wall-daemon/src/state.rs` - Conntrack reader from eBPF maps (stub)
+- [x] API: `GET /api/v1/rules` - List rules
+- [x] API: `POST /api/v1/rules` - Create rule
+- [x] API: `GET /api/v1/rules/{id}` - Get rule
+- [x] API: `PUT /api/v1/rules/{id}` - Update rule
+- [x] API: `DELETE /api/v1/rules/{id}` - Delete rule
+- [x] API: `POST /api/v1/rules/{id}/toggle` - Enable/disable
 - [ ] API: `POST /api/v1/rules/reorder` - Reorder priorities
-- [ ] SlateDB persistence: rules CRUD with prefix scan
+- [x] SlateDB persistence: rules CRUD with index-key pattern
 
 ### Dioxus UI - Basic
-- [ ] `nylon-wall-ui/Cargo.toml`
-- [ ] `nylon-wall-ui/Dioxus.toml`
-- [ ] `nylon-wall-ui/src/main.rs` - UI entrypoint
-- [ ] `nylon-wall-ui/src/app.rs` - Root App + router + sidebar nav
-- [ ] `nylon-wall-ui/src/api_client.rs` - HTTP client (reqwest)
-- [ ] `nylon-wall-ui/src/models.rs` - UI data models
-- [ ] `nylon-wall-ui/src/components/dashboard.rs` - Basic dashboard (stats only)
-- [ ] `nylon-wall-ui/src/components/rules.rs` - Rules table + CRUD form
+- [x] `nylon-wall-ui/Cargo.toml` - Dioxus 0.7 + router + gloo-net + lucide icons
+- [x] `nylon-wall-ui/Dioxus.toml`
+- [x] `nylon-wall-ui/src/main.rs` - UI entrypoint
+- [x] `nylon-wall-ui/src/app.rs` - Root App + router + sidebar nav (k3rs-style dark theme)
+- [x] `nylon-wall-ui/src/api_client.rs` - HTTP client (gloo-net)
+- [x] `nylon-wall-ui/src/models.rs` - UI data models
+- [x] `nylon-wall-ui/src/components/dashboard.rs` - Dashboard with stat cards + recent rules
+- [x] `nylon-wall-ui/src/components/rules.rs` - Rules table + CRUD form + toggle/delete
+- [x] `nylon-wall-ui/assets/tailwind.css` - Tailwind CSS v4 dark theme
+- [x] `nylon-wall-ui/assets/main.css` - Font imports
 
 ---
 
@@ -81,21 +92,23 @@
 ### Daemon - NAT & Route
 - [ ] `nylon-wall-daemon/src/nat.rs` - NAT CRUD + compile to eBPF maps
 - [ ] `nylon-wall-daemon/src/route.rs` - Route management + kernel route integration
-- [ ] API: `GET /api/v1/nat` - List NAT entries
-- [ ] API: `POST /api/v1/nat` - Create NAT entry
-- [ ] API: `PUT /api/v1/nat/{id}` - Update NAT entry
-- [ ] API: `DELETE /api/v1/nat/{id}` - Delete NAT entry
-- [ ] API: `GET /api/v1/routes` - List routes
-- [ ] API: `POST /api/v1/routes` - Add route
-- [ ] API: `PUT /api/v1/routes/{id}` - Update route
-- [ ] API: `DELETE /api/v1/routes/{id}` - Delete route
+- [x] API: `GET /api/v1/nat` - List NAT entries
+- [x] API: `POST /api/v1/nat` - Create NAT entry
+- [x] API: `PUT /api/v1/nat/{id}` - Update NAT entry
+- [x] API: `DELETE /api/v1/nat/{id}` - Delete NAT entry
+- [x] API: `GET /api/v1/routes` - List routes
+- [x] API: `POST /api/v1/routes` - Add route
+- [x] API: `PUT /api/v1/routes/{id}` - Update route
+- [x] API: `DELETE /api/v1/routes/{id}` - Delete route
 - [ ] API: `GET /api/v1/routes/policy` - List policy routes
 - [ ] API: `POST /api/v1/routes/policy` - Add policy route
-- [ ] SlateDB persistence: NAT + routes
+- [x] SlateDB persistence: NAT + routes (via generic CRUD)
 
 ### Dioxus UI - NAT & Routes
-- [ ] `nylon-wall-ui/src/components/nat.rs` - NAT table + SNAT/DNAT form + port forward wizard
-- [ ] `nylon-wall-ui/src/components/routes.rs` - Route table + static/policy route editor
+- [x] `nylon-wall-ui/src/components/nat.rs` - NAT table + create form
+- [x] `nylon-wall-ui/src/components/routes.rs` - Route table + static route editor
+- [ ] Port forward wizard
+- [ ] Policy route editor
 
 ---
 
@@ -107,19 +120,22 @@
 - [ ] Zone-based packet evaluation ใน XDP/TC programs
 
 ### Daemon - Policy Engine
-- [ ] API: `GET /api/v1/zones` - List zones
-- [ ] API: `POST /api/v1/zones` - Create zone
-- [ ] API: `PUT /api/v1/zones/{id}` - Update zone
-- [ ] API: `DELETE /api/v1/zones/{id}` - Delete zone
-- [ ] API: `GET /api/v1/policies` - List policies
-- [ ] API: `POST /api/v1/policies` - Create policy
-- [ ] API: `PUT /api/v1/policies/{id}` - Update policy
-- [ ] API: `DELETE /api/v1/policies/{id}` - Delete policy
+- [x] API: `GET /api/v1/zones` - List zones
+- [x] API: `POST /api/v1/zones` - Create zone
+- [x] API: `PUT /api/v1/zones/{id}` - Update zone
+- [x] API: `DELETE /api/v1/zones/{id}` - Delete zone
+- [x] API: `GET /api/v1/policies` - List policies
+- [x] API: `POST /api/v1/policies` - Create policy
+- [x] API: `PUT /api/v1/policies/{id}` - Update policy
+- [x] API: `DELETE /api/v1/policies/{id}` - Delete policy
 - [ ] Schedule-based policy evaluation (time/day matching)
-- [ ] SlateDB persistence: zones + policies
+- [x] SlateDB persistence: zones + policies (via generic CRUD)
 
 ### Dioxus UI - Policies
-- [ ] `nylon-wall-ui/src/components/policies.rs` - Zone manager + inter-zone matrix + policy editor
+- [x] `nylon-wall-ui/src/components/policies.rs` - Zone cards + inter-zone policy table
+- [ ] Zone create/edit forms
+- [ ] Policy create/edit forms
+- [ ] Schedule editor
 
 ---
 
@@ -139,9 +155,11 @@
 - [ ] Log TTL auto-cleanup via SlateDB TTL
 
 ### Dioxus UI - Monitoring
-- [ ] `nylon-wall-ui/src/components/dashboard.rs` - Full dashboard (live charts, top talkers, blocked IPs)
+- [x] `nylon-wall-ui/src/components/dashboard.rs` - Dashboard (stat cards, recent rules)
+- [ ] Dashboard: live charts, top talkers, blocked IPs
 - [ ] `nylon-wall-ui/src/components/connections.rs` - Live conntrack table + kill action
-- [ ] `nylon-wall-ui/src/components/logs.rs` - Log viewer + filters + real-time stream + CSV export
+- [x] `nylon-wall-ui/src/components/logs.rs` - Log viewer with refresh
+- [ ] Logs: filters, real-time stream, CSV export
 
 ---
 
@@ -149,7 +167,7 @@
 
 ### Daemon - System
 - [ ] API: `GET /api/v1/system/interfaces` - List network interfaces
-- [ ] API: `GET /api/v1/system/status` - Daemon & eBPF program status
+- [x] API: `GET /api/v1/system/status` - Daemon & eBPF program status
 - [ ] API: `POST /api/v1/system/apply` - Apply pending configuration
 - [ ] API: `POST /api/v1/system/backup` - Export full config from SlateDB
 - [ ] API: `POST /api/v1/system/restore` - Import config to SlateDB
@@ -158,9 +176,10 @@
 - [ ] Performance tuning & benchmarking
 
 ### Dioxus UI - Settings
-- [ ] `nylon-wall-ui/src/components/settings.rs` - Interface config + daemon settings + backup/restore
+- [x] `nylon-wall-ui/src/components/settings.rs` - System info + backup/restore buttons
+- [ ] Interface configuration UI
+- [ ] Daemon settings editor
 
 ### Extras (Optional)
 - [ ] DHCP server สำหรับ LAN interfaces
 - [ ] DNS filtering (blocklist + custom responses + query logging)
-- [ ] Documentation
