@@ -1,0 +1,25 @@
+services:
+  daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile.daemon
+    ports:
+      - "9450:9450"
+    volumes:
+      - slatedb-data:/tmp/nylon-wall/slatedb
+    environment:
+      - RUST_LOG=nylon_wall_daemon=debug
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    ports:
+      - "8080:8080"
+    depends_on:
+      - daemon
+    restart: unless-stopped
+
+volumes:
+  slatedb-data:

@@ -1,7 +1,7 @@
 use gloo_net::http::Request;
 use serde::{de::DeserializeOwned, Serialize};
 
-const API_BASE: &str = "http://localhost:9450/api/v1";
+const API_BASE: &str = "/api/v1";
 
 pub async fn get<T: DeserializeOwned>(path: &str) -> Result<T, String> {
     let url = format!("{}{}", API_BASE, path);

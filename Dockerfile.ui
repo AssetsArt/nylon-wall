@@ -1,0 +1,22 @@
+# ── Build stage ──────────────────────────────────────────
+FROM rust:1.86-bookworm AS builder
+
+RUN rustup target add wasm32-unknown-unknown
+RUN cargo install dioxus-cli
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY nylon-wall-common/ nylon-wall-common/
+COPY nylon-wall-ui/ nylon-wall-ui/
+
+# Build UI (produces dist/ with static assets)
+WORKDIR /app/nylon-wall-ui
+RUN dx build --release
+
+# ── Runtime stage ────────────────────────────────────────
+FROM nginx:alpine
+
+COPY --from=builder /app/nylon-wall-ui/dist/ /usr/share/nginx/html/
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 8080

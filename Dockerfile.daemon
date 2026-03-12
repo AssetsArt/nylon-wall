@@ -1,0 +1,25 @@
+# ── Build stage ──────────────────────────────────────────
+FROM rust:1.86-bookworm AS builder
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY nylon-wall-common/ nylon-wall-common/
+COPY nylon-wall-daemon/ nylon-wall-daemon/
+
+# Build release binary
+RUN cargo build -p nylon-wall-daemon --release
+
+# ── Runtime stage ────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/nylon-wall-daemon /usr/local/bin/nylon-wall-daemon
+
+EXPOSE 9450
+
+ENV RUST_LOG=nylon_wall_daemon=info
+
+CMD ["nylon-wall-daemon"]
