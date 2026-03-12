@@ -1,6 +1,7 @@
 mod api;
 mod db;
 mod ebpf_loader;
+mod events;
 mod rule_engine;
 mod state;
 
@@ -10,6 +11,7 @@ use tracing::info;
 pub struct AppState {
     pub db: db::Database,
     pub rule_engine: tokio::sync::RwLock<rule_engine::RuleEngine>,
+    pub event_tx: tokio::sync::broadcast::Sender<events::WsEvent>,
 }
 
 #[tokio::main]
@@ -33,9 +35,13 @@ async fn main() -> anyhow::Result<()> {
     // Load existing rules from DB
     // TODO: rule_engine.load_from_db(&db).await?;
 
+    // Create broadcast channel for WebSocket events (256 event buffer)
+    let (event_tx, _) = tokio::sync::broadcast::channel::<events::WsEvent>(256);
+
     let state = Arc::new(AppState {
         db,
         rule_engine: tokio::sync::RwLock::new(rule_engine),
+        event_tx,
     });
 
     // Start eBPF loader on Linux

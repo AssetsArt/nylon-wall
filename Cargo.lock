@@ -3350,6 +3350,7 @@ dependencies = [
  "aya-log",
  "bytes",
  "chrono",
+ "futures-util",
  "nylon-wall-common",
  "object_store",
  "serde",

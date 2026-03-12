@@ -4,7 +4,7 @@
 
 ### Workspace & Config
 - [x] `Cargo.toml` - Workspace root (members: common, daemon, ui; exclude: ebpf)
-- [ ] `/etc/nylon-wall/config.toml` - Default config template
+- [x] `/etc/nylon-wall/config.toml` - Default config template
 
 ### nylon-wall-common
 - [x] `nylon-wall-common/Cargo.toml`
@@ -151,7 +151,7 @@
 - [ ] Packet log reader (perf event ring buffer -> SlateDB)
 - [x] API: `GET /api/v1/conntrack` - List active connections
 - [x] API: `GET /api/v1/logs` - Query packet logs (with filters)
-- [ ] API: `WS /api/v1/ws/events` - WebSocket real-time event stream
+- [x] API: `WS /api/v1/ws/events` - WebSocket real-time event stream
 - [ ] Log TTL auto-cleanup via SlateDB TTL
 
 ### Dioxus UI - Monitoring

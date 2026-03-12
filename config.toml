@@ -1,0 +1,37 @@
+# Nylon Wall - Default Configuration
+# Copy to /etc/nylon-wall/config.toml on the target system
+
+[daemon]
+# Address the daemon API listens on
+listen_addr = "0.0.0.0:9450"
+
+[database]
+# Path to SlateDB storage directory
+path = "/var/lib/nylon-wall/slatedb"
+
+[ebpf]
+# eBPF program mode: "xdp" (default), "tc", or "both"
+mode = "xdp"
+
+# Network interfaces to attach eBPF programs to
+# Use ["all"] to auto-detect and attach to all non-loopback interfaces
+interfaces = ["eth0"]
+
+[logging]
+# Log level: "trace", "debug", "info", "warn", "error"
+level = "info"
+
+# Maximum number of packet logs to retain
+max_log_entries = 100000
+
+# Auto-cleanup logs older than this many seconds (0 = no cleanup)
+log_ttl_seconds = 604800  # 7 days
+
+[ui]
+# Address the UI is served on (via nginx or dx serve)
+bind_addr = "0.0.0.0:8080"
+
+[security]
+# Enable API authentication (future)
+# auth_enabled = false
+# auth_token = ""

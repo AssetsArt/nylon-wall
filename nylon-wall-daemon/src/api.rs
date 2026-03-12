@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
     http::StatusCode,
+    response::IntoResponse,
     routing::{get, post, put},
 };
+use futures_util::{SinkExt, StreamExt};
 use nylon_wall_common::conntrack::{ConnState, ConntrackInfo};
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::nat::NatEntry;
@@ -16,11 +18,17 @@ use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 
 use crate::AppState;
+use crate::events::WsEvent;
 
 type AppResult<T> = Result<Json<T>, (StatusCode, String)>;
 
 fn internal_error(e: impl std::fmt::Display) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+}
+
+/// Helper to broadcast an event (best-effort, ignores errors if no subscribers).
+fn broadcast(state: &AppState, event: WsEvent) {
+    let _ = state.event_tx.send(event);
 }
 
 #[derive(Deserialize)]
@@ -60,6 +68,8 @@ struct BackupData {
 
 pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
     let app = Router::new()
+        // WebSocket
+        .route("/api/v1/ws/events", get(ws_handler))
         // Rules (reorder must be before {id} to avoid matching "reorder" as an id)
         .route("/api/v1/rules/reorder", post(reorder_rules))
         .route("/api/v1/rules", get(list_rules).post(create_rule))
@@ -118,6 +128,44 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+// === WebSocket ===
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws(socket, state))
+}
+
+async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
+    let (mut sender, mut receiver) = socket.split();
+    let mut event_rx = state.event_tx.subscribe();
+
+    // Forward broadcast events to this WebSocket client
+    let send_task = tokio::spawn(async move {
+        while let Ok(event) = event_rx.recv().await {
+            let msg = match serde_json::to_string(&event) {
+                Ok(json) => json,
+                Err(_) => continue,
+            };
+            if sender.send(Message::Text(msg.into())).await.is_err() {
+                break;
+            }
+        }
+    });
+
+    // Consume incoming messages (ping/pong handled by axum, we just drain)
+    let recv_task = tokio::spawn(async move {
+        while let Some(Ok(_)) = receiver.next().await {}
+    });
+
+    // When either task finishes, abort the other
+    tokio::select! {
+        _ = send_task => {},
+        _ = recv_task => {},
+    }
+}
+
 // === Rules ===
 
 async fn list_rules(State(state): State<Arc<AppState>>) -> AppResult<Vec<FirewallRule>> {
@@ -141,6 +189,7 @@ async fn create_rule(
         .add_to_index("rule:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::RuleCreated(serde_json::to_value(&rule).unwrap()));
     Ok((StatusCode::CREATED, Json(rule)))
 }
 
@@ -168,12 +217,12 @@ async fn update_rule(
     rule.id = id;
     let key = format!("rule:{}", id);
     state.db.put(&key, &rule).await.map_err(internal_error)?;
-    // Ensure it's in the index (idempotent)
     state
         .db
         .add_to_index("rule:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::RuleUpdated(serde_json::to_value(&rule).unwrap()));
     Ok(Json(rule))
 }
 
@@ -188,6 +237,7 @@ async fn delete_rule(
         .remove_from_index("rule:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::RuleDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -204,6 +254,7 @@ async fn toggle_rule(
         .ok_or((StatusCode::NOT_FOUND, "Rule not found".to_string()))?;
     rule.enabled = !rule.enabled;
     state.db.put(&key, &rule).await.map_err(internal_error)?;
+    broadcast(&state, WsEvent::RuleToggled(serde_json::to_value(&rule).unwrap()));
     Ok(Json(rule))
 }
 
@@ -229,6 +280,7 @@ async fn create_nat(
         .add_to_index("nat:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::NatCreated(serde_json::to_value(&entry).unwrap()));
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
@@ -245,6 +297,7 @@ async fn update_nat(
         .add_to_index("nat:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::NatUpdated(serde_json::to_value(&entry).unwrap()));
     Ok(Json(entry))
 }
 
@@ -259,6 +312,7 @@ async fn delete_nat(
         .remove_from_index("nat:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::NatDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -284,6 +338,7 @@ async fn create_route(
         .add_to_index("route:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::RouteCreated(serde_json::to_value(&route).unwrap()));
     Ok((StatusCode::CREATED, Json(route)))
 }
 
@@ -300,6 +355,7 @@ async fn update_route(
         .add_to_index("route:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::RouteUpdated(serde_json::to_value(&route).unwrap()));
     Ok(Json(route))
 }
 
@@ -314,6 +370,7 @@ async fn delete_route(
         .remove_from_index("route:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::RouteDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -394,6 +451,7 @@ async fn create_zone(
         .add_to_index("zone:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::ZoneCreated(serde_json::to_value(&zone).unwrap()));
     Ok((StatusCode::CREATED, Json(zone)))
 }
 
@@ -410,6 +468,7 @@ async fn update_zone(
         .add_to_index("zone:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::ZoneUpdated(serde_json::to_value(&zone).unwrap()));
     Ok(Json(zone))
 }
 
@@ -424,6 +483,7 @@ async fn delete_zone(
         .remove_from_index("zone:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::ZoneDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -449,6 +509,7 @@ async fn create_policy(
         .add_to_index("policy:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::PolicyCreated(serde_json::to_value(&policy).unwrap()));
     Ok((StatusCode::CREATED, Json(policy)))
 }
 
@@ -469,6 +530,7 @@ async fn update_policy(
         .add_to_index("policy:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::PolicyUpdated(serde_json::to_value(&policy).unwrap()));
     Ok(Json(policy))
 }
 
@@ -483,6 +545,7 @@ async fn delete_policy(
         .remove_from_index("policy:", &key)
         .await
         .map_err(internal_error)?;
+    broadcast(&state, WsEvent::PolicyDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -923,6 +986,8 @@ async fn restore_data(
             .await
             .map_err(internal_error)?;
     }
+
+    broadcast(&state, WsEvent::ConfigRestored);
 
     Ok((
         StatusCode::OK,
