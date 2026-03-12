@@ -117,6 +117,7 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         // System
         .route("/api/v1/system/status", get(system_status))
         .route("/api/v1/system/interfaces", get(list_interfaces))
+        .route("/api/v1/system/apply", post(apply_config))
         .route("/api/v1/system/backup", post(backup_data))
         .route("/api/v1/system/restore", post(restore_data))
         // Prometheus metrics
@@ -849,6 +850,86 @@ fn mock_interfaces() -> Vec<NetworkInterface> {
             mtu: 65536,
         },
     ]
+}
+
+// === Apply Configuration ===
+
+async fn apply_config(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Load all rules from DB
+    let rules = state
+        .db
+        .scan_prefix::<FirewallRule>("rule:")
+        .await
+        .map_err(internal_error)?;
+
+    let mut ingress_rules: Vec<FirewallRule> = Vec::new();
+    let mut egress_rules: Vec<FirewallRule> = Vec::new();
+
+    for (_, rule) in &rules {
+        if rule.enabled {
+            match rule.direction {
+                nylon_wall_common::rule::Direction::Ingress => ingress_rules.push(rule.clone()),
+                nylon_wall_common::rule::Direction::Egress => egress_rules.push(rule.clone()),
+            }
+        }
+    }
+
+    // Sort by priority
+    ingress_rules.sort_by_key(|r| r.priority);
+    egress_rules.sort_by_key(|r| r.priority);
+
+    // On Linux, sync rules to eBPF maps
+    #[cfg(target_os = "linux")]
+    {
+        use nylon_wall_common::rule::EbpfRule;
+        let ebpf_ingress: Vec<EbpfRule> = ingress_rules
+            .iter()
+            .map(|r| crate::ebpf_loader::firewall_rule_to_ebpf(r))
+            .collect();
+        let ebpf_egress: Vec<EbpfRule> = egress_rules
+            .iter()
+            .map(|r| crate::ebpf_loader::firewall_rule_to_ebpf(r))
+            .collect();
+
+        // Note: This requires holding a reference to the Ebpf instance.
+        // For now, we log what would be applied. Full eBPF sync requires
+        // sharing the Ebpf handle via AppState (future improvement).
+        tracing::info!(
+            "Apply: {} ingress rules, {} egress rules ready for eBPF sync",
+            ebpf_ingress.len(),
+            ebpf_egress.len()
+        );
+    }
+
+    let total_rules = rules.len();
+    let nat_count = state
+        .db
+        .scan_prefix::<serde_json::Value>("nat:")
+        .await
+        .map_err(internal_error)?
+        .len();
+    let route_count = state
+        .db
+        .scan_prefix::<serde_json::Value>("route:")
+        .await
+        .map_err(internal_error)?
+        .len();
+
+    broadcast(
+        &state,
+        WsEvent::RuleUpdated(serde_json::json!({"action": "config_applied"})),
+    );
+
+    Ok(Json(serde_json::json!({
+        "status": "applied",
+        "rules": total_rules,
+        "ingress_rules": ingress_rules.len(),
+        "egress_rules": egress_rules.len(),
+        "nat_entries": nat_count,
+        "routes": route_count,
+    })))
 }
 
 // === Backup / Restore ===

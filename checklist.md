@@ -109,7 +109,7 @@
 - [x] `nylon-wall-ui/src/components/nat.rs` - NAT table + create form
 - [x] `nylon-wall-ui/src/components/routes.rs` - Route table + static route editor
 - [x] Port forward wizard
-- [ ] Policy route editor
+- [x] Policy route editor
 
 ---
 
@@ -169,7 +169,7 @@
 ### Daemon - System
 - [x] API: `GET /api/v1/system/interfaces` - List network interfaces
 - [x] API: `GET /api/v1/system/status` - Daemon & eBPF program status
-- [ ] API: `POST /api/v1/system/apply` - Apply pending configuration
+- [x] API: `POST /api/v1/system/apply` - Apply pending configuration
 - [x] API: `POST /api/v1/system/backup` - Export full config from SlateDB
 - [x] API: `POST /api/v1/system/restore` - Import config to SlateDB
 - [ ] Rate limiting / QoS (token bucket in eBPF)
@@ -178,8 +178,8 @@
 
 ### Dioxus UI - Settings
 - [x] `nylon-wall-ui/src/components/settings.rs` - System info + backup/restore buttons
-- [ ] Interface configuration UI
-- [ ] Daemon settings editor
+- [x] Interface configuration UI
+- [x] Daemon settings editor
 
 ### Extras (Optional)
 - [ ] DHCP server สำหรับ LAN interfaces

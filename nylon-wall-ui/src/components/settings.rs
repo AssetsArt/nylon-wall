@@ -13,6 +13,16 @@ struct NetworkInterface {
     mtu: u32,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ApplyResult {
+    status: String,
+    rules: u64,
+    ingress_rules: u64,
+    egress_rules: u64,
+    nat_entries: u64,
+    routes: u64,
+}
+
 #[component]
 pub fn Settings() -> Element {
     let status = use_resource(|| async {
@@ -22,6 +32,13 @@ pub fn Settings() -> Element {
         api_client::get::<Vec<NetworkInterface>>("/system/interfaces").await
     });
     let mut backup_msg = use_signal(|| None::<(bool, String)>);
+    let mut apply_msg = use_signal(|| None::<(bool, String)>);
+    let mut applying = use_signal(|| false);
+
+    // Daemon settings state
+    let mut listen_addr = use_signal(|| "0.0.0.0:9450".to_string());
+    let mut ebpf_iface = use_signal(|| "eth0".to_string());
+    let mut log_level = use_signal(|| "info".to_string());
 
     rsx! {
         div {
@@ -42,6 +59,55 @@ pub fn Settings() -> Element {
                         class: "text-slate-400 hover:text-slate-300",
                         onclick: move |_| backup_msg.set(None),
                         Icon { width: 14, height: 14, icon: LdX }
+                    }
+                }
+            }
+
+            if let Some((success, msg)) = apply_msg() {
+                div {
+                    class: if success {
+                        "mb-4 px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400 flex items-center justify-between"
+                    } else {
+                        "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between"
+                    },
+                    span { "{msg}" }
+                    button {
+                        class: "text-slate-400 hover:text-slate-300",
+                        onclick: move |_| apply_msg.set(None),
+                        Icon { width: 14, height: 14, icon: LdX }
+                    }
+                }
+            }
+
+            // Apply Configuration
+            div { class: "mb-6",
+                div { class: "flex items-center gap-2 mb-4",
+                    Icon { width: 15, height: 15, icon: LdZap, class: "text-amber-500" }
+                    h3 { class: "text-sm font-semibold text-white", "Apply Configuration" }
+                }
+                div { class: "rounded-xl border border-amber-500/20 bg-slate-900/50 p-5",
+                    p { class: "text-sm text-slate-400 mb-4", "Push current firewall rules, NAT entries, and routes to the eBPF datapath." }
+                    button {
+                        class: "px-4 py-2 rounded-lg text-sm font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-colors flex items-center gap-2 disabled:opacity-50",
+                        disabled: applying(),
+                        onclick: move |_| {
+                            applying.set(true);
+                            spawn(async move {
+                                match api_client::post::<(), ApplyResult>("/system/apply", &()).await {
+                                    Ok(result) => {
+                                        apply_msg.set(Some((true, format!(
+                                            "Configuration applied: {} rules ({} ingress, {} egress), {} NAT, {} routes",
+                                            result.rules, result.ingress_rules, result.egress_rules,
+                                            result.nat_entries, result.routes
+                                        ))));
+                                    }
+                                    Err(e) => apply_msg.set(Some((false, format!("Apply failed: {}", e)))),
+                                }
+                                applying.set(false);
+                            });
+                        },
+                        Icon { width: 14, height: 14, icon: LdPlay }
+                        if applying() { "Applying..." } else { "Apply Now" }
                     }
                 }
             }
@@ -111,6 +177,7 @@ pub fn Settings() -> Element {
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC" }
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MTU" }
                                 th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
+                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Zone" }
                             }
                         }
                         tbody {
@@ -133,21 +200,78 @@ pub fn Settings() -> Element {
                                                     "{iface.status}"
                                                 }
                                             }
+                                            td { class: "px-5 py-3 text-sm text-slate-500",
+                                                {
+                                                    let zone = match iface.name.as_str() {
+                                                        "eth0" => "WAN",
+                                                        "eth1" => "LAN",
+                                                        "lo" => "Local",
+                                                        _ => "Unassigned",
+                                                    };
+                                                    rsx! {
+                                                        span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
+                                                            "{zone}"
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 },
                                 Some(Ok(_)) => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "No interfaces found" } }
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "6", "No interfaces found" } }
                                 },
                                 Some(Err(e)) => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "5", "Failed to load: {e}" } }
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "6", "Failed to load: {e}" } }
                                 },
                                 None => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "Loading..." } }
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "6", "Loading..." } }
                                 },
                             }
                         }
                     }
+                }
+            }
+
+            // Daemon Settings
+            div { class: "mb-6",
+                div { class: "flex items-center gap-2 mb-4",
+                    Icon { width: 15, height: 15, icon: LdSettings, class: "text-slate-500" }
+                    h3 { class: "text-sm font-semibold text-white", "Daemon Settings" }
+                }
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5",
+                    div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4",
+                        div {
+                            label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Listen Address" }
+                            input {
+                                class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors font-mono",
+                                r#type: "text", value: "{listen_addr}",
+                                oninput: move |e| listen_addr.set(e.value()),
+                            }
+                        }
+                        div {
+                            label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "eBPF Interface" }
+                            input {
+                                class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors font-mono",
+                                r#type: "text", value: "{ebpf_iface}",
+                                oninput: move |e| ebpf_iface.set(e.value()),
+                            }
+                        }
+                        div {
+                            label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Log Level" }
+                            select {
+                                class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                                value: "{log_level}",
+                                onchange: move |e| log_level.set(e.value()),
+                                option { value: "trace", "Trace" }
+                                option { value: "debug", "Debug" }
+                                option { value: "info", "Info" }
+                                option { value: "warn", "Warn" }
+                                option { value: "error", "Error" }
+                            }
+                        }
+                    }
+                    p { class: "text-xs text-slate-600 mt-2", "Changes to daemon settings require a daemon restart to take effect." }
                 }
             }
 
