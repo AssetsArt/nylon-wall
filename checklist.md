@@ -107,7 +107,7 @@
 ### Dioxus UI - NAT & Routes
 - [x] `nylon-wall-ui/src/components/nat.rs` - NAT table + create form
 - [x] `nylon-wall-ui/src/components/routes.rs` - Route table + static route editor
-- [ ] Port forward wizard
+- [x] Port forward wizard
 - [ ] Policy route editor
 
 ---

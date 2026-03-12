@@ -1,15 +1,14 @@
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 #[component]
 pub fn Nat() -> Element {
-    let mut entries = use_resource(|| async {
-        api_client::get::<Vec<NatEntry>>("/nat").await
-    });
+    let mut entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
     let mut show_form = use_signal(|| false);
+    let mut show_wizard = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
 
     rsx! {
@@ -19,10 +18,26 @@ pub fn Nat() -> Element {
                     h2 { class: "text-xl font-semibold text-white", "NAT Configuration" }
                     p { class: "text-sm text-slate-400 mt-1", "Network address translation entries" }
                 }
-                button {
-                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
-                    onclick: move |_| show_form.set(!show_form()),
-                    if show_form() { "Cancel" } else { "+ New NAT Entry" }
+                div { class: "flex items-center gap-2",
+                    button {
+                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors",
+                        onclick: move |_| {
+                            show_wizard.set(!show_wizard());
+                            if show_wizard() { show_form.set(false); }
+                        },
+                        if show_wizard() { "Cancel" } else {
+                            Icon { width: 12, height: 12, icon: LdArrowRightLeft, class: "inline mr-1" }
+                            "Port Forward Wizard"
+                        }
+                    }
+                    button {
+                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                        onclick: move |_| {
+                            show_form.set(!show_form());
+                            if show_form() { show_wizard.set(false); }
+                        },
+                        if show_form() { "Cancel" } else { "+ New NAT Entry" }
+                    }
                 }
             }
 
@@ -33,6 +48,15 @@ pub fn Nat() -> Element {
                         class: "text-red-400 hover:text-red-300",
                         onclick: move |_| error_msg.set(None),
                         Icon { width: 14, height: 14, icon: LdX }
+                    }
+                }
+            }
+
+            if show_wizard() {
+                PortForwardWizard {
+                    on_saved: move |_| {
+                        show_wizard.set(false);
+                        entries.restart();
                     }
                 }
             }
@@ -83,7 +107,9 @@ pub fn Nat() -> Element {
                                         td { class: "px-5 py-3 text-sm text-slate-400 font-mono", {entry.src_network.clone().unwrap_or("*".to_string())} }
                                         td { class: "px-5 py-3 text-sm text-slate-400 font-mono", {entry.dst_network.clone().unwrap_or("*".to_string())} }
                                         td { class: "px-5 py-3 text-sm text-slate-400", {entry.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())} }
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono", {entry.translate_ip.clone().unwrap_or("\u{2014}".to_string())} }
+                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
+                                            {format_translate(entry)}
+                                        }
                                         td { class: "px-5 py-3 text-sm text-slate-400", {entry.out_interface.clone().unwrap_or("\u{2014}".to_string())} }
                                         td { class: "px-5 py-3 text-sm",
                                             span {
@@ -133,6 +159,215 @@ pub fn Nat() -> Element {
         }
     }
 }
+
+fn format_translate(entry: &NatEntry) -> String {
+    let ip = entry.translate_ip.clone().unwrap_or("\u{2014}".to_string());
+    match &entry.translate_port {
+        Some(pr) if pr.start == pr.end => format!("{}:{}", ip, pr.start),
+        Some(pr) => format!("{}:{}-{}", ip, pr.start, pr.end),
+        None => ip,
+    }
+}
+
+// === Port Forward Wizard ===
+
+#[component]
+fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
+    let mut ext_port = use_signal(|| String::new());
+    let mut int_ip = use_signal(|| String::new());
+    let mut int_port = use_signal(|| String::new());
+    let mut protocol = use_signal(|| "TCP".to_string());
+    let mut in_interface = use_signal(|| "eth0".to_string());
+    let mut error = use_signal(|| None::<String>);
+    let mut submitting = use_signal(|| false);
+
+    let on_submit = move |_| {
+        // Validate
+        let ext: u16 = match ext_port().parse() {
+            Ok(p) => p,
+            Err(_) => {
+                error.set(Some("External port must be a number (1-65535)".to_string()));
+                return;
+            }
+        };
+        if int_ip().is_empty() {
+            error.set(Some("Internal IP address is required".to_string()));
+            return;
+        }
+        let internal: u16 = if int_port().is_empty() {
+            ext
+        } else {
+            match int_port().parse() {
+                Ok(p) => p,
+                Err(_) => {
+                    error.set(Some("Internal port must be a number (1-65535)".to_string()));
+                    return;
+                }
+            }
+        };
+
+        submitting.set(true);
+        error.set(None);
+
+        let entry = NatEntry {
+            id: 0,
+            nat_type: NatType::DNAT,
+            enabled: true,
+            src_network: None,
+            dst_network: None,
+            protocol: match protocol().as_str() {
+                "UDP" => Some(Protocol::UDP),
+                "Both" => None,
+                _ => Some(Protocol::TCP),
+            },
+            dst_port: Some(PortRange::single(ext)),
+            in_interface: Some(in_interface()),
+            out_interface: None,
+            translate_ip: Some(int_ip()),
+            translate_port: Some(PortRange::single(internal)),
+        };
+
+        spawn(async move {
+            match api_client::post::<NatEntry, NatEntry>("/nat", &entry).await {
+                Ok(_) => {
+                    // If "Both" protocol, create a second entry for UDP
+                    if protocol() == "Both" {
+                        let udp_entry = NatEntry {
+                            id: 0,
+                            nat_type: NatType::DNAT,
+                            enabled: true,
+                            src_network: None,
+                            dst_network: None,
+                            protocol: Some(Protocol::UDP),
+                            dst_port: Some(PortRange::single(ext)),
+                            in_interface: Some(in_interface()),
+                            out_interface: None,
+                            translate_ip: Some(int_ip()),
+                            translate_port: Some(PortRange::single(internal)),
+                        };
+                        let _ = api_client::post::<NatEntry, NatEntry>("/nat", &udp_entry).await;
+                    }
+                    on_saved.call(());
+                }
+                Err(e) => error.set(Some(e)),
+            }
+            submitting.set(false);
+        });
+    };
+
+    rsx! {
+        div { class: "rounded-xl border border-violet-500/20 bg-violet-500/5 p-6 mb-6",
+            div { class: "flex items-center gap-2 mb-4",
+                Icon { width: 18, height: 18, icon: LdArrowRightLeft, class: "text-violet-400" }
+                h3 { class: "text-sm font-semibold text-white", "Port Forward Wizard" }
+            }
+            p { class: "text-xs text-slate-400 mb-4", "Forward an external port to an internal server. Creates a DNAT rule automatically." }
+
+            if let Some(err) = error() {
+                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
+            }
+
+            // Visual diagram
+            div { class: "flex items-center justify-center gap-3 mb-5 py-4 rounded-lg bg-slate-900/50 border border-slate-800/40",
+                div { class: "text-center",
+                    div { class: "text-[11px] text-slate-500 mb-1", "Internet" }
+                    div { class: "px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20",
+                        Icon { width: 20, height: 20, icon: LdGlobe, class: "text-blue-400 mx-auto" }
+                    }
+                }
+                div { class: "flex items-center gap-1",
+                    div { class: "text-xs text-slate-500 font-mono",
+                        if !ext_port().is_empty() { ":{ext_port}" } else { ":?" }
+                    }
+                    Icon { width: 16, height: 16, icon: LdArrowRight, class: "text-violet-400" }
+                }
+                div { class: "text-center",
+                    div { class: "text-[11px] text-slate-500 mb-1", "Firewall" }
+                    div { class: "px-3 py-2 rounded-lg bg-violet-500/10 border border-violet-500/20",
+                        Icon { width: 20, height: 20, icon: LdShield, class: "text-violet-400 mx-auto" }
+                    }
+                }
+                div { class: "flex items-center gap-1",
+                    Icon { width: 16, height: 16, icon: LdArrowRight, class: "text-violet-400" }
+                    div { class: "text-xs text-slate-500 font-mono",
+                        if !int_ip().is_empty() {
+                            if !int_port().is_empty() { "{int_ip}:{int_port}" } else if !ext_port().is_empty() { "{int_ip}:{ext_port}" } else { "{int_ip}:?" }
+                        } else {
+                            "?:?"
+                        }
+                    }
+                }
+                div { class: "text-center",
+                    div { class: "text-[11px] text-slate-500 mb-1", "Server" }
+                    div { class: "px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20",
+                        Icon { width: 20, height: 20, icon: LdServer, class: "text-emerald-400 mx-auto" }
+                    }
+                }
+            }
+
+            div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4",
+                div {
+                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "External Port" }
+                    input {
+                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        r#type: "number", placeholder: "e.g. 8080",
+                        value: "{ext_port}",
+                        oninput: move |e| ext_port.set(e.value()),
+                    }
+                }
+                div {
+                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Internal IP" }
+                    input {
+                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        r#type: "text", placeholder: "e.g. 192.168.1.50",
+                        value: "{int_ip}",
+                        oninput: move |e| int_ip.set(e.value()),
+                    }
+                }
+                div {
+                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Internal Port" }
+                    input {
+                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        r#type: "number", placeholder: "Same as external",
+                        value: "{int_port}",
+                        oninput: move |e| int_port.set(e.value()),
+                    }
+                }
+                div {
+                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Protocol" }
+                    select {
+                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        value: "{protocol}", onchange: move |e| protocol.set(e.value()),
+                        option { value: "TCP", "TCP" }
+                        option { value: "UDP", "UDP" }
+                        option { value: "Both", "TCP + UDP" }
+                    }
+                }
+                div {
+                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "WAN Interface" }
+                    input {
+                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        r#type: "text", placeholder: "eth0",
+                        value: "{in_interface}",
+                        oninput: move |e| in_interface.set(e.value()),
+                    }
+                }
+            }
+
+            button {
+                class: "px-4 py-2 rounded-lg text-sm font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors disabled:opacity-50",
+                disabled: submitting(),
+                onclick: on_submit,
+                if submitting() { "Creating..." } else {
+                    Icon { width: 14, height: 14, icon: LdArrowRightLeft, class: "inline mr-1" }
+                    "Create Port Forward"
+                }
+            }
+        }
+    }
+}
+
+// === NAT Form (advanced) ===
 
 #[component]
 fn NatForm(on_saved: EventHandler<()>) -> Element {
