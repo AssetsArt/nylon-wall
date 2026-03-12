@@ -38,7 +38,7 @@ pub async fn perf_event_loop(state: std::sync::Arc<crate::AppState>) {
     };
 
     // Take the EVENTS map out of the Ebpf handle
-    let perf_array = {
+    let mut perf_array = {
         let mut ebpf_guard = state.ebpf.lock().await;
         let bpf = match ebpf_guard.as_mut() {
             Some(b) => b,
