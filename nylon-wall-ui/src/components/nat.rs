@@ -20,14 +20,16 @@ pub fn Nat() -> Element {
                 }
                 div { class: "flex items-center gap-2",
                     button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors",
+                        class: "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors",
                         onclick: move |_| {
                             show_wizard.set(!show_wizard());
                             if show_wizard() { show_form.set(false); }
                         },
-                        if show_wizard() { "Cancel" } else {
-                            Icon { width: 12, height: 12, icon: LdArrowRightLeft, class: "inline mr-1" }
-                            "Port Forward Wizard"
+                        if show_wizard() {
+                            "Cancel"
+                        } else {
+                            Icon { width: 12, height: 12, icon: LdArrowRightLeft }
+                            span { "Port Forward Wizard" }
                         }
                     }
                     button {
@@ -355,12 +357,14 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
             }
 
             button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors disabled:opacity-50",
+                class: "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors disabled:opacity-50",
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Creating..." } else {
-                    Icon { width: 14, height: 14, icon: LdArrowRightLeft, class: "inline mr-1" }
-                    "Create Port Forward"
+                if submitting() {
+                    "Creating..."
+                } else {
+                    Icon { width: 14, height: 14, icon: LdArrowRightLeft }
+                    span { "Create Port Forward" }
                 }
             }
         }

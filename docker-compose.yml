@@ -24,23 +24,23 @@ services:
         - action: rebuild
           path: nylon-wall-ebpf/src
 
-  ui:
-    build:
-      context: .
-      dockerfile: Dockerfile.ui
-    ports:
-      - "8080:8080"
-    depends_on:
-      - daemon
-    restart: unless-stopped
-    develop:
-      watch:
-        - action: rebuild
-          path: nylon-wall-ui/src
-        - action: rebuild
-          path: nylon-wall-ui/assets
-        - action: rebuild
-          path: nylon-wall-common/src
+  # ui:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.ui
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     - daemon
+  #   restart: unless-stopped
+  #   develop:
+  #     watch:
+  #       - action: rebuild
+  #         path: nylon-wall-ui/src
+  #       - action: rebuild
+  #         path: nylon-wall-ui/assets
+  #       - action: rebuild
+  #         path: nylon-wall-common/src
 
 volumes:
   slatedb-data:
