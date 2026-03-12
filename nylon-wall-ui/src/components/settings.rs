@@ -4,6 +4,7 @@ use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use super::ConfirmModal;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 struct NetworkInterface {
@@ -24,6 +25,7 @@ pub fn Settings() -> Element {
     });
     let mut backup_msg = use_signal(|| None::<(bool, String)>);
     let mut importing = use_signal(|| false);
+    let mut confirm_import = use_signal(|| None::<String>);
 
     rsx! {
         div {
@@ -45,6 +47,35 @@ pub fn Settings() -> Element {
                         onclick: move |_| backup_msg.set(None),
                         Icon { width: 14, height: 14, icon: LdX }
                     }
+                }
+            }
+
+            if confirm_import().is_some() {
+                ConfirmModal {
+                    title: "Import Configuration".to_string(),
+                    message: "This will replace all current rules, NAT entries, routes, zones, and policies with the imported configuration. This action cannot be undone.".to_string(),
+                    confirm_label: "Import".to_string(),
+                    danger: false,
+                    on_confirm: move |_| {
+                        if let Some(content) = confirm_import() {
+                            confirm_import.set(None);
+                            spawn(async move {
+                                match serde_json::from_str::<serde_json::Value>(&content) {
+                                    Ok(backup_data) => {
+                                        match api_client::post::<serde_json::Value, serde_json::Value>("/system/restore", &backup_data).await {
+                                            Ok(resp) => {
+                                                let status = resp.get("status").and_then(|s| s.as_str()).unwrap_or("done");
+                                                backup_msg.set(Some((true, format!("Configuration restored ({})", status))));
+                                            }
+                                            Err(e) => backup_msg.set(Some((false, format!("Restore failed: {}", e)))),
+                                        }
+                                    }
+                                    Err(e) => backup_msg.set(Some((false, format!("Invalid backup file: {}", e)))),
+                                }
+                            });
+                        }
+                    },
+                    on_cancel: move |_| { confirm_import.set(None); },
                 }
             }
 
@@ -226,7 +257,7 @@ pub fn Settings() -> Element {
                             onclick: move |_| {
                                 importing.set(true);
                                 spawn(async move {
-                                    // Create a file input, trigger click, read file, and POST to restore
+                                    // Create a file input, trigger click, read file content
                                     // Uses window focus event to detect cancel (file dialog closing without selection)
                                     let js_code = r#"
                                         var input = document.createElement('input');
@@ -257,17 +288,15 @@ pub fn Settings() -> Element {
                                                 importing.set(false);
                                                 return;
                                             }
+                                            // Validate JSON before showing confirm
                                             match serde_json::from_str::<serde_json::Value>(&file_content) {
-                                                Ok(backup_data) => {
-                                                    match api_client::post::<serde_json::Value, serde_json::Value>("/system/restore", &backup_data).await {
-                                                        Ok(resp) => {
-                                                            let status = resp.get("status").and_then(|s| s.as_str()).unwrap_or("done");
-                                                            backup_msg.set(Some((true, format!("Configuration restored ({})", status))));
-                                                        }
-                                                        Err(e) => backup_msg.set(Some((false, format!("Restore failed: {}", e)))),
-                                                    }
+                                                Ok(_) => {
+                                                    // Store content and show confirm modal
+                                                    confirm_import.set(Some(file_content));
                                                 }
-                                                Err(e) => backup_msg.set(Some((false, format!("Invalid backup file: {}", e)))),
+                                                Err(e) => {
+                                                    backup_msg.set(Some((false, format!("Invalid backup file: {}", e))));
+                                                }
                                             }
                                         }
                                         Err(_) => {

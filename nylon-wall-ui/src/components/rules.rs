@@ -3,6 +3,7 @@ use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use super::ConfirmModal;
 
 #[component]
 pub fn Rules() -> Element {
@@ -11,6 +12,7 @@ pub fn Rules() -> Element {
     });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
+    let mut confirm_delete = use_signal(|| None::<(u32, String)>);
 
     rsx! {
         div {
@@ -43,6 +45,25 @@ pub fn Rules() -> Element {
                         show_form.set(false);
                         rules.restart();
                     }
+                }
+            }
+
+            if let Some((del_id, del_name)) = confirm_delete() {
+                ConfirmModal {
+                    title: "Delete Rule".to_string(),
+                    message: format!("Are you sure you want to delete rule \"{}\"? This action cannot be undone.", del_name),
+                    confirm_label: "Delete".to_string(),
+                    danger: true,
+                    on_confirm: move |_| {
+                        confirm_delete.set(None);
+                        spawn(async move {
+                            match api_client::delete(&format!("/rules/{}", del_id)).await {
+                                Ok(_) => rules.restart(),
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_delete.set(None); },
                 }
             }
 
@@ -119,16 +140,12 @@ pub fn Rules() -> Element {
                                         td { class: "px-5 py-3 text-sm",
                                             {
                                                 let id = rule.id;
+                                                let name = rule.name.clone();
                                                 rsx! {
                                                     button {
                                                         class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
                                                         onclick: move |_| {
-                                                            spawn(async move {
-                                                                match api_client::delete(&format!("/rules/{}", id)).await {
-                                                                    Ok(_) => rules.restart(),
-                                                                    Err(e) => error_msg.set(Some(e)),
-                                                                }
-                                                            });
+                                                            confirm_delete.set(Some((id, name.clone())));
                                                         },
                                                         Icon { width: 13, height: 13, icon: LdTrash2 }
                                                     }

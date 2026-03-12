@@ -1,3 +1,4 @@
+mod confirm;
 mod connections;
 mod dashboard;
 mod logs;
@@ -7,6 +8,7 @@ mod routes;
 mod rules;
 mod settings;
 
+pub use confirm::ConfirmModal;
 pub use connections::Connections;
 pub use dashboard::Dashboard;
 pub use logs::Logs;

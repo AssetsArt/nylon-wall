@@ -3,6 +3,7 @@ use crate::models::*;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
+use super::ConfirmModal;
 
 #[component]
 pub fn Nat() -> Element {
@@ -10,6 +11,7 @@ pub fn Nat() -> Element {
     let mut show_form = use_signal(|| false);
     let mut show_wizard = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
+    let mut confirm_delete = use_signal(|| None::<u32>);
 
     rsx! {
         div {
@@ -72,6 +74,25 @@ pub fn Nat() -> Element {
                 }
             }
 
+            if let Some(del_id) = confirm_delete() {
+                ConfirmModal {
+                    title: "Delete NAT Entry".to_string(),
+                    message: format!("Are you sure you want to delete NAT entry #{}? This action cannot be undone.", del_id),
+                    confirm_label: "Delete".to_string(),
+                    danger: true,
+                    on_confirm: move |_| {
+                        confirm_delete.set(None);
+                        spawn(async move {
+                            match api_client::delete(&format!("/nat/{}", del_id)).await {
+                                Ok(_) => entries.restart(),
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_delete.set(None); },
+                }
+            }
+
             div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
                 table { class: "w-full text-left",
                     thead { class: "bg-slate-900/80",
@@ -130,12 +151,7 @@ pub fn Nat() -> Element {
                                                     button {
                                                         class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
                                                         onclick: move |_| {
-                                                            spawn(async move {
-                                                                match api_client::delete(&format!("/nat/{}", id)).await {
-                                                                    Ok(_) => entries.restart(),
-                                                                    Err(e) => error_msg.set(Some(e)),
-                                                                }
-                                                            });
+                                                            confirm_delete.set(Some(id));
                                                         },
                                                         Icon { width: 13, height: 13, icon: LdTrash2 }
                                                     }

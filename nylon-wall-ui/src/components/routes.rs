@@ -3,6 +3,7 @@ use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use super::ConfirmModal;
 
 #[component]
 pub fn Routes() -> Element {
@@ -11,6 +12,7 @@ pub fn Routes() -> Element {
     });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
+    let mut confirm_delete = use_signal(|| None::<(u32, String)>);
 
     rsx! {
         div { class: "pb-6",
@@ -43,6 +45,25 @@ pub fn Routes() -> Element {
                         show_form.set(false);
                         routes.restart();
                     }
+                }
+            }
+
+            if let Some((del_id, del_dest)) = confirm_delete() {
+                ConfirmModal {
+                    title: "Delete Route".to_string(),
+                    message: format!("Are you sure you want to delete route to \"{}\"? This action cannot be undone.", del_dest),
+                    confirm_label: "Delete".to_string(),
+                    danger: true,
+                    on_confirm: move |_| {
+                        confirm_delete.set(None);
+                        spawn(async move {
+                            match api_client::delete(&format!("/routes/{}", del_id)).await {
+                                Ok(_) => routes.restart(),
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_delete.set(None); },
                 }
             }
 
@@ -83,16 +104,12 @@ pub fn Routes() -> Element {
                                         td { class: "px-5 py-3 text-sm",
                                             {
                                                 let id = route.id;
+                                                let dest = route.destination.clone();
                                                 rsx! {
                                                     button {
                                                         class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
                                                         onclick: move |_| {
-                                                            spawn(async move {
-                                                                match api_client::delete(&format!("/routes/{}", id)).await {
-                                                                    Ok(_) => routes.restart(),
-                                                                    Err(e) => error_msg.set(Some(e)),
-                                                                }
-                                                            });
+                                                            confirm_delete.set(Some((id, dest.clone())));
                                                         },
                                                         Icon { width: 13, height: 13, icon: LdTrash2 }
                                                     }
@@ -210,6 +227,7 @@ pub fn PolicyRoutes() -> Element {
     });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
+    let mut confirm_delete = use_signal(|| None::<u32>);
 
     rsx! {
         div { class: "mt-8",
@@ -242,6 +260,25 @@ pub fn PolicyRoutes() -> Element {
                         show_form.set(false);
                         policy_routes.restart();
                     }
+                }
+            }
+
+            if let Some(del_id) = confirm_delete() {
+                ConfirmModal {
+                    title: "Delete Policy Route".to_string(),
+                    message: format!("Are you sure you want to delete policy route #{}? This action cannot be undone.", del_id),
+                    confirm_label: "Delete".to_string(),
+                    danger: true,
+                    on_confirm: move |_| {
+                        confirm_delete.set(None);
+                        spawn(async move {
+                            match api_client::delete(&format!("/routes/policy/{}", del_id)).await {
+                                Ok(_) => policy_routes.restart(),
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_delete.set(None); },
                 }
             }
 
@@ -285,12 +322,7 @@ pub fn PolicyRoutes() -> Element {
                                                     button {
                                                         class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
                                                         onclick: move |_| {
-                                                            spawn(async move {
-                                                                match api_client::delete(&format!("/routes/policy/{}", id)).await {
-                                                                    Ok(_) => policy_routes.restart(),
-                                                                    Err(e) => error_msg.set(Some(e)),
-                                                                }
-                                                            });
+                                                            confirm_delete.set(Some(id));
                                                         },
                                                         Icon { width: 13, height: 13, icon: LdTrash2 }
                                                     }

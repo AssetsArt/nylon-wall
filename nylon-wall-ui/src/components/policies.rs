@@ -3,6 +3,7 @@ use crate::models::*;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
+use super::ConfirmModal;
 
 const ZONE_COLORS: [(&str, &str, &str); 4] = [
     ("border-l-blue-500", "bg-blue-500/10", "text-blue-400"),
@@ -39,6 +40,8 @@ pub fn Policies() -> Element {
     let mut show_zone_form = use_signal(|| false);
     let mut show_policy_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
+    let mut confirm_delete_zone = use_signal(|| None::<(u32, String)>);
+    let mut confirm_delete_policy = use_signal(|| None::<(u32, String)>);
 
     rsx! {
         div {
@@ -55,6 +58,44 @@ pub fn Policies() -> Element {
                         onclick: move |_| error_msg.set(None),
                         Icon { width: 14, height: 14, icon: LdX }
                     }
+                }
+            }
+
+            if let Some((del_id, del_name)) = confirm_delete_zone() {
+                ConfirmModal {
+                    title: "Delete Zone".to_string(),
+                    message: format!("Are you sure you want to delete zone \"{}\"? This action cannot be undone.", del_name),
+                    confirm_label: "Delete".to_string(),
+                    danger: true,
+                    on_confirm: move |_| {
+                        confirm_delete_zone.set(None);
+                        spawn(async move {
+                            match api_client::delete(&format!("/zones/{}", del_id)).await {
+                                Ok(_) => zones.restart(),
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_delete_zone.set(None); },
+                }
+            }
+
+            if let Some((del_id, del_name)) = confirm_delete_policy() {
+                ConfirmModal {
+                    title: "Delete Policy".to_string(),
+                    message: format!("Are you sure you want to delete policy \"{}\"? This action cannot be undone.", del_name),
+                    confirm_label: "Delete".to_string(),
+                    danger: true,
+                    on_confirm: move |_| {
+                        confirm_delete_policy.set(None);
+                        spawn(async move {
+                            match api_client::delete(&format!("/policies/{}", del_id)).await {
+                                Ok(_) => policies.restart(),
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_delete_policy.set(None); },
                 }
             }
 
@@ -110,13 +151,11 @@ pub fn Policies() -> Element {
                                                     }
                                                     button {
                                                         class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
-                                                        onclick: move |_| {
-                                                            spawn(async move {
-                                                                match api_client::delete(&format!("/zones/{}", zone_id)).await {
-                                                                    Ok(_) => zones.restart(),
-                                                                    Err(e) => error_msg.set(Some(e)),
-                                                                }
-                                                            });
+                                                        onclick: {
+                                                            let zname = zone.name.clone();
+                                                            move |_| {
+                                                                confirm_delete_zone.set(Some((zone_id, zname.clone())));
+                                                            }
                                                         },
                                                         Icon { width: 13, height: 13, icon: LdTrash2 }
                                                     }
@@ -262,16 +301,12 @@ pub fn Policies() -> Element {
                                             td { class: "px-5 py-3 text-sm",
                                                 {
                                                     let policy_id = policy.id;
+                                                    let pname = policy.name.clone();
                                                     rsx! {
                                                         button {
                                                             class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
                                                             onclick: move |_| {
-                                                                spawn(async move {
-                                                                    match api_client::delete(&format!("/policies/{}", policy_id)).await {
-                                                                        Ok(_) => policies.restart(),
-                                                                        Err(e) => error_msg.set(Some(e)),
-                                                                    }
-                                                                });
+                                                                confirm_delete_policy.set(Some((policy_id, pname.clone())));
                                                             },
                                                             Icon { width: 13, height: 13, icon: LdTrash2 }
                                                         }
