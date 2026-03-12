@@ -236,10 +236,10 @@ pub fn Dashboard() -> Element {
                                         }
                                         td { class: "px-5 py-3 text-sm",
                                             span {
-                                                class: if log.action == "DROP" {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20"
-                                                } else {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                class: match log.action.to_uppercase().as_str() {
+                                                    "DROP" => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20",
+                                                    "LOG" => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
+                                                    _ => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
                                                 },
                                                 "{log.action}"
                                             }
