@@ -4,10 +4,22 @@ use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
 
+#[derive(Debug, Clone, serde::Deserialize)]
+struct NetworkInterface {
+    name: String,
+    mac: String,
+    ip: String,
+    status: String,
+    mtu: u32,
+}
+
 #[component]
 pub fn Settings() -> Element {
     let status = use_resource(|| async {
         api_client::get::<SystemStatus>("/system/status").await
+    });
+    let interfaces = use_resource(|| async {
+        api_client::get::<Vec<NetworkInterface>>("/system/interfaces").await
     });
     let mut backup_msg = use_signal(|| None::<(bool, String)>);
 
@@ -84,6 +96,61 @@ pub fn Settings() -> Element {
                 }
             }
 
+            // Network Interfaces
+            div { class: "mb-6",
+                div { class: "flex items-center gap-2 mb-4",
+                    Icon { width: 15, height: 15, icon: LdNetwork, class: "text-slate-500" }
+                    h3 { class: "text-sm font-semibold text-white", "Network Interfaces" }
+                }
+                div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
+                    table { class: "w-full text-left",
+                        thead { class: "bg-slate-900/80",
+                            tr {
+                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Name" }
+                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
+                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC" }
+                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MTU" }
+                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
+                            }
+                        }
+                        tbody {
+                            match &*interfaces.read() {
+                                Some(Ok(list)) if !list.is_empty() => rsx! {
+                                    for iface in list.iter() {
+                                        tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
+                                            key: "{iface.name}",
+                                            td { class: "px-5 py-3 text-sm text-slate-300 font-mono font-medium", "{iface.name}" }
+                                            td { class: "px-5 py-3 text-sm text-slate-400 font-mono", "{iface.ip}" }
+                                            td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{iface.mac}" }
+                                            td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{iface.mtu}" }
+                                            td { class: "px-5 py-3 text-sm",
+                                                span {
+                                                    class: if iface.status == "up" {
+                                                        "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                                    } else {
+                                                        "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20"
+                                                    },
+                                                    "{iface.status}"
+                                                }
+                                            }
+                                        }
+                                    }
+                                },
+                                Some(Ok(_)) => rsx! {
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "No interfaces found" } }
+                                },
+                                Some(Err(e)) => rsx! {
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "5", "Failed to load: {e}" } }
+                                },
+                                None => rsx! {
+                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "Loading..." } }
+                                },
+                            }
+                        }
+                    }
+                }
+            }
+
             // Backup & Restore
             div {
                 div { class: "flex items-center gap-2 mb-4",
@@ -98,7 +165,11 @@ pub fn Settings() -> Element {
                             onclick: move |_| {
                                 spawn(async move {
                                     match api_client::post::<(), serde_json::Value>("/system/backup", &()).await {
-                                        Ok(_) => backup_msg.set(Some((true, "Backup created successfully".to_string()))),
+                                        Ok(data) => {
+                                            let json_str = serde_json::to_string_pretty(&data).unwrap_or_default();
+                                            tracing::info!("Backup data: {} bytes", json_str.len());
+                                            backup_msg.set(Some((true, format!("Backup exported ({} bytes)", json_str.len()))));
+                                        }
                                         Err(e) => backup_msg.set(Some((false, format!("Backup failed: {}", e)))),
                                     }
                                 });

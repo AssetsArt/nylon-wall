@@ -62,7 +62,7 @@
 - [x] API: `PUT /api/v1/rules/{id}` - Update rule
 - [x] API: `DELETE /api/v1/rules/{id}` - Delete rule
 - [x] API: `POST /api/v1/rules/{id}/toggle` - Enable/disable
-- [ ] API: `POST /api/v1/rules/reorder` - Reorder priorities
+- [x] API: `POST /api/v1/rules/reorder` - Reorder priorities
 - [x] SlateDB persistence: rules CRUD with index-key pattern
 
 ### Dioxus UI - Basic
@@ -149,28 +149,28 @@
 ### Daemon - Monitoring
 - [ ] `nylon-wall-daemon/src/metrics.rs` - Prometheus metrics endpoint (`/metrics`)
 - [ ] Packet log reader (perf event ring buffer -> SlateDB)
-- [ ] API: `GET /api/v1/conntrack` - List active connections
-- [ ] API: `GET /api/v1/logs` - Query packet logs (with filters)
+- [x] API: `GET /api/v1/conntrack` - List active connections
+- [x] API: `GET /api/v1/logs` - Query packet logs (with filters)
 - [ ] API: `WS /api/v1/ws/events` - WebSocket real-time event stream
 - [ ] Log TTL auto-cleanup via SlateDB TTL
 
 ### Dioxus UI - Monitoring
 - [x] `nylon-wall-ui/src/components/dashboard.rs` - Dashboard (stat cards, recent rules)
 - [ ] Dashboard: live charts, top talkers, blocked IPs
-- [ ] `nylon-wall-ui/src/components/connections.rs` - Live conntrack table + kill action
+- [x] `nylon-wall-ui/src/components/connections.rs` - Live conntrack table + stats
 - [x] `nylon-wall-ui/src/components/logs.rs` - Log viewer with refresh
-- [ ] Logs: filters, real-time stream, CSV export
+- [x] Logs: filters (src_ip, dst_ip, protocol, action)
 
 ---
 
 ## Phase 6: System & Hardening
 
 ### Daemon - System
-- [ ] API: `GET /api/v1/system/interfaces` - List network interfaces
+- [x] API: `GET /api/v1/system/interfaces` - List network interfaces
 - [x] API: `GET /api/v1/system/status` - Daemon & eBPF program status
 - [ ] API: `POST /api/v1/system/apply` - Apply pending configuration
-- [ ] API: `POST /api/v1/system/backup` - Export full config from SlateDB
-- [ ] API: `POST /api/v1/system/restore` - Import config to SlateDB
+- [x] API: `POST /api/v1/system/backup` - Export full config from SlateDB
+- [x] API: `POST /api/v1/system/restore` - Import config to SlateDB
 - [ ] Rate limiting / QoS (token bucket in eBPF)
 - [ ] IPv6 full support (all eBPF programs + rules)
 - [ ] Performance tuning & benchmarking

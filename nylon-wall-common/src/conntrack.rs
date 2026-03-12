@@ -8,6 +8,17 @@ pub enum ConnState {
     Invalid = 3,
 }
 
+impl core::fmt::Display for ConnState {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ConnState::New => write!(f, "New"),
+            ConnState::Established => write!(f, "Established"),
+            ConnState::Related => write!(f, "Related"),
+            ConnState::Invalid => write!(f, "Invalid"),
+        }
+    }
+}
+
 /// Connection tracking key for eBPF map lookups
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]

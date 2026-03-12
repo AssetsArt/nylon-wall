@@ -1,3 +1,4 @@
+mod connections;
 mod dashboard;
 mod logs;
 mod nat;
@@ -6,6 +7,7 @@ mod routes;
 mod rules;
 mod settings;
 
+pub use connections::Connections;
 pub use dashboard::Dashboard;
 pub use logs::Logs;
 pub use nat::Nat;

@@ -21,6 +21,8 @@ pub enum Route {
         Routes,
         #[route("/policies")]
         Policies,
+        #[route("/connections")]
+        Connections,
         #[route("/logs")]
         Logs,
         #[route("/settings")]
@@ -108,6 +110,10 @@ fn Layout() -> Element {
 
                     p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",
                         "Monitor"
+                    }
+                    Link { class: sub_cls(&Route::Connections), to: Route::Connections,
+                        Icon { width: 13, height: 13, icon: LdCable }
+                        "Connections"
                     }
                     Link { class: sub_cls(&Route::Logs), to: Route::Logs,
                         Icon { width: 13, height: 13, icon: LdScroll }

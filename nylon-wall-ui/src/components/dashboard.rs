@@ -12,6 +12,12 @@ pub fn Dashboard() -> Element {
     let rules = use_resource(|| async {
         api_client::get::<Vec<FirewallRule>>("/rules").await
     });
+    let nat_entries = use_resource(|| async {
+        api_client::get::<Vec<NatEntry>>("/nat").await
+    });
+    let conns = use_resource(|| async {
+        api_client::get::<Vec<ConntrackInfo>>("/conntrack").await
+    });
 
     let rule_count = match &*rules.read() {
         Some(Ok(r)) => r.len(),
@@ -19,6 +25,14 @@ pub fn Dashboard() -> Element {
     };
     let active_count = match &*rules.read() {
         Some(Ok(r)) => r.iter().filter(|r| r.enabled).count(),
+        _ => 0,
+    };
+    let nat_count = match &*nat_entries.read() {
+        Some(Ok(n)) => n.len(),
+        _ => 0,
+    };
+    let conn_count = match &*conns.read() {
+        Some(Ok(c)) => c.len(),
         _ => 0,
     };
 
@@ -75,7 +89,7 @@ pub fn Dashboard() -> Element {
                         }
                         span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "NAT" }
                     }
-                    p { class: "text-2xl font-bold text-white mb-1", "\u{2014}" }
+                    p { class: "text-2xl font-bold text-white mb-1", "{nat_count}" }
                     p { class: "text-xs text-slate-500", "entries" }
                 }
 
@@ -83,11 +97,11 @@ pub fn Dashboard() -> Element {
                 div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-cyan-500/30 transition-colors",
                     div { class: "flex items-center gap-3 mb-3",
                         div { class: "w-9 h-9 rounded-lg bg-cyan-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdNetwork, class: "text-cyan-400" }
+                            Icon { width: 16, height: 16, icon: LdCable, class: "text-cyan-400" }
                         }
                         span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Connections" }
                     }
-                    p { class: "text-2xl font-bold text-white mb-1", "\u{2014}" }
+                    p { class: "text-2xl font-bold text-white mb-1", "{conn_count}" }
                     p { class: "text-xs text-slate-500", "active" }
                 }
             }
