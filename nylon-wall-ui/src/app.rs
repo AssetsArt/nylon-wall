@@ -1,8 +1,9 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 use crate::components::*;
+use crate::theme::{self, Theme};
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
@@ -41,6 +42,7 @@ pub fn App() -> Element {
 #[component]
 fn Layout() -> Element {
     let route: Route = use_route();
+    let theme = theme::use_theme_init();
 
     let nav_cls = |target: &Route| {
         if *target == route {
@@ -130,8 +132,18 @@ fn Layout() -> Element {
                 }
 
                 // Footer
-                div { class: "px-4 py-3 border-t border-slate-800/60",
+                div { class: "px-4 py-3 border-t border-slate-800/60 flex items-center justify-between",
                     p { class: "text-[10px] text-slate-700 font-mono", "v0.1.0" }
+                    button {
+                        class: "w-7 h-7 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 flex items-center justify-center transition-colors",
+                        title: if *theme.read() == Theme::Dark { "Switch to light mode" } else { "Switch to dark mode" },
+                        onclick: move |_| { theme::toggle_theme(theme); },
+                        if *theme.read() == Theme::Dark {
+                            Icon { width: 14, height: 14, icon: LdSun, class: "text-slate-400" }
+                        } else {
+                            Icon { width: 14, height: 14, icon: LdMoon, class: "text-slate-400" }
+                        }
+                    }
                 }
             }
 

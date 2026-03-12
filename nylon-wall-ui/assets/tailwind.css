@@ -1272,3 +1272,59 @@ button {
     .lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
 }
+
+/* ===== Light Theme Overrides ===== */
+/* Remap slate color scale: dark values become light, light values become dark */
+[data-theme="light"], [data-theme="light"] :host {
+  --color-slate-950: oklch(98.5% 0.005 265);    /* near-white bg */
+  --color-slate-900: oklch(96% 0.008 265);       /* light card bg */
+  --color-slate-800: oklch(90% 0.015 260);       /* light borders */
+  --color-slate-700: oklch(55% 0.04 257);        /* medium text */
+  --color-slate-600: oklch(50% 0.04 257);        /* secondary text */
+  --color-slate-500: oklch(45% 0.04 257);        /* muted text */
+  --color-slate-400: oklch(40% 0.04 257);        /* dark muted */
+  --color-slate-300: oklch(35% 0.035 255);       /* darker */
+  --color-slate-200: oklch(25% 0.03 255);        /* very dark */
+  --color-white: oklch(15% 0.04 265);            /* near-black text */
+
+  /* Accent colors: slightly darken for better contrast on light bg */
+  --color-blue-400: oklch(55% 0.2 255);
+  --color-blue-500: oklch(50% 0.22 260);
+  --color-emerald-400: oklch(55% 0.17 163);
+  --color-emerald-500: oklch(50% 0.17 162);
+  --color-red-400: oklch(55% 0.2 22);
+  --color-red-500: oklch(50% 0.24 25);
+  --color-amber-400: oklch(65% 0.18 84);
+  --color-amber-500: oklch(60% 0.18 70);
+  --color-violet-400: oklch(55% 0.2 293);
+  --color-violet-500: oklch(48% 0.25 293);
+  --color-violet-600: oklch(42% 0.28 293);
+  --color-cyan-400: oklch(55% 0.15 212);
+  --color-cyan-500: oklch(50% 0.14 215);
+}
+
+/* Fix white/5 and white/10 opacity backgrounds in light mode */
+[data-theme="light"] .hover\:bg-white\/5:hover {
+  background-color: oklch(0% 0 0 / 0.05);
+}
+
+/* Gradient adjustments for brand icon */
+[data-theme="light"] .from-blue-500 {
+  --tw-gradient-from: oklch(50% 0.22 260);
+}
+[data-theme="light"] .to-violet-600 {
+  --tw-gradient-to: oklch(42% 0.28 293);
+}
+
+/* Shadow adjustments */
+[data-theme="light"] .shadow-lg {
+  --tw-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.08), 0 4px 6px -4px rgb(0 0 0 / 0.08);
+}
+[data-theme="light"] .shadow-blue-500\/20 {
+  --tw-shadow-color: oklch(50% 0.22 260 / 0.15);
+}
+
+/* Ring color adjustments */
+[data-theme="light"] .ring-blue-500\/20 {
+  --tw-ring-color: oklch(50% 0.22 260 / 0.25);
+}
