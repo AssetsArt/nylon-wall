@@ -1172,3 +1172,103 @@ button {
     }
   }
 }
+
+/* === Nylon Wall: additional utility classes === */
+@layer utilities {
+  /* Spacing - margin */
+  .mb-1 { margin-bottom: calc(var(--spacing) * 1); }
+  .mb-4 { margin-bottom: calc(var(--spacing) * 4); }
+
+  /* Spacing - padding */
+  .p-4 { padding: calc(var(--spacing) * 4); }
+  .p-6 { padding: calc(var(--spacing) * 6); }
+  .p-8 { padding: calc(var(--spacing) * 8); }
+  .pb-1 { padding-bottom: calc(var(--spacing) * 1); }
+
+  /* Spacing - space-y */
+  .space-y-3 > :not(:first-child) {
+    margin-top: calc(var(--spacing) * 3);
+  }
+
+  /* Sizing - width */
+  .w-2 { width: calc(var(--spacing) * 2); }
+  .w-4 { width: calc(var(--spacing) * 4); }
+  .w-9 { width: calc(var(--spacing) * 9); }
+
+  /* Sizing - height */
+  .h-2 { height: calc(var(--spacing) * 2); }
+  .h-4 { height: calc(var(--spacing) * 4); }
+  .h-9 { height: calc(var(--spacing) * 9); }
+
+  /* Layout - grid */
+  .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  /* Layout - flex */
+  .items-end { align-items: flex-end; }
+
+  /* Background colors */
+  .bg-amber-400 { background-color: var(--color-amber-400); }
+  .bg-cyan-400 { background-color: var(--color-cyan-400); }
+  .bg-red-500\/5 { background-color: color-mix(in oklch, var(--color-red-500) 5%, transparent); }
+  .bg-slate-800\/50 { background-color: color-mix(in oklch, var(--color-slate-800) 50%, transparent); }
+  .bg-slate-900\/50 { background-color: color-mix(in oklch, var(--color-slate-900) 50%, transparent); }
+  .bg-slate-900\/80 { background-color: color-mix(in oklch, var(--color-slate-900) 80%, transparent); }
+
+  /* Border - directional */
+  .border-l-4 { border-left-width: 4px; }
+  .border-l-blue-500 { border-left-color: var(--color-blue-500); }
+  .border-l-violet-500 { border-left-color: var(--color-violet-500); }
+  .border-l-emerald-500 { border-left-color: var(--color-emerald-500); }
+  .border-l-amber-500 { border-left-color: var(--color-amber-500); }
+
+  /* Border - color with opacity */
+  .border-slate-700\/50 { border-color: color-mix(in oklch, var(--color-slate-700) 50%, transparent); }
+  .border-slate-800\/40 { border-color: color-mix(in oklch, var(--color-slate-800) 40%, transparent); }
+
+  /* Text color */
+  .text-blue-500 { color: var(--color-blue-500); }
+
+  /* Forms */
+  .placeholder-slate-600::placeholder { color: var(--color-slate-600); }
+
+  /* Disabled state */
+  .disabled\:opacity-50:disabled { opacity: 0.5; }
+
+  /* Focus states */
+  .focus\:border-blue-500\/50:focus { border-color: color-mix(in oklch, var(--color-blue-500) 50%, transparent); }
+  .focus\:border-blue-500\/60:focus { border-color: color-mix(in oklch, var(--color-blue-500) 60%, transparent); }
+  .focus\:outline-none:focus { outline: none; }
+  .focus\:ring-blue-500\/60:focus {
+    --tw-ring-color: color-mix(in oklch, var(--color-blue-500) 60%, transparent);
+    box-shadow: 0 0 0 3px var(--tw-ring-color);
+  }
+
+  /* Hover states - background */
+  .hover\:bg-blue-500\/20:hover { background-color: color-mix(in oklch, var(--color-blue-500) 20%, transparent); }
+  .hover\:bg-red-500\/10:hover { background-color: color-mix(in oklch, var(--color-red-500) 10%, transparent); }
+  .hover\:bg-slate-500\/20:hover { background-color: color-mix(in oklch, var(--color-slate-500) 20%, transparent); }
+  .hover\:bg-slate-800\/50:hover { background-color: color-mix(in oklch, var(--color-slate-800) 50%, transparent); }
+
+  /* Hover states - border */
+  .hover\:border-blue-500\/30:hover { border-color: color-mix(in oklch, var(--color-blue-500) 30%, transparent); }
+  .hover\:border-cyan-500\/30:hover { border-color: color-mix(in oklch, var(--color-cyan-500) 30%, transparent); }
+  .hover\:border-emerald-500\/30:hover { border-color: color-mix(in oklch, var(--color-emerald-500) 30%, transparent); }
+  .hover\:border-red-500\/30:hover { border-color: color-mix(in oklch, var(--color-red-500) 30%, transparent); }
+  .hover\:border-violet-500\/30:hover { border-color: color-mix(in oklch, var(--color-violet-500) 30%, transparent); }
+
+  /* Hover states - text */
+  .hover\:text-red-300:hover { color: oklch(70.4% 0.191 22.216); }
+
+  /* Responsive - sm (640px) */
+  @media (min-width: 640px) {
+    .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .sm\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+
+  /* Responsive - lg (1024px) */
+  @media (min-width: 1024px) {
+    .lg\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .lg\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+}
