@@ -227,11 +227,14 @@ pub fn Settings() -> Element {
                                 importing.set(true);
                                 spawn(async move {
                                     // Create a file input, trigger click, read file, and POST to restore
+                                    // Uses window focus event to detect cancel (file dialog closing without selection)
                                     let js_code = r#"
                                         var input = document.createElement('input');
                                         input.type = 'file';
                                         input.accept = '.json';
+                                        var handled = false;
                                         input.onchange = function(e) {
+                                            handled = true;
                                             var file = e.target.files[0];
                                             if (!file) { dioxus.send(''); return; }
                                             var reader = new FileReader();
@@ -239,6 +242,12 @@ pub fn Settings() -> Element {
                                             reader.onerror = function() { dioxus.send(''); };
                                             reader.readAsText(file);
                                         };
+                                        window.addEventListener('focus', function onFocus() {
+                                            window.removeEventListener('focus', onFocus);
+                                            setTimeout(function() {
+                                                if (!handled) { dioxus.send(''); }
+                                            }, 500);
+                                        });
                                         input.click();
                                     "#;
                                     let mut eval = document::eval(js_code);
