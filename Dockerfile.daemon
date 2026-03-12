@@ -16,18 +16,18 @@ RUN mkdir -p nylon-wall-daemon/src && echo "fn main() {}" > nylon-wall-daemon/sr
 COPY nylon-wall-ui/Cargo.toml nylon-wall-ui/Cargo.toml
 RUN mkdir -p nylon-wall-ui/src && echo "fn main() {}" > nylon-wall-ui/src/main.rs
 
-# Build eBPF binary (excluded from workspace, build directly)
+# eBPF MUST be --release (verifier rejects debug builds)
 RUN cd nylon-wall-ebpf && \
     cargo +nightly build \
       --target bpfel-unknown-none \
-      -Z build-std=core
+      -Z build-std=core \
+      --release
 
 # ── Daemon build stage ──────────────────────────────────
 FROM rust:1.93-bookworm AS builder
 
 WORKDIR /app
 
-# Copy entire workspace
 COPY Cargo.toml Cargo.lock ./
 COPY nylon-wall-common/ nylon-wall-common/
 COPY nylon-wall-daemon/ nylon-wall-daemon/
@@ -36,7 +36,7 @@ COPY nylon-wall-ui/src/ nylon-wall-ui/src/
 COPY nylon-wall-ui/Dioxus.toml nylon-wall-ui/Dioxus.toml
 RUN mkdir -p nylon-wall-ui/assets
 
-# Only build the daemon
+# Daemon in debug for faster dev builds
 RUN cargo build -p nylon-wall-daemon
 
 # ── Runtime stage ────────────────────────────────────────
@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/debug/nylon-wall-daemon /usr/local/bin/nylon-wall-daemon
-COPY --from=ebpf-builder /app/nylon-wall-ebpf/target/bpfel-unknown-none/debug/nylon-wall-ebpf /usr/lib/nylon-wall/nylon-wall-ebpf
+COPY --from=ebpf-builder /app/nylon-wall-ebpf/target/bpfel-unknown-none/release/nylon-wall-ebpf /usr/lib/nylon-wall/nylon-wall-ebpf
 
 EXPOSE 9450
 

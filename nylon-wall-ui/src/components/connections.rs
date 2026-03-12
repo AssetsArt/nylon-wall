@@ -136,7 +136,7 @@ pub fn Connections() -> Element {
             }
 
             // Connections table
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
+            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-4",
                 table { class: "w-full text-left",
                     thead { class: "bg-slate-900/80",
                         tr {
@@ -207,7 +207,7 @@ pub fn Connections() -> Element {
 
             // Pagination controls
             if total_pages > 1 {
-                div { class: "flex items-center justify-between mt-4 mb-4",
+                div { class: "flex items-center justify-between",
                     div { class: "flex items-center gap-1",
                         button {
                             class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
