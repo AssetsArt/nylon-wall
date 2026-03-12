@@ -2,8 +2,11 @@
 members = [
     "nylon-wall-common",
     "nylon-wall-daemon",
+    "nylon-wall-ui",
     # "nylon-wall-ebpf",  # Requires: cargo build --target bpfel-unknown-none -Z build-std=core
-    # "nylon-wall-ui",    # Requires: dioxus-cli
+]
+exclude = [
+    "nylon-wall-ebpf",
 ]
 resolver = "3"
 

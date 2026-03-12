@@ -12,7 +12,7 @@ pub enum Direction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
 #[repr(u8)]
-pub enum Action {
+pub enum RuleAction {
     Allow = 0,
     Drop = 1,
     Log = 2,
@@ -60,7 +60,7 @@ pub struct FirewallRule {
     pub interface: Option<String>,
 
     // Action
-    pub action: Action,
+    pub action: RuleAction,
     pub rate_limit_pps: Option<u32>,
 
     // Metadata

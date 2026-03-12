@@ -1,7 +1,7 @@
 #[cfg(feature = "std")]
 use crate::protocol::{Protocol, PortRange};
 #[cfg(feature = "std")]
-use crate::rule::Action;
+use crate::rule::RuleAction;
 
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -9,7 +9,7 @@ pub struct Zone {
     pub id: u32,
     pub name: String,
     pub interfaces: Vec<String>,
-    pub default_policy: Action,
+    pub default_policy: RuleAction,
 }
 
 #[cfg(feature = "std")]
@@ -27,7 +27,7 @@ pub struct NetworkPolicy {
     pub protocol: Option<Protocol>,
     pub schedule: Option<Schedule>,
 
-    pub action: Action,
+    pub action: RuleAction,
     pub log: bool,
     pub priority: u32,
 }
