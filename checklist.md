@@ -46,12 +46,13 @@
 ## Phase 2: Core Firewall
 
 ### eBPF Programs
-- [ ] `nylon-wall-ebpf/src/ingress.rs` - XDP ingress filter + rule evaluation
-- [ ] `nylon-wall-ebpf/src/egress.rs` - TC egress filter + rule evaluation
-- [ ] eBPF maps: `ingress_rules`, `egress_rules` (Array)
-- [ ] eBPF maps: `conntrack` (LRU HashMap)
-- [ ] eBPF maps: `events` (PerfEventArray)
-- [ ] Connection tracking logic ใน eBPF (NEW/ESTABLISHED/RELATED/INVALID)
+- [x] `nylon-wall-ebpf/src/ingress.rs` - XDP ingress filter + rule evaluation
+- [x] `nylon-wall-ebpf/src/egress.rs` - TC egress filter + rule evaluation
+- [x] eBPF maps: `ingress_rules`, `egress_rules` (Array)
+- [x] eBPF maps: `conntrack` (LRU HashMap)
+- [x] eBPF maps: `events` (PerfEventArray)
+- [x] Connection tracking logic ใน eBPF (NEW/ESTABLISHED/RELATED/INVALID)
+- [ ] ทดสอบ load/attach + packet filtering บน Linux
 
 ### Daemon - Rule Engine
 - [x] `nylon-wall-daemon/src/rule_engine.rs` - Rule CRUD + compile to eBPF maps
