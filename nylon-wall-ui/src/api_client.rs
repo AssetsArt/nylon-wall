@@ -31,7 +31,6 @@ pub async fn post<T: Serialize, R: DeserializeOwned>(path: &str, body: &T) -> Re
     resp.json::<R>().await.map_err(|e| e.to_string())
 }
 
-#[allow(dead_code)] // available for future edit forms
 pub async fn put<T: Serialize, R: DeserializeOwned>(path: &str, body: &T) -> Result<R, String> {
     let url = format!("{}{}", API_BASE, path);
     let resp = Request::put(&url)

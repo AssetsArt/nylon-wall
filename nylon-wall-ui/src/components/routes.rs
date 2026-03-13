@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 #[component]
 pub fn Routes() -> Element {
     let mut routes = use_resource(|| async { api_client::get::<Vec<Route>>("/routes").await });
-    let mut show_form = use_signal(|| false);
+    let mut editing = use_signal(|| None::<Route>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
 
@@ -18,8 +18,17 @@ pub fn Routes() -> Element {
                 subtitle: "Static routes and network paths".to_string(),
                 Btn {
                     color: Color::Blue,
-                    label: if show_form() { "Cancel".to_string() } else { "+ Add Route".to_string() },
-                    onclick: move |_| show_form.set(!show_form()),
+                    label: if editing().is_some() { "Cancel".to_string() } else { "+ Add Route".to_string() },
+                    onclick: move |_| {
+                        if editing().is_some() {
+                            editing.set(None);
+                        } else {
+                            editing.set(Some(Route {
+                                id: 0, destination: String::new(), gateway: None,
+                                interface: String::new(), metric: 100, table: 254, enabled: true,
+                            }));
+                        }
+                    },
                 }
             }
 
@@ -30,10 +39,12 @@ pub fn Routes() -> Element {
                 }
             }
 
-            if show_form() {
+            if let Some(route) = editing() {
                 RouteForm {
+                    key: "{route.id}",
+                    editing: route,
                     on_saved: move |_| {
-                        show_form.set(false);
+                        editing.set(None);
                         routes.restart();
                     }
                 }
@@ -90,13 +101,21 @@ pub fn Routes() -> Element {
                                         }
                                         td { class: TD_CLASS,
                                             {
+                                                let route_clone = route.clone();
                                                 let id = route.id;
                                                 let dest = route.destination.clone();
                                                 rsx! {
-                                                    DeleteBtn {
-                                                        onclick: move |_| {
-                                                            confirm_delete.set(Some((id, dest.clone())));
-                                                        },
+                                                    div { class: "flex items-center gap-1",
+                                                        EditBtn {
+                                                            onclick: move |_| {
+                                                                editing.set(Some(route_clone.clone()));
+                                                            },
+                                                        }
+                                                        DeleteBtn {
+                                                            onclick: move |_| {
+                                                                confirm_delete.set(Some((id, dest.clone())));
+                                                            },
+                                                        }
                                                     }
                                                 }
                                             }
@@ -125,18 +144,20 @@ pub fn Routes() -> Element {
 }
 
 #[component]
-fn RouteForm(on_saved: EventHandler<()>) -> Element {
-    let mut destination = use_signal(String::new);
-    let mut gateway = use_signal(String::new);
-    let mut interface = use_signal(String::new);
-    let mut metric = use_signal(|| "100".to_string());
+fn RouteForm(editing: Route, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut destination = use_signal(|| editing.destination.clone());
+    let mut gateway = use_signal(|| editing.gateway.clone().unwrap_or_default());
+    let mut interface = use_signal(|| editing.interface.clone());
+    let mut metric = use_signal(|| editing.metric.to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
     let on_submit = move |_| {
         submitting.set(true);
         let route = Route {
-            id: 0,
+            id: edit_id,
             destination: destination(),
             gateway: if gateway().is_empty() {
                 None
@@ -149,7 +170,12 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
             enabled: true,
         };
         spawn(async move {
-            match api_client::post::<Route, Route>("/routes", &route).await {
+            let result = if is_edit {
+                api_client::put::<Route, Route>(&format!("/routes/{}", edit_id), &route).await
+            } else {
+                api_client::post::<Route, Route>("/routes", &route).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -159,7 +185,9 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
 
     rsx! {
         FormCard {
-            h3 { class: "text-sm font-semibold text-white mb-4", "Add Static Route" }
+            h3 { class: "text-sm font-semibold text-white mb-4",
+                if is_edit { "Edit Route" } else { "Add Static Route" }
+            }
             if let Some(err) = error() {
                 ErrorAlert {
                     message: err,
@@ -195,7 +223,11 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Adding...".to_string() } else { "Add Route".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Adding...".to_string() }
+                } else {
+                    if is_edit { "Save Route".to_string() } else { "Add Route".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }
@@ -209,7 +241,7 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
 pub fn PolicyRoutes() -> Element {
     let mut policy_routes =
         use_resource(|| async { api_client::get::<Vec<PolicyRoute>>("/routes/policy").await });
-    let mut show_form = use_signal(|| false);
+    let mut editing = use_signal(|| None::<PolicyRoute>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
 
@@ -220,8 +252,17 @@ pub fn PolicyRoutes() -> Element {
                 subtitle: "Route traffic based on source, destination, port, or protocol".to_string(),
                 Btn {
                     color: Color::Purple,
-                    label: if show_form() { "Cancel".to_string() } else { "+ Add Policy Route".to_string() },
-                    onclick: move |_| show_form.set(!show_form()),
+                    label: if editing().is_some() { "Cancel".to_string() } else { "+ Add Policy Route".to_string() },
+                    onclick: move |_| {
+                        if editing().is_some() {
+                            editing.set(None);
+                        } else {
+                            editing.set(Some(PolicyRoute {
+                                id: 0, src_ip: None, dst_ip: None, src_port: None,
+                                protocol: None, route_table: 100, priority: 1000,
+                            }));
+                        }
+                    },
                 }
             }
 
@@ -232,10 +273,12 @@ pub fn PolicyRoutes() -> Element {
                 }
             }
 
-            if show_form() {
+            if let Some(pr) = editing() {
                 PolicyRouteForm {
+                    key: "{pr.id}",
+                    editing: pr,
                     on_saved: move |_| {
-                        show_form.set(false);
+                        editing.set(None);
                         policy_routes.restart();
                     }
                 }
@@ -294,12 +337,20 @@ pub fn PolicyRoutes() -> Element {
                                     td { class: "{TD_CLASS} text-cyan-400 font-mono", "{pr.route_table}" }
                                     td { class: TD_CLASS,
                                         {
+                                            let pr_clone = pr.clone();
                                             let id = pr.id;
                                             rsx! {
-                                                DeleteBtn {
-                                                    onclick: move |_| {
-                                                        confirm_delete.set(Some(id));
-                                                    },
+                                                div { class: "flex items-center gap-1",
+                                                    EditBtn {
+                                                        onclick: move |_| {
+                                                            editing.set(Some(pr_clone.clone()));
+                                                        },
+                                                    }
+                                                    DeleteBtn {
+                                                        onclick: move |_| {
+                                                            confirm_delete.set(Some(id));
+                                                        },
+                                                    }
                                                 }
                                             }
                                         }
@@ -324,13 +375,24 @@ pub fn PolicyRoutes() -> Element {
 }
 
 #[component]
-fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
-    let mut src_ip = use_signal(String::new);
-    let mut dst_ip = use_signal(String::new);
-    let mut src_port = use_signal(String::new);
-    let mut protocol = use_signal(|| "any".to_string());
-    let mut route_table = use_signal(|| "100".to_string());
-    let mut priority = use_signal(|| "1000".to_string());
+fn PolicyRouteForm(editing: PolicyRoute, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut src_ip = use_signal(|| editing.src_ip.clone().unwrap_or_default());
+    let mut dst_ip = use_signal(|| editing.dst_ip.clone().unwrap_or_default());
+    let mut src_port = use_signal(|| {
+        editing.src_port.map(|p| {
+            if p.start == p.end { p.start.to_string() } else { format!("{}:{}", p.start, p.end) }
+        }).unwrap_or_default()
+    });
+    let mut protocol = use_signal(|| match editing.protocol {
+        Some(Protocol::TCP) => "tcp".to_string(),
+        Some(Protocol::UDP) => "udp".to_string(),
+        Some(Protocol::ICMP) => "icmp".to_string(),
+        _ => "any".to_string(),
+    });
+    let mut route_table = use_signal(|| editing.route_table.to_string());
+    let mut priority = use_signal(|| editing.priority.to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -364,7 +426,7 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
         };
 
         let pr = PolicyRoute {
-            id: 0,
+            id: edit_id,
             src_ip: if src_ip().is_empty() {
                 None
             } else {
@@ -382,7 +444,12 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
         };
 
         spawn(async move {
-            match api_client::post::<PolicyRoute, PolicyRoute>("/routes/policy", &pr).await {
+            let result = if is_edit {
+                api_client::put::<PolicyRoute, PolicyRoute>(&format!("/routes/policy/{}", edit_id), &pr).await
+            } else {
+                api_client::post::<PolicyRoute, PolicyRoute>("/routes/policy", &pr).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -393,7 +460,9 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
     rsx! {
         FormCard {
             class: "rounded-xl border border-purple-500/20 bg-slate-900/50 p-6 mb-6",
-            h3 { class: "text-sm font-semibold text-white mb-4", "Add Policy Route" }
+            h3 { class: "text-sm font-semibold text-white mb-4",
+                if is_edit { "Edit Policy Route" } else { "Add Policy Route" }
+            }
             if let Some(err) = error() {
                 ErrorAlert {
                     message: err,
@@ -450,7 +519,11 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Purple,
-                label: if submitting() { "Adding...".to_string() } else { "Add Policy Route".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Adding...".to_string() }
+                } else {
+                    if is_edit { "Save Policy Route".to_string() } else { "Add Policy Route".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }

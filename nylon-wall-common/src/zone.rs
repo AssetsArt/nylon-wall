@@ -4,7 +4,7 @@ use crate::protocol::{PortRange, Protocol};
 use crate::rule::RuleAction;
 
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Zone {
     pub id: u32,
     pub name: String,
@@ -13,7 +13,7 @@ pub struct Zone {
 }
 
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NetworkPolicy {
     pub id: u32,
     pub name: String,
@@ -33,7 +33,7 @@ pub struct NetworkPolicy {
 }
 
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Schedule {
     pub days: Vec<u8>,      // 0=Mon, 6=Sun
     pub start_time: String, // "HH:MM"

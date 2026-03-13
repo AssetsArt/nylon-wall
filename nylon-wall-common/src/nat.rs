@@ -32,7 +32,7 @@ pub struct EbpfNatEntry {
 
 /// Full NAT entry for userspace
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct NatEntry {
     pub id: u32,
     pub nat_type: NatType,

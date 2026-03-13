@@ -43,7 +43,7 @@ pub struct EbpfRule {
 
 /// Full rule representation for userspace (with String fields, serde)
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct FirewallRule {
     pub id: u32,
     pub name: String,

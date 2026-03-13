@@ -55,8 +55,8 @@ pub fn Policies() -> Element {
     let mut zones = use_resource(|| async { api_client::get::<Vec<Zone>>("/zones").await });
     let mut policies =
         use_resource(|| async { api_client::get::<Vec<NetworkPolicy>>("/policies").await });
-    let mut show_zone_form = use_signal(|| false);
-    let mut show_policy_form = use_signal(|| false);
+    let mut editing_zone = use_signal(|| None::<Zone>);
+    let mut editing_policy = use_signal(|| None::<NetworkPolicy>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete_zone = use_signal(|| None::<(u32, String)>);
     let mut confirm_delete_policy = use_signal(|| None::<(u32, String)>);
@@ -120,15 +120,26 @@ pub fn Policies() -> Element {
                     title: "Zones".to_string(),
                     Btn {
                         color: Color::Blue,
-                        label: if show_zone_form() { "Cancel".to_string() } else { "+ Add Zone".to_string() },
-                        onclick: move |_| show_zone_form.set(!show_zone_form()),
+                        label: if editing_zone().is_some() { "Cancel".to_string() } else { "+ Add Zone".to_string() },
+                        onclick: move |_| {
+                            if editing_zone().is_some() {
+                                editing_zone.set(None);
+                            } else {
+                                editing_zone.set(Some(Zone {
+                                    id: 0, name: String::new(), interfaces: vec![],
+                                    default_policy: RuleAction::Allow,
+                                }));
+                            }
+                        },
                     }
                 }
 
-                if show_zone_form() {
+                if let Some(zone) = editing_zone() {
                     ZoneForm {
+                        key: "{zone.id}",
+                        editing: zone,
                         on_saved: move |_| {
-                            show_zone_form.set(false);
+                            editing_zone.set(None);
                             zones.restart();
                         }
                     }
@@ -143,6 +154,7 @@ pub fn Policies() -> Element {
                                     let (border_cls, _icon_bg, icon_color) = ZONE_COLORS[color_idx];
                                     let card_cls = format!("rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 border-l-4 {border_cls}");
                                     let zone_id = zone.id;
+                                    let zone_clone = zone.clone();
                                     rsx! {
                                         div { class: "{card_cls}", key: "{zone.id}",
                                             div { class: "flex items-center justify-between mb-3",
@@ -151,6 +163,11 @@ pub fn Policies() -> Element {
                                                     Badge {
                                                         color: action_color(&zone.default_policy),
                                                         label: action_label(&zone.default_policy).to_string(),
+                                                    }
+                                                    EditBtn {
+                                                        onclick: move |_| {
+                                                            editing_zone.set(Some(zone_clone.clone()));
+                                                        },
                                                     }
                                                     DeleteBtn {
                                                         onclick: {
@@ -203,15 +220,29 @@ pub fn Policies() -> Element {
                     title: "Inter-Zone Policies".to_string(),
                     Btn {
                         color: Color::Blue,
-                        label: if show_policy_form() { "Cancel".to_string() } else { "+ Add Policy".to_string() },
-                        onclick: move |_| show_policy_form.set(!show_policy_form()),
+                        label: if editing_policy().is_some() { "Cancel".to_string() } else { "+ Add Policy".to_string() },
+                        onclick: move |_| {
+                            if editing_policy().is_some() {
+                                editing_policy.set(None);
+                            } else {
+                                editing_policy.set(Some(NetworkPolicy {
+                                    id: 0, name: String::new(), enabled: true,
+                                    from_zone: String::new(), to_zone: String::new(),
+                                    src_ip: None, dst_ip: None, dst_port: None,
+                                    protocol: None, schedule: None,
+                                    action: RuleAction::Allow, log: false, priority: 100,
+                                }));
+                            }
+                        },
                     }
                 }
 
-                if show_policy_form() {
+                if let Some(policy) = editing_policy() {
                     PolicyForm {
+                        key: "{policy.id}",
+                        editing: policy,
                         on_saved: move |_| {
-                            show_policy_form.set(false);
+                            editing_policy.set(None);
                             policies.restart();
                         }
                     }
@@ -281,13 +312,21 @@ pub fn Policies() -> Element {
                                         }
                                         td { class: TD_CLASS,
                                             {
+                                                let policy_clone = policy.clone();
                                                 let policy_id = policy.id;
                                                 let pname = policy.name.clone();
                                                 rsx! {
-                                                    DeleteBtn {
-                                                        onclick: move |_| {
-                                                            confirm_delete_policy.set(Some((policy_id, pname.clone())));
-                                                        },
+                                                    div { class: "flex items-center gap-1",
+                                                        EditBtn {
+                                                            onclick: move |_| {
+                                                                editing_policy.set(Some(policy_clone.clone()));
+                                                            },
+                                                        }
+                                                        DeleteBtn {
+                                                            onclick: move |_| {
+                                                                confirm_delete_policy.set(Some((policy_id, pname.clone())));
+                                                            },
+                                                        }
                                                     }
                                                 }
                                             }
@@ -313,17 +352,22 @@ pub fn Policies() -> Element {
 }
 
 #[component]
-fn ZoneForm(on_saved: EventHandler<()>) -> Element {
-    let mut name = use_signal(String::new);
-    let mut interfaces = use_signal(String::new);
-    let mut default_policy = use_signal(|| "Allow".to_string());
+fn ZoneForm(editing: Zone, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut name = use_signal(|| editing.name.clone());
+    let mut interfaces = use_signal(|| editing.interfaces.join(", "));
+    let mut default_policy = use_signal(|| match editing.default_policy {
+        RuleAction::Drop => "Drop".to_string(),
+        _ => "Allow".to_string(),
+    });
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
     let on_submit = move |_| {
         submitting.set(true);
         let zone = Zone {
-            id: 0,
+            id: edit_id,
             name: name(),
             interfaces: interfaces()
                 .split(',')
@@ -336,7 +380,12 @@ fn ZoneForm(on_saved: EventHandler<()>) -> Element {
             },
         };
         spawn(async move {
-            match api_client::post::<Zone, Zone>("/zones", &zone).await {
+            let result = if is_edit {
+                api_client::put::<Zone, Zone>(&format!("/zones/{}", edit_id), &zone).await
+            } else {
+                api_client::post::<Zone, Zone>("/zones", &zone).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -346,7 +395,9 @@ fn ZoneForm(on_saved: EventHandler<()>) -> Element {
 
     rsx! {
         FormCard {
-            h3 { class: "text-sm font-semibold text-white mb-4", "Create New Zone" }
+            h3 { class: "text-sm font-semibold text-white mb-4",
+                if is_edit { "Edit Zone" } else { "Create New Zone" }
+            }
             if let Some(err) = error() {
                 ErrorAlert { message: err, on_dismiss: move |_| error.set(None) }
             }
@@ -373,7 +424,11 @@ fn ZoneForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Creating...".to_string() } else { "Create Zone".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Creating...".to_string() }
+                } else {
+                    if is_edit { "Save Zone".to_string() } else { "Create Zone".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }
@@ -382,23 +437,51 @@ fn ZoneForm(on_saved: EventHandler<()>) -> Element {
 }
 
 #[component]
-fn PolicyForm(on_saved: EventHandler<()>) -> Element {
-    let mut name = use_signal(String::new);
-    let mut from_zone = use_signal(String::new);
-    let mut to_zone = use_signal(String::new);
-    let mut protocol = use_signal(|| "Any".to_string());
-    let mut dst_port = use_signal(String::new);
-    let mut action = use_signal(|| "Allow".to_string());
-    let mut priority = use_signal(|| "100".to_string());
-    let mut log = use_signal(|| false);
+fn PolicyForm(editing: NetworkPolicy, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut name = use_signal(|| editing.name.clone());
+    let mut from_zone = use_signal(|| editing.from_zone.clone());
+    let mut to_zone = use_signal(|| editing.to_zone.clone());
+    let mut protocol = use_signal(|| match editing.protocol {
+        Some(Protocol::TCP) => "TCP".to_string(),
+        Some(Protocol::UDP) => "UDP".to_string(),
+        Some(Protocol::ICMP) => "ICMP".to_string(),
+        _ => "Any".to_string(),
+    });
+    let mut dst_port = use_signal(|| {
+        editing.dst_port.as_ref().map(|p| {
+            if p.start == p.end { p.start.to_string() } else { format!("{}-{}", p.start, p.end) }
+        }).unwrap_or_default()
+    });
+    let mut action = use_signal(|| match editing.action {
+        RuleAction::Drop => "Drop".to_string(),
+        RuleAction::Log => "Log".to_string(),
+        _ => "Allow".to_string(),
+    });
+    let mut priority = use_signal(|| editing.priority.to_string());
+    let mut log = use_signal(|| editing.log);
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
     // Schedule fields
-    let mut enable_schedule = use_signal(|| false);
-    let mut sched_days = use_signal(|| vec![false; 7]);
-    let mut sched_start = use_signal(|| "08:00".to_string());
-    let mut sched_end = use_signal(|| "18:00".to_string());
+    let has_schedule = editing.schedule.is_some();
+    let mut enable_schedule = use_signal(|| has_schedule);
+    let mut sched_days = use_signal(|| {
+        let mut days = vec![false; 7];
+        if let Some(ref sched) = editing.schedule {
+            for &d in &sched.days {
+                if (d as usize) < 7 { days[d as usize] = true; }
+            }
+        }
+        days
+    });
+    let mut sched_start = use_signal(|| {
+        editing.schedule.as_ref().map(|s| s.start_time.clone()).unwrap_or("08:00".to_string())
+    });
+    let mut sched_end = use_signal(|| {
+        editing.schedule.as_ref().map(|s| s.end_time.clone()).unwrap_or("18:00".to_string())
+    });
 
     let on_submit = move |_| {
         submitting.set(true);
@@ -426,7 +509,7 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
         };
 
         let policy = NetworkPolicy {
-            id: 0,
+            id: edit_id,
             name: name(),
             enabled: true,
             from_zone: from_zone(),
@@ -454,7 +537,12 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
             priority: priority().parse().unwrap_or(100),
         };
         spawn(async move {
-            match api_client::post::<NetworkPolicy, NetworkPolicy>("/policies", &policy).await {
+            let result = if is_edit {
+                api_client::put::<NetworkPolicy, NetworkPolicy>(&format!("/policies/{}", edit_id), &policy).await
+            } else {
+                api_client::post::<NetworkPolicy, NetworkPolicy>("/policies", &policy).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -464,7 +552,9 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
 
     rsx! {
         FormCard {
-            h3 { class: "text-sm font-semibold text-white mb-4", "Create New Policy" }
+            h3 { class: "text-sm font-semibold text-white mb-4",
+                if is_edit { "Edit Policy" } else { "Create New Policy" }
+            }
             if let Some(err) = error() {
                 ErrorAlert { message: err, on_dismiss: move |_| error.set(None) }
             }
@@ -601,7 +691,11 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
 
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Creating...".to_string() } else { "Create Policy".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Creating...".to_string() }
+                } else {
+                    if is_edit { "Save Policy".to_string() } else { "Create Policy".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }

@@ -9,7 +9,7 @@ use dioxus_free_icons::icons::ld_icons::*;
 #[component]
 pub fn Nat() -> Element {
     let mut entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
-    let mut show_form = use_signal(|| false);
+    let mut editing = use_signal(|| None::<NatEntry>);
     let mut show_wizard = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
@@ -34,17 +34,26 @@ pub fn Nat() -> Element {
                             label: "Port Forward Wizard".to_string(),
                             onclick: move |_| {
                                 show_wizard.set(true);
-                                show_form.set(false);
+                                editing.set(None);
                             },
                             icon: rsx! { Icon { width: 12, height: 12, icon: LdArrowRightLeft } },
                         }
                     }
                     Btn {
                         color: Color::Blue,
-                        label: if show_form() { "Cancel".to_string() } else { "+ New NAT Entry".to_string() },
+                        label: if editing().is_some() { "Cancel".to_string() } else { "+ New NAT Entry".to_string() },
                         onclick: move |_| {
-                            show_form.set(!show_form());
-                            if show_form() { show_wizard.set(false); }
+                            if editing().is_some() {
+                                editing.set(None);
+                            } else {
+                                editing.set(Some(NatEntry {
+                                    id: 0, nat_type: NatType::SNAT, enabled: true,
+                                    src_network: None, dst_network: None, protocol: None,
+                                    dst_port: None, in_interface: None, out_interface: None,
+                                    translate_ip: None, translate_port: None,
+                                }));
+                                show_wizard.set(false);
+                            }
                         },
                     }
                 }
@@ -66,10 +75,12 @@ pub fn Nat() -> Element {
                 }
             }
 
-            if show_form() {
+            if let Some(entry) = editing() {
                 NatForm {
+                    key: "{entry.id}",
+                    editing: entry,
                     on_saved: move |_| {
-                        show_form.set(false);
+                        editing.set(None);
                         entries.restart();
                     }
                 }
@@ -142,12 +153,20 @@ pub fn Nat() -> Element {
                                     }
                                     td { class: TD_CLASS,
                                         {
+                                            let entry_clone = entry.clone();
                                             let id = entry.id;
                                             rsx! {
-                                                DeleteBtn {
-                                                    onclick: move |_| {
-                                                        confirm_delete.set(Some(id));
-                                                    },
+                                                div { class: "flex items-center gap-1",
+                                                    EditBtn {
+                                                        onclick: move |_| {
+                                                            editing.set(Some(entry_clone.clone()));
+                                                        },
+                                                    }
+                                                    DeleteBtn {
+                                                        onclick: move |_| {
+                                                            confirm_delete.set(Some(id));
+                                                        },
+                                                    }
                                                 }
                                             }
                                         }
@@ -373,19 +392,25 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
 // === NAT Form (advanced) ===
 
 #[component]
-fn NatForm(on_saved: EventHandler<()>) -> Element {
-    let mut nat_type = use_signal(|| "SNAT".to_string());
-    let mut src_network = use_signal(String::new);
-    let mut dst_network = use_signal(String::new);
-    let mut translate_ip = use_signal(String::new);
-    let mut out_interface = use_signal(String::new);
+fn NatForm(editing: NatEntry, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut nat_type = use_signal(|| match editing.nat_type {
+        NatType::DNAT => "DNAT".to_string(),
+        NatType::Masquerade => "Masquerade".to_string(),
+        NatType::SNAT => "SNAT".to_string(),
+    });
+    let mut src_network = use_signal(|| editing.src_network.clone().unwrap_or_default());
+    let mut dst_network = use_signal(|| editing.dst_network.clone().unwrap_or_default());
+    let mut translate_ip = use_signal(|| editing.translate_ip.clone().unwrap_or_default());
+    let mut out_interface = use_signal(|| editing.out_interface.clone().unwrap_or_default());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
     let on_submit = move |_| {
         submitting.set(true);
         let entry = NatEntry {
-            id: 0,
+            id: edit_id,
             nat_type: match nat_type().as_str() {
                 "DNAT" => NatType::DNAT,
                 "Masquerade" => NatType::Masquerade,
@@ -418,7 +443,12 @@ fn NatForm(on_saved: EventHandler<()>) -> Element {
             translate_port: None,
         };
         spawn(async move {
-            match api_client::post::<NatEntry, NatEntry>("/nat", &entry).await {
+            let result = if is_edit {
+                api_client::put::<NatEntry, NatEntry>(&format!("/nat/{}", edit_id), &entry).await
+            } else {
+                api_client::post::<NatEntry, NatEntry>("/nat", &entry).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -428,7 +458,9 @@ fn NatForm(on_saved: EventHandler<()>) -> Element {
 
     rsx! {
         FormCard {
-            h3 { class: "text-sm font-semibold text-white mb-4", "Create NAT Entry" }
+            h3 { class: "text-sm font-semibold text-white mb-4",
+                if is_edit { "Edit NAT Entry" } else { "Create NAT Entry" }
+            }
             if let Some(err) = error() {
                 ErrorAlert {
                     message: err,
@@ -475,7 +507,11 @@ fn NatForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Creating...".to_string() } else { "Create Entry".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Creating...".to_string() }
+                } else {
+                    if is_edit { "Save Entry".to_string() } else { "Create Entry".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }

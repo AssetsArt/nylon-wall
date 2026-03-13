@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 #[component]
 pub fn Rules() -> Element {
     let mut rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
-    let mut show_form = use_signal(|| false);
+    let mut editing = use_signal(|| None::<FirewallRule>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
 
@@ -18,8 +18,20 @@ pub fn Rules() -> Element {
                 subtitle: "Manage ingress and egress filtering rules".to_string(),
                 Btn {
                     color: Color::Blue,
-                    label: if show_form() { "Cancel".to_string() } else { "+ New Rule".to_string() },
-                    onclick: move |_| show_form.set(!show_form()),
+                    label: if editing().is_some() { "Cancel".to_string() } else { "+ New Rule".to_string() },
+                    onclick: move |_| {
+                        if editing().is_some() {
+                            editing.set(None);
+                        } else {
+                            editing.set(Some(FirewallRule {
+                                id: 0, name: String::new(), priority: 100,
+                                direction: Direction::Ingress, enabled: true,
+                                src_ip: None, dst_ip: None, src_port: None, dst_port: None,
+                                protocol: None, interface: None, action: RuleAction::Allow,
+                                rate_limit_pps: None, hit_count: 0, created_at: 0, updated_at: 0,
+                            }));
+                        }
+                    },
                 }
             }
 
@@ -30,10 +42,12 @@ pub fn Rules() -> Element {
                 }
             }
 
-            if show_form() {
+            if let Some(rule) = editing() {
                 RuleForm {
+                    key: "{rule.id}",
+                    editing: rule,
                     on_saved: move |_| {
-                        show_form.set(false);
+                        editing.set(None);
                         rules.restart();
                     }
                 }
@@ -137,13 +151,21 @@ pub fn Rules() -> Element {
                                     }
                                     td { class: TD_CLASS,
                                         {
+                                            let rule_clone = rule.clone();
                                             let id = rule.id;
                                             let name = rule.name.clone();
                                             rsx! {
-                                                DeleteBtn {
-                                                    onclick: move |_| {
-                                                        confirm_delete.set(Some((id, name.clone())));
-                                                    },
+                                                div { class: "flex items-center gap-1",
+                                                    EditBtn {
+                                                        onclick: move |_| {
+                                                            editing.set(Some(rule_clone.clone()));
+                                                        },
+                                                    }
+                                                    DeleteBtn {
+                                                        onclick: move |_| {
+                                                            confirm_delete.set(Some((id, name.clone())));
+                                                        },
+                                                    }
                                                 }
                                             }
                                         }
@@ -168,22 +190,40 @@ pub fn Rules() -> Element {
 }
 
 #[component]
-fn RuleForm(on_saved: EventHandler<()>) -> Element {
-    let mut name = use_signal(String::new);
-    let mut direction = use_signal(|| "Ingress".to_string());
-    let mut protocol = use_signal(|| "Any".to_string());
-    let mut src_ip = use_signal(String::new);
-    let mut dst_ip = use_signal(String::new);
-    let mut dst_port = use_signal(String::new);
-    let mut action = use_signal(|| "Allow".to_string());
-    let mut priority = use_signal(|| "100".to_string());
+fn RuleForm(editing: FirewallRule, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut name = use_signal(|| editing.name.clone());
+    let mut direction = use_signal(|| match editing.direction {
+        Direction::Egress => "Egress".to_string(),
+        Direction::Ingress => "Ingress".to_string(),
+    });
+    let mut protocol = use_signal(|| match editing.protocol {
+        Some(Protocol::TCP) => "TCP".to_string(),
+        Some(Protocol::UDP) => "UDP".to_string(),
+        Some(Protocol::ICMP) => "ICMP".to_string(),
+        _ => "Any".to_string(),
+    });
+    let mut src_ip = use_signal(|| editing.src_ip.clone().unwrap_or_default());
+    let mut dst_ip = use_signal(|| editing.dst_ip.clone().unwrap_or_default());
+    let mut dst_port = use_signal(|| {
+        editing.dst_port.as_ref().map(|p| {
+            if p.start == p.end { p.start.to_string() } else { format!("{}-{}", p.start, p.end) }
+        }).unwrap_or_default()
+    });
+    let mut action = use_signal(|| match editing.action {
+        RuleAction::Drop => "Drop".to_string(),
+        RuleAction::Log => "Log".to_string(),
+        _ => "Allow".to_string(),
+    });
+    let mut priority = use_signal(|| editing.priority.to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
     let on_submit = move |_| {
         submitting.set(true);
         let rule = FirewallRule {
-            id: 0,
+            id: edit_id,
             name: name(),
             priority: priority().parse().unwrap_or(100),
             direction: match direction().as_str() {
@@ -225,7 +265,12 @@ fn RuleForm(on_saved: EventHandler<()>) -> Element {
             updated_at: 0,
         };
         spawn(async move {
-            match api_client::post::<FirewallRule, FirewallRule>("/rules", &rule).await {
+            let result = if is_edit {
+                api_client::put::<FirewallRule, FirewallRule>(&format!("/rules/{}", edit_id), &rule).await
+            } else {
+                api_client::post::<FirewallRule, FirewallRule>("/rules", &rule).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -235,7 +280,9 @@ fn RuleForm(on_saved: EventHandler<()>) -> Element {
 
     rsx! {
         FormCard {
-            h3 { class: "text-sm font-semibold text-white mb-4", "Create New Rule" }
+            h3 { class: "text-sm font-semibold text-white mb-4",
+                if is_edit { "Edit Rule" } else { "Create New Rule" }
+            }
             if let Some(err) = error() {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
@@ -305,7 +352,11 @@ fn RuleForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Creating...".to_string() } else { "Create Rule".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Creating...".to_string() }
+                } else {
+                    if is_edit { "Save Rule".to_string() } else { "Create Rule".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }

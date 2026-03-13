@@ -1,6 +1,6 @@
 /// DHCP server pool configuration
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DhcpPool {
     pub id: u32,
     pub interface: String,
@@ -38,7 +38,7 @@ pub enum DhcpLeaseState {
 
 /// Static DHCP reservation (MAC → IP mapping)
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DhcpReservation {
     pub id: u32,
     pub pool_id: u32,
@@ -49,7 +49,7 @@ pub struct DhcpReservation {
 
 /// DHCP client configuration for a WAN interface
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DhcpClientConfig {
     pub id: u32,
     pub interface: String,

@@ -63,6 +63,18 @@ pub fn IconBtn(
 }
 
 #[component]
+pub fn EditBtn(onclick: EventHandler<MouseEvent>) -> Element {
+    rsx! {
+        button {
+            class: "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-slate-400 hover:bg-slate-500/10 transition-colors",
+            onclick: move |e| onclick.call(e),
+            Icon { width: 12, height: 12, icon: LdPencil }
+            "Edit"
+        }
+    }
+}
+
+#[component]
 pub fn DeleteBtn(onclick: EventHandler<MouseEvent>) -> Element {
     rsx! {
         button {

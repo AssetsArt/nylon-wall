@@ -2,7 +2,7 @@
 use crate::protocol::Protocol;
 
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Route {
     pub id: u32,
     pub destination: String, // CIDR e.g. "10.0.0.0/8"
@@ -14,7 +14,7 @@ pub struct Route {
 }
 
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PolicyRoute {
     pub id: u32,
     pub src_ip: Option<String>,

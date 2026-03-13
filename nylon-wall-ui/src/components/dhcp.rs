@@ -137,7 +137,7 @@ pub fn Dhcp() -> Element {
 fn DhcpPoolsTab() -> Element {
     let mut pools =
         use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
-    let mut show_form = use_signal(|| false);
+    let mut editing = use_signal(|| None::<DhcpPool>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
 
@@ -150,8 +150,20 @@ fn DhcpPoolsTab() -> Element {
                     RefreshBtn { onclick: move |_| pools.restart() }
                     Btn {
                         color: Color::Blue,
-                        label: if show_form() { "Cancel".to_string() } else { "+ New Pool".to_string() },
-                        onclick: move |_| show_form.set(!show_form()),
+                        label: if editing().is_some() { "Cancel".to_string() } else { "+ New Pool".to_string() },
+                        onclick: move |_| {
+                            if editing().is_some() {
+                                editing.set(None);
+                            } else {
+                                editing.set(Some(DhcpPool {
+                                    id: 0, interface: "eth1".to_string(), enabled: true,
+                                    subnet: String::new(), range_start: String::new(),
+                                    range_end: String::new(), gateway: None,
+                                    dns_servers: vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()],
+                                    domain_name: None, lease_time: 3600,
+                                }));
+                            }
+                        },
                     }
                 }
             }
@@ -163,10 +175,12 @@ fn DhcpPoolsTab() -> Element {
                 }
             }
 
-            if show_form() {
+            if let Some(pool) = editing() {
                 DhcpPoolForm {
+                    key: "{pool.id}",
+                    editing: pool,
                     on_saved: move |_| {
-                        show_form.set(false);
+                        editing.set(None);
                         pools.restart();
                     }
                 }
@@ -198,6 +212,7 @@ fn DhcpPoolsTab() -> Element {
                             {
                                 let pool_id = pool.id;
                                 let is_enabled = pool.enabled;
+                                let pool_clone = pool.clone();
                                 rsx! {
                                     div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-slate-700/60 transition-colors",
                                         key: "{pool.id}",
@@ -261,7 +276,10 @@ fn DhcpPoolsTab() -> Element {
                                         }
 
                                         // Card footer
-                                        div { class: "flex items-center justify-end pt-3 border-t border-slate-800/40",
+                                        div { class: "flex items-center justify-end gap-1 pt-3 border-t border-slate-800/40",
+                                            EditBtn {
+                                                onclick: move |_| editing.set(Some(pool_clone.clone())),
+                                            }
                                             {
                                                 let id = pool.id;
                                                 rsx! {
@@ -286,7 +304,15 @@ fn DhcpPoolsTab() -> Element {
                             Btn {
                                 color: Color::Blue,
                                 label: "+ Create First Pool",
-                                onclick: move |_| show_form.set(true),
+                                onclick: move |_| {
+                                    editing.set(Some(DhcpPool {
+                                        id: 0, interface: "eth1".to_string(), enabled: true,
+                                        subnet: String::new(), range_start: String::new(),
+                                        range_end: String::new(), gateway: None,
+                                        dns_servers: vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()],
+                                        domain_name: None, lease_time: 3600,
+                                    }));
+                                },
                             }
                         }
                     }
@@ -335,7 +361,7 @@ fn DhcpLeasesTab() -> Element {
     let mut reservations = use_resource(|| async {
         api_client::get::<Vec<DhcpReservation>>("/dhcp/reservations").await
     });
-    let mut show_reservation_form = use_signal(|| false);
+    let mut editing_reservation = use_signal(|| None::<DhcpReservation>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_release = use_signal(|| None::<String>); // MAC to release
 
@@ -492,15 +518,26 @@ fn DhcpLeasesTab() -> Element {
                 title: "Static Reservations",
                 Btn {
                     color: Color::Blue,
-                    label: if show_reservation_form() { "Cancel".to_string() } else { "+ New Reservation".to_string() },
-                    onclick: move |_| show_reservation_form.set(!show_reservation_form()),
+                    label: if editing_reservation().is_some() { "Cancel".to_string() } else { "+ New Reservation".to_string() },
+                    onclick: move |_| {
+                        if editing_reservation().is_some() {
+                            editing_reservation.set(None);
+                        } else {
+                            editing_reservation.set(Some(DhcpReservation {
+                                id: 0, pool_id: 1, mac: String::new(),
+                                ip: String::new(), hostname: None,
+                            }));
+                        }
+                    },
                 }
             }
 
-            if show_reservation_form() {
+            if let Some(res) = editing_reservation() {
                 DhcpReservationForm {
+                    key: "{res.id}",
+                    editing: res,
                     on_saved: move |_| {
-                        show_reservation_form.set(false);
+                        editing_reservation.set(None);
                         reservations.restart();
                     }
                 }
@@ -530,19 +567,27 @@ fn DhcpLeasesTab() -> Element {
                                     td { class: "{TD_CLASS} text-slate-400", "#{res.pool_id}" }
                                     td { class: TD_CLASS,
                                         {
+                                            let res_clone = res.clone();
                                             let id = res.id;
                                             rsx! {
-                                                button {
-                                                    class: "p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors",
-                                                    onclick: move |_| {
-                                                        spawn(async move {
-                                                            match api_client::delete(&format!("/dhcp/reservations/{}", id)).await {
-                                                                Ok(_) => reservations.restart(),
-                                                                Err(e) => error_msg.set(Some(e)),
-                                                            }
-                                                        });
-                                                    },
-                                                    Icon { width: 13, height: 13, icon: LdTrash2 }
+                                                div { class: "flex items-center gap-1",
+                                                    EditBtn {
+                                                        onclick: move |_| {
+                                                            editing_reservation.set(Some(res_clone.clone()));
+                                                        },
+                                                    }
+                                                    button {
+                                                        class: "p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors",
+                                                        onclick: move |_| {
+                                                            spawn(async move {
+                                                                match api_client::delete(&format!("/dhcp/reservations/{}", id)).await {
+                                                                    Ok(_) => reservations.restart(),
+                                                                    Err(e) => error_msg.set(Some(e)),
+                                                                }
+                                                            });
+                                                        },
+                                                        Icon { width: 13, height: 13, icon: LdTrash2 }
+                                                    }
                                                 }
                                             }
                                         }
@@ -560,7 +605,12 @@ fn DhcpLeasesTab() -> Element {
                         Btn {
                             color: Color::Blue,
                             label: "+ Create Reservation",
-                            onclick: move |_| show_reservation_form.set(true),
+                            onclick: move |_| {
+                                editing_reservation.set(Some(DhcpReservation {
+                                    id: 0, pool_id: 1, mac: String::new(),
+                                    ip: String::new(), hostname: None,
+                                }));
+                            },
                         }
                     }
                 },
@@ -602,7 +652,7 @@ fn DhcpClientTab() -> Element {
     let mut statuses = use_resource(|| async {
         api_client::get::<Vec<DhcpClientStatus>>("/dhcp/clients/status").await
     });
-    let mut show_form = use_signal(|| false);
+    let mut editing = use_signal(|| None::<DhcpClientConfig>);
     let mut error_msg = use_signal(|| None::<String>);
 
     rsx! {
@@ -614,8 +664,17 @@ fn DhcpClientTab() -> Element {
                     RefreshBtn { onclick: move |_| { clients.restart(); statuses.restart(); } }
                     Btn {
                         color: Color::Blue,
-                        label: if show_form() { "Cancel".to_string() } else { "+ Add WAN Client".to_string() },
-                        onclick: move |_| show_form.set(!show_form()),
+                        label: if editing().is_some() { "Cancel".to_string() } else { "+ Add WAN Client".to_string() },
+                        onclick: move |_| {
+                            if editing().is_some() {
+                                editing.set(None);
+                            } else {
+                                editing.set(Some(DhcpClientConfig {
+                                    id: 0, interface: "eth0".to_string(),
+                                    enabled: true, hostname: None,
+                                }));
+                            }
+                        },
                     }
                 }
             }
@@ -627,10 +686,12 @@ fn DhcpClientTab() -> Element {
                 }
             }
 
-            if show_form() {
+            if let Some(config) = editing() {
                 DhcpClientForm {
+                    key: "{config.id}",
+                    editing: config,
                     on_saved: move |_| {
-                        show_form.set(false);
+                        editing.set(None);
                         clients.restart();
                         statuses.restart();
                     }
@@ -653,6 +714,7 @@ fn DhcpClientTab() -> Element {
                                     let iface2 = config.interface.clone();
                                     let config_id = config.id;
                                     let is_enabled = config.enabled;
+                                    let config_clone = config.clone();
                                     rsx! {
                                         div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-slate-700/60 transition-colors",
                                             key: "{config.id}",
@@ -758,7 +820,12 @@ fn DhcpClientTab() -> Element {
                                                         });
                                                     },
                                                 }
-                                                div { class: "ml-auto",
+                                                div { class: "ml-auto flex items-center gap-1",
+                                                    EditBtn {
+                                                        onclick: move |_| {
+                                                            editing.set(Some(config_clone.clone()));
+                                                        },
+                                                    }
                                                     DeleteBtn {
                                                         onclick: move |_| {
                                                             spawn(async move {
@@ -786,7 +853,12 @@ fn DhcpClientTab() -> Element {
                         Btn {
                             color: Color::Blue,
                             label: "+ Add WAN Client",
-                            onclick: move |_| show_form.set(true),
+                            onclick: move |_| {
+                                editing.set(Some(DhcpClientConfig {
+                                    id: 0, interface: "eth0".to_string(),
+                                    enabled: true, hostname: None,
+                                }));
+                            },
                         }
                     }
                 },
@@ -825,15 +897,17 @@ fn DhcpClientTab() -> Element {
 // === Forms ===
 
 #[component]
-fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
-    let mut interface = use_signal(|| "eth1".to_string());
-    let mut subnet = use_signal(String::new);
-    let mut range_start = use_signal(String::new);
-    let mut range_end = use_signal(String::new);
-    let mut gateway = use_signal(String::new);
-    let mut dns_servers = use_signal(|| "8.8.8.8, 8.8.4.4".to_string());
-    let mut domain_name = use_signal(String::new);
-    let mut lease_time = use_signal(|| "3600".to_string());
+fn DhcpPoolForm(editing: DhcpPool, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut interface = use_signal(|| editing.interface.clone());
+    let mut subnet = use_signal(|| editing.subnet.clone());
+    let mut range_start = use_signal(|| editing.range_start.clone());
+    let mut range_end = use_signal(|| editing.range_end.clone());
+    let mut gateway = use_signal(|| editing.gateway.clone().unwrap_or_default());
+    let mut dns_servers = use_signal(|| editing.dns_servers.join(", "));
+    let mut domain_name = use_signal(|| editing.domain_name.clone().unwrap_or_default());
+    let mut lease_time = use_signal(|| editing.lease_time.to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -862,7 +936,7 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
             .collect();
 
         let pool = DhcpPool {
-            id: 0,
+            id: edit_id,
             interface: interface(),
             enabled: true,
             subnet: subnet(),
@@ -883,7 +957,12 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
         };
 
         spawn(async move {
-            match api_client::post::<DhcpPool, DhcpPool>("/dhcp/pools", &pool).await {
+            let result = if is_edit {
+                api_client::put::<DhcpPool, DhcpPool>(&format!("/dhcp/pools/{}", edit_id), &pool).await
+            } else {
+                api_client::post::<DhcpPool, DhcpPool>("/dhcp/pools", &pool).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -895,9 +974,15 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
         FormCard { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
             div { class: "flex items-center gap-2 mb-4",
                 div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
-                    Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                    if is_edit {
+                        Icon { width: 13, height: 13, icon: LdPencil, class: "text-blue-400" }
+                    } else {
+                        Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                    }
                 }
-                h3 { class: "text-sm font-semibold text-white", "Create DHCP Pool" }
+                h3 { class: "text-sm font-semibold text-white",
+                    if is_edit { "Edit DHCP Pool" } else { "Create DHCP Pool" }
+                }
             }
             if let Some(err) = error() {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
@@ -959,7 +1044,11 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Creating...".to_string() } else { "Create Pool".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Creating...".to_string() }
+                } else {
+                    if is_edit { "Save Pool".to_string() } else { "Create Pool".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }
@@ -968,11 +1057,13 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
 }
 
 #[component]
-fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
-    let mut mac = use_signal(String::new);
-    let mut ip = use_signal(String::new);
-    let mut hostname = use_signal(String::new);
-    let mut pool_id = use_signal(|| "1".to_string());
+fn DhcpReservationForm(editing: DhcpReservation, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut mac = use_signal(|| editing.mac.clone());
+    let mut ip = use_signal(|| editing.ip.clone());
+    let mut hostname = use_signal(|| editing.hostname.clone().unwrap_or_default());
+    let mut pool_id = use_signal(|| editing.pool_id.to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -986,7 +1077,7 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
         error.set(None);
 
         let reservation = DhcpReservation {
-            id: 0,
+            id: edit_id,
             pool_id: pid,
             mac: mac(),
             ip: ip(),
@@ -998,12 +1089,18 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
         };
 
         spawn(async move {
-            match api_client::post::<DhcpReservation, DhcpReservation>(
-                "/dhcp/reservations",
-                &reservation,
-            )
-            .await
-            {
+            let result = if is_edit {
+                api_client::put::<DhcpReservation, DhcpReservation>(
+                    &format!("/dhcp/reservations/{}", edit_id),
+                    &reservation,
+                ).await
+            } else {
+                api_client::post::<DhcpReservation, DhcpReservation>(
+                    "/dhcp/reservations",
+                    &reservation,
+                ).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -1015,9 +1112,15 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
         FormCard { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
             div { class: "flex items-center gap-2 mb-4",
                 div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
-                    Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                    if is_edit {
+                        Icon { width: 13, height: 13, icon: LdPencil, class: "text-blue-400" }
+                    } else {
+                        Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                    }
                 }
-                h3 { class: "text-sm font-semibold text-white", "Create Static Reservation" }
+                h3 { class: "text-sm font-semibold text-white",
+                    if is_edit { "Edit Reservation" } else { "Create Static Reservation" }
+                }
             }
             if let Some(err) = error() {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
@@ -1054,7 +1157,11 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Creating...".to_string() } else { "Create Reservation".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Creating...".to_string() }
+                } else {
+                    if is_edit { "Save Reservation".to_string() } else { "Create Reservation".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }
@@ -1063,9 +1170,11 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
 }
 
 #[component]
-fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
-    let mut interface = use_signal(|| "eth0".to_string());
-    let mut hostname = use_signal(String::new);
+fn DhcpClientForm(editing: DhcpClientConfig, on_saved: EventHandler<()>) -> Element {
+    let is_edit = editing.id != 0;
+    let edit_id = editing.id;
+    let mut interface = use_signal(|| editing.interface.clone());
+    let mut hostname = use_signal(|| editing.hostname.clone().unwrap_or_default());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -1078,7 +1187,7 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
         error.set(None);
 
         let config = DhcpClientConfig {
-            id: 0,
+            id: edit_id,
             interface: interface(),
             enabled: true,
             hostname: if hostname().is_empty() {
@@ -1089,9 +1198,15 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
         };
 
         spawn(async move {
-            match api_client::post::<DhcpClientConfig, DhcpClientConfig>("/dhcp/clients", &config)
-                .await
-            {
+            let result = if is_edit {
+                api_client::put::<DhcpClientConfig, DhcpClientConfig>(
+                    &format!("/dhcp/clients/{}", edit_id),
+                    &config,
+                ).await
+            } else {
+                api_client::post::<DhcpClientConfig, DhcpClientConfig>("/dhcp/clients", &config).await
+            };
+            match result {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -1103,9 +1218,15 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
         FormCard { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
             div { class: "flex items-center gap-2 mb-4",
                 div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
-                    Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                    if is_edit {
+                        Icon { width: 13, height: 13, icon: LdPencil, class: "text-blue-400" }
+                    } else {
+                        Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                    }
                 }
-                h3 { class: "text-sm font-semibold text-white", "Add WAN DHCP Client" }
+                h3 { class: "text-sm font-semibold text-white",
+                    if is_edit { "Edit WAN DHCP Client" } else { "Add WAN DHCP Client" }
+                }
             }
             if let Some(err) = error() {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
@@ -1126,7 +1247,11 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
             }
             SubmitBtn {
                 color: Color::Blue,
-                label: if submitting() { "Creating...".to_string() } else { "Add Client".to_string() },
+                label: if submitting() {
+                    if is_edit { "Saving...".to_string() } else { "Creating...".to_string() }
+                } else {
+                    if is_edit { "Save Client".to_string() } else { "Add Client".to_string() }
+                },
                 disabled: submitting(),
                 onclick: on_submit,
             }
