@@ -1,7 +1,6 @@
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
-use std::collections::HashMap;
 use crate::api_client;
 use crate::models::*;
 
@@ -33,9 +32,6 @@ pub fn Dashboard() -> Element {
     let recent_logs = use_resource(|| async {
         api_client::get::<PaginatedLogs>("/logs?limit=5").await
     });
-    let blocked_logs = use_resource(|| async {
-        api_client::get::<PaginatedLogs>("/logs?action=drop&limit=50").await
-    });
     let dhcp_leases = use_resource(|| async {
         api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await
     });
@@ -66,23 +62,6 @@ pub fn Dashboard() -> Element {
     let pool_count = match &*dhcp_pools.read() {
         Some(Ok(p)) => p.iter().filter(|p| p.enabled).count(),
         _ => 0,
-    };
-
-    // Aggregate top blocked IPs from blocked_logs
-    let top_blocked: Vec<(String, usize)> = match &*blocked_logs.read() {
-        Some(Ok(data)) => {
-            let mut counts: HashMap<String, usize> = HashMap::new();
-            for log in data.entries.iter() {
-                let action_lower = log.action.to_lowercase();
-                if action_lower == "drop" {
-                    *counts.entry(log.src_ip.clone()).or_insert(0) += 1;
-                }
-            }
-            let mut sorted: Vec<(String, usize)> = counts.into_iter().collect();
-            sorted.sort_by(|a, b| b.1.cmp(&a.1));
-            sorted.into_iter().take(10).collect()
-        }
-        _ => Vec::new(),
     };
 
     rsx! {
@@ -298,47 +277,6 @@ pub fn Dashboard() -> Element {
                 }
             }
 
-            // Top Blocked IPs section
-            div { class: "mb-6",
-                h3 { class: "text-sm font-semibold text-white mb-3", "Top Blocked IPs" }
-            }
-            if top_blocked.is_empty() {
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-8 text-center",
-                    match &*blocked_logs.read() {
-                        Some(Ok(_)) => rsx! {
-                            p { class: "text-sm text-slate-600", "No blocked traffic detected" }
-                        },
-                        Some(Err(e)) => rsx! {
-                            p { class: "text-sm text-red-400", "Failed to load data: {e}" }
-                        },
-                        None => rsx! {
-                            p { class: "text-sm text-slate-600", "Loading..." }
-                        },
-                    }
-                }
-            } else {
-                div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3",
-                    for (ip, count) in top_blocked.iter() {
-                        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-red-500/30 transition-colors",
-                            key: "{ip}",
-                            div { class: "flex items-center justify-between",
-                                div { class: "flex items-center gap-3",
-                                    div { class: "w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center",
-                                        Icon { width: 14, height: 14, icon: LdShieldAlert, class: "text-red-400" }
-                                    }
-                                    div {
-                                        p { class: "text-sm text-slate-300 font-mono font-medium", "{ip}" }
-                                        p { class: "text-[11px] text-slate-500", "blocked source" }
-                                    }
-                                }
-                                span { class: "px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20",
-                                    "{count}"
-                                }
-                            }
-                        }
-                    }
-                }
-            }
         }
     }
 }

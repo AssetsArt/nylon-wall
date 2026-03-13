@@ -1,6 +1,5 @@
 use object_store::local::LocalFileSystem;
-use slatedb::db::Db;
-use slatedb::error::SlateDBError;
+use slatedb::Db;
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
@@ -8,7 +7,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum DbError {
     #[error("SlateDB error: {0}")]
-    SlateDb(#[from] SlateDBError),
+    SlateDb(#[from] slatedb::Error),
     #[error("Serialization error: {0}")]
     Serde(#[from] serde_json::Error),
     #[error("Storage error: {0}")]
@@ -33,7 +32,7 @@ impl Database {
 
     pub async fn put<T: serde::Serialize>(&self, key: &str, value: &T) -> Result<(), DbError> {
         let bytes = serde_json::to_vec(value)?;
-        self.inner.put(key.as_bytes(), bytes.as_slice()).await?;
+        let _ = self.inner.put(key.as_bytes(), bytes.as_slice()).await?;
         Ok(())
     }
 
@@ -51,7 +50,7 @@ impl Database {
     }
 
     pub async fn delete(&self, key: &str) -> Result<(), DbError> {
-        self.inner.delete(key.as_bytes()).await?;
+        let _ = self.inner.delete(key.as_bytes()).await?;
         Ok(())
     }
 
