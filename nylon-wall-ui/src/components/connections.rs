@@ -22,14 +22,11 @@ pub fn Connections() -> Element {
     let mut filter_state = use_signal(|| "all".to_string());
     let mut filter_protocol = use_signal(|| "all".to_string());
 
-    let page = current_page();
-    let state_filter = filter_state();
-    let protocol_filter = filter_protocol();
-
     let mut conns = use_resource(move || {
+        let page = current_page();
         let offset = page * PAGE_SIZE;
-        let state_val = state_filter.clone();
-        let proto_val = protocol_filter.clone();
+        let state_val = filter_state();
+        let proto_val = filter_protocol();
         async move {
             let mut url = format!("/conntrack?limit={}&offset={}", PAGE_SIZE, offset);
             if state_val != "all" {
@@ -132,7 +129,7 @@ pub fn Connections() -> Element {
                     }
                 }
                 span { class: "text-xs text-slate-600 ml-auto",
-                    {format!("Showing {}\u{2013}{} of {}", page * PAGE_SIZE + 1, (page * PAGE_SIZE + entries.len()).min(total), total)}
+                    {format!("Showing {}\u{2013}{} of {}", current_page() * PAGE_SIZE + 1, (current_page() * PAGE_SIZE + entries.len()).min(total), total)}
                 }
             }
 
@@ -213,28 +210,29 @@ pub fn Connections() -> Element {
                         button {
                             class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
                             class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
-                            disabled: page == 0,
+                            disabled: current_page() == 0,
                             onclick: move |_| { current_page.set(0); },
                             Icon { width: 12, height: 12, icon: LdChevronsLeft }
                         }
                         button {
                             class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
                             class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
-                            disabled: page == 0,
-                            onclick: move |_| { current_page.set(page.saturating_sub(1)); },
+                            disabled: current_page() == 0,
+                            onclick: move |_| { current_page.set(current_page().saturating_sub(1)); },
                             Icon { width: 12, height: 12, icon: LdChevronLeft }
                         }
 
                         // Page numbers
                         {
-                            let start = page.saturating_sub(2);
-                            let end = (start + 5).min(total_pages);
+                            let pg = current_page();
+                            let end = (pg + 3).min(total_pages);
+                            let start = end.saturating_sub(5);
                             rsx! {
                                 for p in start..end {
                                     button {
                                         key: "{p}",
                                         class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
-                                        class: if p == page {
+                                        class: if p == pg {
                                             "bg-blue-500/20 text-blue-400 border-blue-500/30"
                                         } else {
                                             "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50"
@@ -249,21 +247,21 @@ pub fn Connections() -> Element {
                         button {
                             class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
                             class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
-                            disabled: page + 1 >= total_pages,
-                            onclick: move |_| { current_page.set(page + 1); },
+                            disabled: current_page() + 1 >= total_pages,
+                            onclick: move |_| { current_page.set(current_page() + 1); },
                             Icon { width: 12, height: 12, icon: LdChevronRight }
                         }
                         button {
                             class: "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-30",
                             class: "bg-slate-800/50 text-slate-400 border-slate-700/40 hover:bg-slate-700/50",
-                            disabled: page + 1 >= total_pages,
+                            disabled: current_page() + 1 >= total_pages,
                             onclick: move |_| { current_page.set(total_pages - 1); },
                             Icon { width: 12, height: 12, icon: LdChevronsRight }
                         }
                     }
 
                     span { class: "text-xs text-slate-600",
-                        "Page {page + 1} of {total_pages}"
+                        "Page {current_page() + 1} of {total_pages}"
                     }
                 }
             }
