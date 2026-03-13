@@ -282,10 +282,12 @@ fn DhcpPoolsTab() -> Element {
                         icon: rsx! { Icon { width: 24, height: 24, icon: LdServer, class: "text-slate-600" } },
                         title: "No DHCP pools configured",
                         subtitle: "Create a pool to start serving DHCP addresses on your network interfaces",
-                        Btn {
-                            color: Color::Blue,
-                            label: "+ Create First Pool",
-                            onclick: move |_| show_form.set(true),
+                        div {
+                            Btn {
+                                color: Color::Blue,
+                                label: "+ Create First Pool",
+                                onclick: move |_| show_form.set(true),
+                            }
                         }
                     }
                 },

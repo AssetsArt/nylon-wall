@@ -44,6 +44,7 @@ pub fn EmptyState(
 ) -> Element {
     rsx! {
         div { class: "rounded-xl border border-dashed border-slate-800/60 p-12 text-center",
+            style: "text-align: -webkit-center;",
             div { class: "flex justify-center mb-4",
                 div { class: "w-12 h-12 rounded-xl bg-slate-800/50 flex items-center justify-center",
                     {icon}
