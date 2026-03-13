@@ -9,12 +9,90 @@ use dioxus_free_icons::icons::ld_icons::*;
 pub fn Dhcp() -> Element {
     let mut active_tab = use_signal(|| 0u8); // 0=Pools, 1=Leases, 2=Client
 
+    let pools =
+        use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
+    let leases =
+        use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
+    let reservations =
+        use_resource(|| async { api_client::get::<Vec<DhcpReservation>>("/dhcp/reservations").await });
+    let clients =
+        use_resource(|| async { api_client::get::<Vec<DhcpClientConfig>>("/dhcp/clients").await });
+
+    // Summary counts
+    let pool_count = match &*pools.read() {
+        Some(Ok(p)) => p.len(),
+        _ => 0,
+    };
+    let pool_active = match &*pools.read() {
+        Some(Ok(p)) => p.iter().filter(|p| p.enabled).count(),
+        _ => 0,
+    };
+    let lease_count = match &*leases.read() {
+        Some(Ok(l)) => l.iter().filter(|l| l.state == DhcpLeaseState::Active).count(),
+        _ => 0,
+    };
+    let reservation_count = match &*reservations.read() {
+        Some(Ok(r)) => r.len(),
+        _ => 0,
+    };
+    let client_count = match &*clients.read() {
+        Some(Ok(c)) => c.len(),
+        _ => 0,
+    };
+    let client_active = match &*clients.read() {
+        Some(Ok(c)) => c.iter().filter(|c| c.enabled).count(),
+        _ => 0,
+    };
+
     rsx! {
         div {
-            div { class: "flex items-center justify-between mb-6",
-                div {
-                    h2 { class: "text-xl font-semibold text-white", "DHCP" }
-                    p { class: "text-sm text-slate-400 mt-1", "DHCP server pools, leases, and WAN client configuration" }
+            // Page header
+            div { class: "mb-6",
+                h2 { class: "text-xl font-semibold text-white", "DHCP" }
+                p { class: "text-sm text-slate-400 mt-1", "DHCP server pools, leases, and WAN client configuration" }
+            }
+
+            // Summary stat cards
+            div { class: "grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6",
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-teal-500/30 transition-colors",
+                    div { class: "flex items-center gap-2.5 mb-2",
+                        div { class: "w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center",
+                            Icon { width: 14, height: 14, icon: LdServer, class: "text-teal-400" }
+                        }
+                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "Pools" }
+                    }
+                    p { class: "text-2xl font-bold text-white", "{pool_count}" }
+                    p { class: "text-xs text-slate-500", "{pool_active} active" }
+                }
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-emerald-500/30 transition-colors",
+                    div { class: "flex items-center gap-2.5 mb-2",
+                        div { class: "w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center",
+                            Icon { width: 14, height: 14, icon: LdCable, class: "text-emerald-400" }
+                        }
+                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "Leases" }
+                    }
+                    p { class: "text-2xl font-bold text-white", "{lease_count}" }
+                    p { class: "text-xs text-slate-500", "active" }
+                }
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-blue-500/30 transition-colors",
+                    div { class: "flex items-center gap-2.5 mb-2",
+                        div { class: "w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center",
+                            Icon { width: 14, height: 14, icon: LdBookmark, class: "text-blue-400" }
+                        }
+                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "Reservations" }
+                    }
+                    p { class: "text-2xl font-bold text-white", "{reservation_count}" }
+                    p { class: "text-xs text-slate-500", "static" }
+                }
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-violet-500/30 transition-colors",
+                    div { class: "flex items-center gap-2.5 mb-2",
+                        div { class: "w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center",
+                            Icon { width: 14, height: 14, icon: LdWifi, class: "text-violet-400" }
+                        }
+                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "WAN Clients" }
+                    }
+                    p { class: "text-2xl font-bold text-white", "{client_count}" }
+                    p { class: "text-xs text-slate-500", "{client_active} active" }
                 }
             }
 
@@ -22,29 +100,32 @@ pub fn Dhcp() -> Element {
             div { class: "flex gap-1 mb-6 bg-slate-900/50 rounded-xl p-1 border border-slate-800/40 w-fit",
                 button {
                     class: if active_tab() == 0 {
-                        "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
+                        "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
                     } else {
-                        "px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
+                        "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
                     },
                     onclick: move |_| active_tab.set(0),
+                    Icon { width: 13, height: 13, icon: LdServer }
                     "Server Pools"
                 }
                 button {
                     class: if active_tab() == 1 {
-                        "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
+                        "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
                     } else {
-                        "px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
+                        "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
                     },
                     onclick: move |_| active_tab.set(1),
+                    Icon { width: 13, height: 13, icon: LdList }
                     "Leases"
                 }
                 button {
                     class: if active_tab() == 2 {
-                        "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
+                        "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20"
                     } else {
-                        "px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
+                        "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-white/5 transition-all"
                     },
                     onclick: move |_| active_tab.set(2),
+                    Icon { width: 13, height: 13, icon: LdWifi }
                     "WAN Client"
                 }
             }
@@ -59,7 +140,7 @@ pub fn Dhcp() -> Element {
     }
 }
 
-// === Tab 1: Server Pools ===
+// === Tab 1: Server Pools (Card-based) ===
 
 #[component]
 fn DhcpPoolsTab() -> Element {
@@ -72,11 +153,24 @@ fn DhcpPoolsTab() -> Element {
     rsx! {
         div {
             div { class: "flex items-center justify-between mb-4",
-                h3 { class: "text-lg font-medium text-white", "DHCP Server Pools" }
-                button {
-                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
-                    onclick: move |_| show_form.set(!show_form()),
-                    if show_form() { "Cancel" } else { "+ New Pool" }
+                div { class: "flex items-center gap-2",
+                    div { class: "w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center",
+                        Icon { width: 13, height: 13, icon: LdServer, class: "text-teal-400" }
+                    }
+                    h3 { class: "text-sm font-semibold text-white", "DHCP Server Pools" }
+                }
+                div { class: "flex items-center gap-2",
+                    button {
+                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
+                        onclick: move |_| pools.restart(),
+                        Icon { width: 12, height: 12, icon: LdRefreshCw }
+                        span { class: "ml-1.5", "Refresh" }
+                    }
+                    button {
+                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                        onclick: move |_| show_form.set(!show_form()),
+                        if show_form() { "Cancel" } else { "+ New Pool" }
+                    }
                 }
             }
 
@@ -119,91 +213,141 @@ fn DhcpPoolsTab() -> Element {
                 }
             }
 
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
-                table { class: "w-full text-left",
-                    thead { class: "bg-slate-900/80",
-                        tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Interface" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Subnet" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Range" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Gateway" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "DNS" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Lease" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
-                        }
-                    }
-                    tbody {
-                        match &*pools.read() {
-                            Some(Ok(list)) if !list.is_empty() => rsx! {
-                                for pool in list.iter() {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
+            match &*pools.read() {
+                Some(Ok(list)) if !list.is_empty() => rsx! {
+                    div { class: "grid grid-cols-1 lg:grid-cols-2 gap-4",
+                        for pool in list.iter() {
+                            {
+                                let pool_id = pool.id;
+                                let is_enabled = pool.enabled;
+                                rsx! {
+                                    div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-slate-700/60 transition-colors",
                                         key: "{pool.id}",
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono", "{pool.interface}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono", "{pool.subnet}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono text-xs",
-                                            "{pool.range_start} - {pool.range_end}"
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono",
-                                            {pool.gateway.clone().unwrap_or("\u{2014}".to_string())}
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 text-xs",
-                                            {pool.dns_servers.join(", ")}
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-slate-400",
-                                            {format_lease_time(pool.lease_time)}
-                                        }
-                                        td { class: "px-5 py-3 text-sm",
-                                            {
-                                                let pool_id = pool.id;
-                                                let is_enabled = pool.enabled;
-                                                rsx! {
-                                                    button {
-                                                        class: if is_enabled {
-                                                            "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-pointer hover:bg-emerald-500/20"
-                                                        } else {
-                                                            "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20 cursor-pointer hover:bg-slate-500/20"
-                                                        },
-                                                        onclick: move |_| {
-                                                            spawn(async move {
-                                                                match api_client::post::<(), serde_json::Value>(&format!("/dhcp/pools/{}/toggle", pool_id), &()).await {
-                                                                    Ok(_) => pools.restart(),
-                                                                    Err(e) => error_msg.set(Some(e)),
-                                                                }
-                                                            });
-                                                        },
-                                                        if is_enabled { "Enabled" } else { "Disabled" }
-                                                    }
+                                        // Card header
+                                        div { class: "flex items-center justify-between mb-4",
+                                            div { class: "flex items-center gap-2.5",
+                                                div { class: "w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center",
+                                                    Icon { width: 14, height: 14, icon: LdServer, class: "text-teal-400" }
+                                                }
+                                                div {
+                                                    span { class: "text-sm font-semibold text-white", "{pool.interface}" }
+                                                    p { class: "text-xs text-slate-500 font-mono", "{pool.subnet}" }
+                                                }
+                                            }
+                                            div { class: "flex items-center gap-2",
+                                                button {
+                                                    class: if is_enabled {
+                                                        "px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 cursor-pointer hover:bg-emerald-500/20 transition-colors"
+                                                    } else {
+                                                        "px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20 cursor-pointer hover:bg-slate-500/20 transition-colors"
+                                                    },
+                                                    onclick: move |_| {
+                                                        spawn(async move {
+                                                            match api_client::post::<(), serde_json::Value>(&format!("/dhcp/pools/{}/toggle", pool_id), &()).await {
+                                                                Ok(_) => pools.restart(),
+                                                                Err(e) => error_msg.set(Some(e)),
+                                                            }
+                                                        });
+                                                    },
+                                                    if is_enabled { "Enabled" } else { "Disabled" }
                                                 }
                                             }
                                         }
-                                        td { class: "px-5 py-3 text-sm",
+
+                                        // Card body - key/value grid
+                                        div { class: "grid grid-cols-2 gap-x-6 gap-y-2 text-xs mb-4",
+                                            div { class: "text-slate-500", "IP Range" }
+                                            div { class: "text-slate-300 font-mono",
+                                                "{pool.range_start} \u{2013} {pool.range_end}"
+                                            }
+                                            div { class: "text-slate-500", "Gateway" }
+                                            div { class: "text-slate-300 font-mono",
+                                                {pool.gateway.clone().unwrap_or("\u{2014}".to_string())}
+                                            }
+                                            div { class: "text-slate-500", "DNS Servers" }
+                                            div { class: "text-slate-300 font-mono",
+                                                {
+                                                    if pool.dns_servers.is_empty() {
+                                                        "\u{2014}".to_string()
+                                                    } else {
+                                                        pool.dns_servers.join(", ")
+                                                    }
+                                                }
+                                            }
+                                            if let Some(ref domain) = pool.domain_name {
+                                                div { class: "text-slate-500", "Domain" }
+                                                div { class: "text-slate-300 font-mono", "{domain}" }
+                                            }
+                                            div { class: "text-slate-500", "Lease Time" }
+                                            div { class: "text-slate-300", {format_lease_time(pool.lease_time)} }
+                                        }
+
+                                        // Card footer
+                                        div { class: "flex items-center justify-end pt-3 border-t border-slate-800/40",
                                             {
                                                 let id = pool.id;
                                                 rsx! {
                                                     button {
-                                                        class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
+                                                        class: "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
                                                         onclick: move |_| confirm_delete.set(Some(id)),
-                                                        Icon { width: 13, height: 13, icon: LdTrash2 }
+                                                        Icon { width: 12, height: 12, icon: LdTrash2 }
+                                                        "Delete"
                                                     }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            },
-                            Some(Ok(_)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "8", "No DHCP pools configured" } }
-                            },
-                            Some(Err(e)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "8", "Failed to load pools: {e}" } }
-                            },
-                            None => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "8", "Loading..." } }
-                            },
+                            }
                         }
                     }
-                }
+                },
+                Some(Ok(_)) => rsx! {
+                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-12 text-center",
+                        div { class: "flex justify-center mb-4",
+                            div { class: "w-12 h-12 rounded-xl bg-slate-800/50 flex items-center justify-center",
+                                Icon { width: 24, height: 24, icon: LdServer, class: "text-slate-600" }
+                            }
+                        }
+                        p { class: "text-sm font-medium text-slate-400 mb-1", "No DHCP pools configured" }
+                        p { class: "text-xs text-slate-600 mb-4", "Create a pool to start serving DHCP addresses on your network interfaces" }
+                        button {
+                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                            onclick: move |_| show_form.set(true),
+                            "+ Create First Pool"
+                        }
+                    }
+                },
+                Some(Err(e)) => rsx! {
+                    div { class: "rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center",
+                        div { class: "flex justify-center mb-3",
+                            div { class: "w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center",
+                                Icon { width: 20, height: 20, icon: LdTriangleAlert, class: "text-red-400" }
+                            }
+                        }
+                        p { class: "text-sm text-red-400", "Failed to load pools: {e}" }
+                    }
+                },
+                None => rsx! {
+                    div { class: "grid grid-cols-1 lg:grid-cols-2 gap-4",
+                        for _ in 0..2 {
+                            div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 animate-pulse",
+                                div { class: "flex items-center gap-2.5 mb-4",
+                                    div { class: "w-8 h-8 rounded-lg bg-slate-800/80" }
+                                    div {
+                                        div { class: "w-16 h-3.5 rounded bg-slate-800/80 mb-1.5" }
+                                        div { class: "w-24 h-3 rounded bg-slate-800/60" }
+                                    }
+                                }
+                                div { class: "space-y-2",
+                                    div { class: "w-full h-3 rounded bg-slate-800/60" }
+                                    div { class: "w-3/4 h-3 rounded bg-slate-800/60" }
+                                    div { class: "w-1/2 h-3 rounded bg-slate-800/60" }
+                                }
+                            }
+                        }
+                    }
+                },
             }
         }
     }
@@ -224,15 +368,19 @@ fn DhcpLeasesTab() -> Element {
 
     rsx! {
         div {
+            // Active Leases section
             div { class: "flex items-center justify-between mb-4",
-                h3 { class: "text-lg font-medium text-white", "Active Leases" }
                 div { class: "flex items-center gap-2",
-                    button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
-                        onclick: move |_| { leases.restart(); reservations.restart(); },
-                        Icon { width: 12, height: 12, icon: LdRefreshCw }
-                        span { class: "ml-1.5", "Refresh" }
+                    div { class: "w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center",
+                        Icon { width: 13, height: 13, icon: LdCable, class: "text-emerald-400" }
                     }
+                    h3 { class: "text-sm font-semibold text-white", "Active Leases" }
+                }
+                button {
+                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
+                    onclick: move |_| { leases.restart(); reservations.restart(); },
+                    Icon { width: 12, height: 12, icon: LdRefreshCw }
+                    span { class: "ml-1.5", "Refresh" }
                 }
             }
 
@@ -267,21 +415,21 @@ fn DhcpLeasesTab() -> Element {
                 }
             }
 
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
-                table { class: "w-full text-left",
-                    thead { class: "bg-slate-900/80",
-                        tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC Address" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Hostname" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Expires" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "State" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
-                        }
-                    }
-                    tbody {
-                        match &*leases.read() {
-                            Some(Ok(list)) if !list.is_empty() => rsx! {
+            match &*leases.read() {
+                Some(Ok(list)) if !list.is_empty() => rsx! {
+                    div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
+                        table { class: "w-full text-left",
+                            thead { class: "bg-slate-900/80",
+                                tr {
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC Address" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Hostname" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Expires" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "State" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
+                                }
+                            }
+                            tbody {
                                 for lease in list.iter() {
                                     tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
                                         key: "{lease.mac}",
@@ -314,7 +462,7 @@ fn DhcpLeasesTab() -> Element {
                                                 rsx! {
                                                     div { class: "flex items-center gap-1",
                                                         button {
-                                                            class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-blue-400 hover:bg-blue-500/10 transition-colors",
+                                                            class: "p-1.5 rounded-lg text-blue-400 hover:bg-blue-500/10 transition-colors",
                                                             title: "Add reservation",
                                                             onclick: move |_| {
                                                                 let mac_val = mac.clone();
@@ -328,7 +476,7 @@ fn DhcpLeasesTab() -> Element {
                                                             Icon { width: 13, height: 13, icon: LdBookmark }
                                                         }
                                                         button {
-                                                            class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
+                                                            class: "p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors",
                                                             title: "Release lease",
                                                             onclick: move |_| confirm_release.set(Some(mac2.clone())),
                                                             Icon { width: 13, height: 13, icon: LdTrash2 }
@@ -339,24 +487,55 @@ fn DhcpLeasesTab() -> Element {
                                         }
                                     }
                                 }
-                            },
-                            Some(Ok(_)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "6", "No active DHCP leases" } }
-                            },
-                            Some(Err(e)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "6", "Failed to load leases: {e}" } }
-                            },
-                            None => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "6", "Loading..." } }
-                            },
+                            }
                         }
                     }
-                }
+                },
+                Some(Ok(_)) => rsx! {
+                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-10 text-center mb-8",
+                        div { class: "flex justify-center mb-3",
+                            div { class: "w-10 h-10 rounded-xl bg-slate-800/50 flex items-center justify-center",
+                                Icon { width: 20, height: 20, icon: LdCable, class: "text-slate-600" }
+                            }
+                        }
+                        p { class: "text-sm font-medium text-slate-400 mb-1", "No active DHCP leases" }
+                        p { class: "text-xs text-slate-600", "Leases will appear here when clients receive addresses from your DHCP pools" }
+                    }
+                },
+                Some(Err(e)) => rsx! {
+                    div { class: "rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center mb-8",
+                        div { class: "flex justify-center mb-3",
+                            div { class: "w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center",
+                                Icon { width: 20, height: 20, icon: LdTriangleAlert, class: "text-red-400" }
+                            }
+                        }
+                        p { class: "text-sm text-red-400", "Failed to load leases: {e}" }
+                    }
+                },
+                None => rsx! {
+                    div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8 animate-pulse",
+                        div { class: "bg-slate-900/80 px-5 py-3",
+                            div { class: "flex gap-12",
+                                div { class: "w-20 h-3 rounded bg-slate-800/80" }
+                                div { class: "w-24 h-3 rounded bg-slate-800/80" }
+                                div { class: "w-16 h-3 rounded bg-slate-800/80" }
+                            }
+                        }
+                        div { class: "px-5 py-8 text-center",
+                            div { class: "w-32 h-3 rounded bg-slate-800/60 mx-auto" }
+                        }
+                    }
+                },
             }
 
             // Reservations section
             div { class: "flex items-center justify-between mb-4",
-                h3 { class: "text-lg font-medium text-white", "Static Reservations" }
+                div { class: "flex items-center gap-2",
+                    div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
+                        Icon { width: 13, height: 13, icon: LdBookmark, class: "text-blue-400" }
+                    }
+                    h3 { class: "text-sm font-semibold text-white", "Static Reservations" }
+                }
                 button {
                     class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
                     onclick: move |_| show_reservation_form.set(!show_reservation_form()),
@@ -373,20 +552,20 @@ fn DhcpLeasesTab() -> Element {
                 }
             }
 
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
-                table { class: "w-full text-left",
-                    thead { class: "bg-slate-900/80",
-                        tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC Address" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Hostname" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Pool" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
-                        }
-                    }
-                    tbody {
-                        match &*reservations.read() {
-                            Some(Ok(list)) if !list.is_empty() => rsx! {
+            match &*reservations.read() {
+                Some(Ok(list)) if !list.is_empty() => rsx! {
+                    div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
+                        table { class: "w-full text-left",
+                            thead { class: "bg-slate-900/80",
+                                tr {
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC Address" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Hostname" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Pool" }
+                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
+                                }
+                            }
+                            tbody {
                                 for res in list.iter() {
                                     tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
                                         key: "{res.id}",
@@ -401,7 +580,7 @@ fn DhcpLeasesTab() -> Element {
                                                 let id = res.id;
                                                 rsx! {
                                                     button {
-                                                        class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
+                                                        class: "p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors",
                                                         onclick: move |_| {
                                                             spawn(async move {
                                                                 match api_client::delete(&format!("/dhcp/reservations/{}", id)).await {
@@ -417,19 +596,50 @@ fn DhcpLeasesTab() -> Element {
                                         }
                                     }
                                 }
-                            },
-                            Some(Ok(_)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "No static reservations" } }
-                            },
-                            Some(Err(e)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "5", "Failed to load reservations: {e}" } }
-                            },
-                            None => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "Loading..." } }
-                            },
+                            }
                         }
                     }
-                }
+                },
+                Some(Ok(_)) => rsx! {
+                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-10 text-center",
+                        div { class: "flex justify-center mb-3",
+                            div { class: "w-10 h-10 rounded-xl bg-slate-800/50 flex items-center justify-center",
+                                Icon { width: 20, height: 20, icon: LdBookmark, class: "text-slate-600" }
+                            }
+                        }
+                        p { class: "text-sm font-medium text-slate-400 mb-1", "No static reservations" }
+                        p { class: "text-xs text-slate-600 mb-4", "Reserve fixed IP addresses for specific devices by MAC address" }
+                        button {
+                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                            onclick: move |_| show_reservation_form.set(true),
+                            "+ Create Reservation"
+                        }
+                    }
+                },
+                Some(Err(e)) => rsx! {
+                    div { class: "rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center",
+                        div { class: "flex justify-center mb-3",
+                            div { class: "w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center",
+                                Icon { width: 20, height: 20, icon: LdTriangleAlert, class: "text-red-400" }
+                            }
+                        }
+                        p { class: "text-sm text-red-400", "Failed to load reservations: {e}" }
+                    }
+                },
+                None => rsx! {
+                    div { class: "rounded-xl border border-slate-800/60 overflow-hidden animate-pulse",
+                        div { class: "bg-slate-900/80 px-5 py-3",
+                            div { class: "flex gap-12",
+                                div { class: "w-24 h-3 rounded bg-slate-800/80" }
+                                div { class: "w-20 h-3 rounded bg-slate-800/80" }
+                                div { class: "w-16 h-3 rounded bg-slate-800/80" }
+                            }
+                        }
+                        div { class: "px-5 py-8 text-center",
+                            div { class: "w-32 h-3 rounded bg-slate-800/60 mx-auto" }
+                        }
+                    }
+                },
             }
         }
     }
@@ -450,7 +660,12 @@ fn DhcpClientTab() -> Element {
     rsx! {
         div {
             div { class: "flex items-center justify-between mb-4",
-                h3 { class: "text-lg font-medium text-white", "WAN DHCP Client" }
+                div { class: "flex items-center gap-2",
+                    div { class: "w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center",
+                        Icon { width: 13, height: 13, icon: LdWifi, class: "text-violet-400" }
+                    }
+                    h3 { class: "text-sm font-semibold text-white", "WAN DHCP Clients" }
+                }
                 div { class: "flex items-center gap-2",
                     button {
                         class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
@@ -504,11 +719,14 @@ fn DhcpClientTab() -> Element {
                                     let config_id = config.id;
                                     let is_enabled = config.enabled;
                                     rsx! {
-                                        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5",
+                                        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-slate-700/60 transition-colors",
                                             key: "{config.id}",
-                                            div { class: "flex items-center justify-between mb-3",
-                                                div { class: "flex items-center gap-2",
-                                                    Icon { width: 16, height: 16, icon: LdWifi, class: "text-blue-400" }
+                                            // Card header
+                                            div { class: "flex items-center justify-between mb-4",
+                                                div { class: "flex items-center gap-2.5",
+                                                    div { class: "w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center",
+                                                        Icon { width: 14, height: 14, icon: LdWifi, class: "text-violet-400" }
+                                                    }
                                                     span { class: "text-sm font-semibold text-white", "{config.interface}" }
                                                 }
                                                 div { class: "flex items-center gap-2",
@@ -525,7 +743,7 @@ fn DhcpClientTab() -> Element {
                                                         };
                                                         rsx! {
                                                             span {
-                                                                class: format!("px-2 py-0.5 rounded-full text-[11px] font-medium border {}", state_badge.0),
+                                                                class: format!("px-2.5 py-1 rounded-full text-[11px] font-medium border {}", state_badge.0),
                                                                 "{state_badge.1}"
                                                             }
                                                         }
@@ -535,7 +753,7 @@ fn DhcpClientTab() -> Element {
 
                                             // Status details
                                             if let Some(ref s) = status {
-                                                div { class: "grid grid-cols-2 gap-2 mb-4 text-xs",
+                                                div { class: "grid grid-cols-2 gap-x-6 gap-y-2 mb-4 text-xs",
                                                     div { class: "text-slate-500", "IP Address" }
                                                     div { class: "text-slate-300 font-mono",
                                                         {s.ip.clone().unwrap_or("\u{2014}".to_string())}
@@ -548,9 +766,15 @@ fn DhcpClientTab() -> Element {
                                                     div { class: "text-slate-300 font-mono",
                                                         {s.gateway.clone().unwrap_or("\u{2014}".to_string())}
                                                     }
-                                                    div { class: "text-slate-500", "DNS" }
-                                                    div { class: "text-slate-300 font-mono text-xs",
-                                                        {s.dns_servers.join(", ")}
+                                                    div { class: "text-slate-500", "DNS Servers" }
+                                                    div { class: "text-slate-300 font-mono",
+                                                        {
+                                                            if s.dns_servers.is_empty() {
+                                                                "\u{2014}".to_string()
+                                                            } else {
+                                                                s.dns_servers.join(", ")
+                                                            }
+                                                        }
                                                     }
                                                     div { class: "text-slate-500", "DHCP Server" }
                                                     div { class: "text-slate-300 font-mono",
@@ -604,7 +828,7 @@ fn DhcpClientTab() -> Element {
                                                     "Release"
                                                 }
                                                 button {
-                                                    class: "px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors ml-auto",
+                                                    class: "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors ml-auto",
                                                     onclick: move |_| {
                                                         spawn(async move {
                                                             match api_client::delete(&format!("/dhcp/clients/{}", config_id)).await {
@@ -613,7 +837,8 @@ fn DhcpClientTab() -> Element {
                                                             }
                                                         });
                                                     },
-                                                    Icon { width: 13, height: 13, icon: LdTrash2 }
+                                                    Icon { width: 12, height: 12, icon: LdTrash2 }
+                                                    "Delete"
                                                 }
                                             }
                                         }
@@ -624,18 +849,46 @@ fn DhcpClientTab() -> Element {
                     }
                 },
                 Some(Ok(_)) => rsx! {
-                    div { class: "text-center py-16 text-sm text-slate-600",
-                        "No WAN DHCP clients configured"
+                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-12 text-center",
+                        div { class: "flex justify-center mb-4",
+                            div { class: "w-12 h-12 rounded-xl bg-slate-800/50 flex items-center justify-center",
+                                Icon { width: 24, height: 24, icon: LdWifi, class: "text-slate-600" }
+                            }
+                        }
+                        p { class: "text-sm font-medium text-slate-400 mb-1", "No WAN DHCP clients configured" }
+                        p { class: "text-xs text-slate-600 mb-4", "Add a WAN client to obtain IP configuration from an upstream DHCP server" }
+                        button {
+                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                            onclick: move |_| show_form.set(true),
+                            "+ Add WAN Client"
+                        }
                     }
                 },
                 Some(Err(e)) => rsx! {
-                    div { class: "text-center py-16 text-sm text-red-400",
-                        "Failed to load DHCP clients: {e}"
+                    div { class: "rounded-xl border border-red-500/20 bg-red-500/5 p-8 text-center",
+                        div { class: "flex justify-center mb-3",
+                            div { class: "w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center",
+                                Icon { width: 20, height: 20, icon: LdTriangleAlert, class: "text-red-400" }
+                            }
+                        }
+                        p { class: "text-sm text-red-400", "Failed to load DHCP clients: {e}" }
                     }
                 },
                 None => rsx! {
-                    div { class: "text-center py-16 text-sm text-slate-600",
-                        "Loading..."
+                    div { class: "grid grid-cols-1 lg:grid-cols-2 gap-4",
+                        for _ in 0..2 {
+                            div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 animate-pulse",
+                                div { class: "flex items-center gap-2.5 mb-4",
+                                    div { class: "w-8 h-8 rounded-lg bg-slate-800/80" }
+                                    div { class: "w-16 h-3.5 rounded bg-slate-800/80" }
+                                }
+                                div { class: "space-y-2",
+                                    div { class: "w-full h-3 rounded bg-slate-800/60" }
+                                    div { class: "w-3/4 h-3 rounded bg-slate-800/60" }
+                                    div { class: "w-1/2 h-3 rounded bg-slate-800/60" }
+                                }
+                            }
+                        }
                     }
                 },
             }
@@ -713,8 +966,13 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6 mb-6",
-            h3 { class: "text-sm font-semibold text-white mb-4", "Create DHCP Pool" }
+        div { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
+            div { class: "flex items-center gap-2 mb-4",
+                div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
+                    Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                }
+                h3 { class: "text-sm font-semibold text-white", "Create DHCP Pool" }
+            }
             if let Some(err) = error() {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
@@ -839,8 +1097,13 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6 mb-6",
-            h3 { class: "text-sm font-semibold text-white mb-4", "Create Static Reservation" }
+        div { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
+            div { class: "flex items-center gap-2 mb-4",
+                div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
+                    Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                }
+                h3 { class: "text-sm font-semibold text-white", "Create Static Reservation" }
+            }
             if let Some(err) = error() {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
@@ -926,8 +1189,13 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6 mb-6",
-            h3 { class: "text-sm font-semibold text-white mb-4", "Add WAN DHCP Client" }
+        div { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
+            div { class: "flex items-center gap-2 mb-4",
+                div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
+                    Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
+                }
+                h3 { class: "text-sm font-semibold text-white", "Add WAN DHCP Client" }
+            }
             if let Some(err) = error() {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
@@ -974,9 +1242,6 @@ fn format_lease_time(seconds: u32) -> String {
 }
 
 fn format_timestamp(lease_end: i64) -> String {
-    // Show remaining lease duration relative to lease_start
-    // Since we don't have direct access to JS Date in pure Rust,
-    // just display a human-readable absolute time
     let dt = chrono::DateTime::from_timestamp(lease_end, 0);
     match dt {
         Some(d) => d.format("%Y-%m-%d %H:%M").to_string(),

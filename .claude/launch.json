@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ui",
+      "runtimeExecutable": "dx",
+      "runtimeArgs": ["serve"],
+      "port": 8080,
+      "cwd": "nylon-wall-ui"
+    }
+  ]
+}
