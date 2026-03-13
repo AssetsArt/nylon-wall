@@ -353,13 +353,10 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
                         option { value: "Both", "TCP + UDP" }
                     }
                 }
-                FormField { label: "WAN Interface".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "eth0",
-                        value: "{in_interface}",
-                        oninput: move |e| in_interface.set(e.value()),
-                    }
+                InterfaceSelect {
+                    value: in_interface(),
+                    onchange: move |v| in_interface.set(v),
+                    label: "WAN Interface",
                 }
             }
 
@@ -469,12 +466,11 @@ fn NatForm(on_saved: EventHandler<()>) -> Element {
                         oninput: move |e| translate_ip.set(e.value()),
                     }
                 }
-                FormField { label: "Out Interface".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "eth0", value: "{out_interface}",
-                        oninput: move |e| out_interface.set(e.value()),
-                    }
+                InterfaceSelect {
+                    value: out_interface(),
+                    onchange: move |v| out_interface.set(v),
+                    label: "Out Interface",
+                    allow_empty: true,
                 }
             }
             SubmitBtn {

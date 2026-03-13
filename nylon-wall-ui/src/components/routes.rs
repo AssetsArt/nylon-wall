@@ -181,12 +181,9 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
                         oninput: move |e| gateway.set(e.value()),
                     }
                 }
-                FormField { label: "Interface".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "eth0", value: "{interface}",
-                        oninput: move |e| interface.set(e.value()),
-                    }
+                InterfaceSelect {
+                    value: interface(),
+                    onchange: move |v| interface.set(v),
                 }
                 FormField { label: "Metric".to_string(),
                     input {

@@ -901,12 +901,9 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4",
-                FormField { label: "Interface",
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "eth1", value: "{interface}",
-                        oninput: move |e| interface.set(e.value()),
-                    }
+                InterfaceSelect {
+                    value: interface(),
+                    onchange: move |v| interface.set(v),
                 }
                 FormField { label: "Subnet (CIDR)",
                     input {
@@ -1112,12 +1109,10 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4",
-                FormField { label: "WAN Interface",
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "eth0", value: "{interface}",
-                        oninput: move |e| interface.set(e.value()),
-                    }
+                InterfaceSelect {
+                    value: interface(),
+                    onchange: move |v| interface.set(v),
+                    label: "WAN Interface",
                 }
                 FormField { label: "Hostname (optional)",
                     input {

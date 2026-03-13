@@ -358,12 +358,9 @@ fn ZoneForm(on_saved: EventHandler<()>) -> Element {
                         oninput: move |e| name.set(e.value()),
                     }
                 }
-                FormField { label: "Interfaces".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "eth0, eth1", value: "{interfaces}",
-                        oninput: move |e| interfaces.set(e.value()),
-                    }
+                MultiInterfaceSelect {
+                    value: interfaces(),
+                    onchange: move |v| interfaces.set(v),
                 }
                 FormField { label: "Default Policy".to_string(),
                     select {
