@@ -53,45 +53,45 @@ pub fn Dhcp() -> Element {
             }
 
             // Summary stat cards
-            div { class: "grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6",
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-teal-500/30 transition-colors",
-                    div { class: "flex items-center gap-2.5 mb-2",
-                        div { class: "w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center",
-                            Icon { width: 14, height: 14, icon: LdServer, class: "text-teal-400" }
+            div { class: "grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8",
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-teal-500/30 transition-colors",
+                    div { class: "flex items-center gap-3 mb-3",
+                        div { class: "w-9 h-9 rounded-lg bg-teal-500/10 flex items-center justify-center",
+                            Icon { width: 16, height: 16, icon: LdServer, class: "text-teal-400" }
                         }
-                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "Pools" }
+                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Pools" }
                     }
-                    p { class: "text-2xl font-bold text-white", "{pool_count}" }
+                    p { class: "text-2xl font-bold text-white mb-1", "{pool_count}" }
                     p { class: "text-xs text-slate-500", "{pool_active} active" }
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-emerald-500/30 transition-colors",
-                    div { class: "flex items-center gap-2.5 mb-2",
-                        div { class: "w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center",
-                            Icon { width: 14, height: 14, icon: LdCable, class: "text-emerald-400" }
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-emerald-500/30 transition-colors",
+                    div { class: "flex items-center gap-3 mb-3",
+                        div { class: "w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center",
+                            Icon { width: 16, height: 16, icon: LdCable, class: "text-emerald-400" }
                         }
-                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "Leases" }
+                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Leases" }
                     }
-                    p { class: "text-2xl font-bold text-white", "{lease_count}" }
+                    p { class: "text-2xl font-bold text-white mb-1", "{lease_count}" }
                     p { class: "text-xs text-slate-500", "active" }
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-blue-500/30 transition-colors",
-                    div { class: "flex items-center gap-2.5 mb-2",
-                        div { class: "w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center",
-                            Icon { width: 14, height: 14, icon: LdBookmark, class: "text-blue-400" }
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-blue-500/30 transition-colors",
+                    div { class: "flex items-center gap-3 mb-3",
+                        div { class: "w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center",
+                            Icon { width: 16, height: 16, icon: LdBookmark, class: "text-blue-400" }
                         }
-                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "Reservations" }
+                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Reservations" }
                     }
-                    p { class: "text-2xl font-bold text-white", "{reservation_count}" }
+                    p { class: "text-2xl font-bold text-white mb-1", "{reservation_count}" }
                     p { class: "text-xs text-slate-500", "static" }
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-4 hover:border-violet-500/30 transition-colors",
-                    div { class: "flex items-center gap-2.5 mb-2",
-                        div { class: "w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center",
-                            Icon { width: 14, height: 14, icon: LdWifi, class: "text-violet-400" }
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-violet-500/30 transition-colors",
+                    div { class: "flex items-center gap-3 mb-3",
+                        div { class: "w-9 h-9 rounded-lg bg-violet-500/10 flex items-center justify-center",
+                            Icon { width: 16, height: 16, icon: LdWifi, class: "text-violet-400" }
                         }
-                        span { class: "text-[11px] font-medium text-slate-500 uppercase tracking-wider", "WAN Clients" }
+                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "WAN Clients" }
                     }
-                    p { class: "text-2xl font-bold text-white", "{client_count}" }
+                    p { class: "text-2xl font-bold text-white mb-1", "{client_count}" }
                     p { class: "text-xs text-slate-500", "{client_active} active" }
                 }
             }
