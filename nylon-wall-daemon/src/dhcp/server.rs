@@ -1,13 +1,18 @@
-use std::net::{Ipv4Addr, SocketAddr};
+use nylon_wall_common::dhcp::DhcpPool;
 use std::sync::Arc;
-use nylon_wall_common::dhcp::{DhcpLease, DhcpLeaseState, DhcpPool, DhcpReservation};
 use tokio::sync::watch;
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 
+use super::lease_manager::LeaseManager;
 use crate::AppState;
 use crate::events::WsEvent;
-use super::lease_manager::LeaseManager;
-use super::packet::{self, DhcpMessage};
+
+#[cfg(target_os = "linux")]
+use {
+    super::packet::{self, DhcpMessage},
+    nylon_wall_common::dhcp::{DhcpLease, DhcpLeaseState, DhcpReservation},
+    std::net::{Ipv4Addr, SocketAddr},
+};
 
 /// Run the DHCP server. Listens on all enabled pool interfaces.
 /// Watches `pool_rx` for configuration changes to reload.
@@ -17,7 +22,11 @@ pub async fn run_dhcp_server(state: Arc<AppState>, mut pool_rx: watch::Receiver<
     loop {
         // Load enabled pools
         let pools = match state.db.scan_prefix::<DhcpPool>("dhcp_pool:").await {
-            Ok(p) => p.into_iter().map(|(_, pool)| pool).filter(|p| p.enabled).collect::<Vec<_>>(),
+            Ok(p) => p
+                .into_iter()
+                .map(|(_, pool)| pool)
+                .filter(|p| p.enabled)
+                .collect::<Vec<_>>(),
             Err(e) => {
                 error!("Failed to load DHCP pools: {}", e);
                 Vec::new()
@@ -75,7 +84,10 @@ pub async fn run_dhcp_server(state: Arc<AppState>, mut pool_rx: watch::Receiver<
 #[cfg(target_os = "linux")]
 async fn serve_pool(state: Arc<AppState>, pool: DhcpPool) -> anyhow::Result<()> {
     let socket = super::socket::create_server_socket(&pool.interface).await?;
-    info!("DHCP server listening on interface {} for pool {}", pool.interface, pool.id);
+    info!(
+        "DHCP server listening on interface {} for pool {}",
+        pool.interface, pool.id
+    );
 
     let broadcast_addr: SocketAddr = "255.255.255.255:68".parse()?;
     let mut buf = vec![0u8; 1500];
@@ -122,7 +134,11 @@ async fn serve_pool(state: Arc<AppState>, pool: DhcpPool) -> anyhow::Result<()> 
 
         match msg_type {
             dhcproto::v4::MessageType::Discover => {
-                debug!("DHCPDISCOVER from {} ({})", mac, hostname.as_deref().unwrap_or("unknown"));
+                debug!(
+                    "DHCPDISCOVER from {} ({})",
+                    mac,
+                    hostname.as_deref().unwrap_or("unknown")
+                );
 
                 match lease_mgr.allocate_ip(&pool, &mac, &reservations).await {
                     Ok(offer_ip) => {
@@ -144,7 +160,11 @@ async fn serve_pool(state: Arc<AppState>, pool: DhcpPool) -> anyhow::Result<()> 
 
                 let requested_ip = msg.requested_ip().or_else(|| {
                     let ci = msg.ciaddr();
-                    if ci != Ipv4Addr::UNSPECIFIED { Some(ci) } else { None }
+                    if ci != Ipv4Addr::UNSPECIFIED {
+                        Some(ci)
+                    } else {
+                        None
+                    }
                 });
 
                 if let Some(req_ip) = requested_ip {
@@ -152,9 +172,9 @@ async fn serve_pool(state: Arc<AppState>, pool: DhcpPool) -> anyhow::Result<()> 
                     let start: Ipv4Addr = pool.range_start.parse().unwrap_or(Ipv4Addr::UNSPECIFIED);
                     let end: Ipv4Addr = pool.range_end.parse().unwrap_or(Ipv4Addr::UNSPECIFIED);
                     let req_u32 = u32::from(req_ip);
-                    let is_reserved = reservations.iter().any(|r| {
-                        r.mac.eq_ignore_ascii_case(&mac) && r.ip == req_ip.to_string()
-                    });
+                    let is_reserved = reservations
+                        .iter()
+                        .any(|r| r.mac.eq_ignore_ascii_case(&mac) && r.ip == req_ip.to_string());
                     let in_range = req_u32 >= u32::from(start) && req_u32 <= u32::from(end);
 
                     if in_range || is_reserved {
@@ -181,7 +201,12 @@ async fn serve_pool(state: Arc<AppState>, pool: DhcpPool) -> anyhow::Result<()> 
                         if let Err(e) = socket.send_to(&response, broadcast_addr).await {
                             warn!("Failed to send DHCPACK: {}", e);
                         } else {
-                            info!("DHCPACK {} -> {} ({})", req_ip, mac, lease.hostname.as_deref().unwrap_or(""));
+                            info!(
+                                "DHCPACK {} -> {} ({})",
+                                req_ip,
+                                mac,
+                                lease.hostname.as_deref().unwrap_or("")
+                            );
                             // Broadcast lease event
                             let _ = state.event_tx.send(WsEvent::DhcpLeaseChanged(
                                 serde_json::to_value(&lease).unwrap_or_default(),
@@ -215,7 +240,10 @@ async fn serve_pool(state: Arc<AppState>, pool: DhcpPool) -> anyhow::Result<()> 
 
 #[cfg(not(target_os = "linux"))]
 async fn serve_pool(_state: Arc<AppState>, pool: DhcpPool) -> anyhow::Result<()> {
-    info!("DHCP server for pool {} (interface {}) not available on this platform", pool.id, pool.interface);
+    info!(
+        "DHCP server for pool {} (interface {}) not available on this platform",
+        pool.id, pool.interface
+    );
     // On non-Linux, just idle forever
     std::future::pending::<()>().await;
     Ok(())

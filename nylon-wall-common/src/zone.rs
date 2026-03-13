@@ -1,5 +1,5 @@
 #[cfg(feature = "std")]
-use crate::protocol::{Protocol, PortRange};
+use crate::protocol::{PortRange, Protocol};
 #[cfg(feature = "std")]
 use crate::rule::RuleAction;
 
@@ -35,9 +35,9 @@ pub struct NetworkPolicy {
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Schedule {
-    pub days: Vec<u8>,       // 0=Mon, 6=Sun
-    pub start_time: String,  // "HH:MM"
-    pub end_time: String,    // "HH:MM"
+    pub days: Vec<u8>,      // 0=Mon, 6=Sun
+    pub start_time: String, // "HH:MM"
+    pub end_time: String,   // "HH:MM"
 }
 
 /// eBPF zone mapping (interface index -> zone id)

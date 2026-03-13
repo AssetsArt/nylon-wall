@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path, Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{
+        Path, Query, State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post, put},
@@ -106,15 +109,9 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         )
         // Zones
         .route("/api/v1/zones", get(list_zones).post(create_zone))
-        .route(
-            "/api/v1/zones/{id}",
-            put(update_zone).delete(delete_zone),
-        )
+        .route("/api/v1/zones/{id}", put(update_zone).delete(delete_zone))
         // Policies
-        .route(
-            "/api/v1/policies",
-            get(list_policies).post(create_policy),
-        )
+        .route("/api/v1/policies", get(list_policies).post(create_policy))
         .route(
             "/api/v1/policies/{id}",
             put(update_policy).delete(delete_policy),
@@ -130,16 +127,27 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         .route("/api/v1/system/backup", post(backup_data))
         .route("/api/v1/system/restore", post(restore_data))
         // DHCP Server — Pools
-        .route("/api/v1/dhcp/pools", get(list_dhcp_pools).post(create_dhcp_pool))
+        .route(
+            "/api/v1/dhcp/pools",
+            get(list_dhcp_pools).post(create_dhcp_pool),
+        )
         .route(
             "/api/v1/dhcp/pools/{id}",
-            get(get_dhcp_pool).put(update_dhcp_pool).delete(delete_dhcp_pool),
+            get(get_dhcp_pool)
+                .put(update_dhcp_pool)
+                .delete(delete_dhcp_pool),
         )
         .route("/api/v1/dhcp/pools/{id}/toggle", post(toggle_dhcp_pool))
         // DHCP Server — Leases
         .route("/api/v1/dhcp/leases", get(list_dhcp_leases))
-        .route("/api/v1/dhcp/leases/{mac}", axum::routing::delete(delete_dhcp_lease))
-        .route("/api/v1/dhcp/leases/{mac}/reserve", post(reserve_dhcp_lease))
+        .route(
+            "/api/v1/dhcp/leases/{mac}",
+            axum::routing::delete(delete_dhcp_lease),
+        )
+        .route(
+            "/api/v1/dhcp/leases/{mac}/reserve",
+            post(reserve_dhcp_lease),
+        )
         // DHCP Server — Reservations
         .route(
             "/api/v1/dhcp/reservations",
@@ -150,15 +158,24 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
             put(update_dhcp_reservation).delete(delete_dhcp_reservation),
         )
         // DHCP Client
-        .route("/api/v1/dhcp/clients", get(list_dhcp_clients).post(create_dhcp_client))
+        .route(
+            "/api/v1/dhcp/clients",
+            get(list_dhcp_clients).post(create_dhcp_client),
+        )
         .route(
             "/api/v1/dhcp/clients/{id}",
             put(update_dhcp_client).delete(delete_dhcp_client),
         )
         .route("/api/v1/dhcp/clients/{id}/toggle", post(toggle_dhcp_client))
         .route("/api/v1/dhcp/clients/status", get(list_dhcp_client_status))
-        .route("/api/v1/dhcp/clients/{interface}/release", post(release_dhcp_client))
-        .route("/api/v1/dhcp/clients/{interface}/renew", post(renew_dhcp_client))
+        .route(
+            "/api/v1/dhcp/clients/{interface}/release",
+            post(release_dhcp_client),
+        )
+        .route(
+            "/api/v1/dhcp/clients/{interface}/renew",
+            post(renew_dhcp_client),
+        )
         // Prometheus metrics
         .route("/metrics", get(prometheus_metrics))
         .layer(CorsLayer::permissive())
@@ -172,10 +189,7 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
 
 // === WebSocket ===
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
 
@@ -197,9 +211,7 @@ async fn handle_ws(socket: WebSocket, state: Arc<AppState>) {
     });
 
     // Consume incoming messages (ping/pong handled by axum, we just drain)
-    let recv_task = tokio::spawn(async move {
-        while let Some(Ok(_)) = receiver.next().await {}
-    });
+    let recv_task = tokio::spawn(async move { while let Some(Ok(_)) = receiver.next().await {} });
 
     // When either task finishes, abort the other
     tokio::select! {
@@ -231,7 +243,10 @@ async fn create_rule(
         .add_to_index("rule:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::RuleCreated(serde_json::to_value(&rule).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::RuleCreated(serde_json::to_value(&rule).unwrap()),
+    );
     sync_rules_to_ebpf(&state).await;
     Ok((StatusCode::CREATED, Json(rule)))
 }
@@ -265,7 +280,10 @@ async fn update_rule(
         .add_to_index("rule:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::RuleUpdated(serde_json::to_value(&rule).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::RuleUpdated(serde_json::to_value(&rule).unwrap()),
+    );
     sync_rules_to_ebpf(&state).await;
     Ok(Json(rule))
 }
@@ -299,7 +317,10 @@ async fn toggle_rule(
         .ok_or((StatusCode::NOT_FOUND, "Rule not found".to_string()))?;
     rule.enabled = !rule.enabled;
     state.db.put(&key, &rule).await.map_err(internal_error)?;
-    broadcast(&state, WsEvent::RuleToggled(serde_json::to_value(&rule).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::RuleToggled(serde_json::to_value(&rule).unwrap()),
+    );
     sync_rules_to_ebpf(&state).await;
     Ok(Json(rule))
 }
@@ -326,7 +347,10 @@ async fn create_nat(
         .add_to_index("nat:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::NatCreated(serde_json::to_value(&entry).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::NatCreated(serde_json::to_value(&entry).unwrap()),
+    );
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
@@ -343,7 +367,10 @@ async fn update_nat(
         .add_to_index("nat:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::NatUpdated(serde_json::to_value(&entry).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::NatUpdated(serde_json::to_value(&entry).unwrap()),
+    );
     Ok(Json(entry))
 }
 
@@ -384,7 +411,10 @@ async fn create_route(
         .add_to_index("route:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::RouteCreated(serde_json::to_value(&route).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::RouteCreated(serde_json::to_value(&route).unwrap()),
+    );
     Ok((StatusCode::CREATED, Json(route)))
 }
 
@@ -401,7 +431,10 @@ async fn update_route(
         .add_to_index("route:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::RouteUpdated(serde_json::to_value(&route).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::RouteUpdated(serde_json::to_value(&route).unwrap()),
+    );
     Ok(Json(route))
 }
 
@@ -497,7 +530,10 @@ async fn create_zone(
         .add_to_index("zone:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::ZoneCreated(serde_json::to_value(&zone).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::ZoneCreated(serde_json::to_value(&zone).unwrap()),
+    );
     Ok((StatusCode::CREATED, Json(zone)))
 }
 
@@ -514,7 +550,10 @@ async fn update_zone(
         .add_to_index("zone:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::ZoneUpdated(serde_json::to_value(&zone).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::ZoneUpdated(serde_json::to_value(&zone).unwrap()),
+    );
     Ok(Json(zone))
 }
 
@@ -555,7 +594,10 @@ async fn create_policy(
         .add_to_index("policy:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::PolicyCreated(serde_json::to_value(&policy).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::PolicyCreated(serde_json::to_value(&policy).unwrap()),
+    );
     Ok((StatusCode::CREATED, Json(policy)))
 }
 
@@ -566,17 +608,16 @@ async fn update_policy(
 ) -> AppResult<NetworkPolicy> {
     policy.id = id;
     let key = format!("policy:{}", id);
-    state
-        .db
-        .put(&key, &policy)
-        .await
-        .map_err(internal_error)?;
+    state.db.put(&key, &policy).await.map_err(internal_error)?;
     state
         .db
         .add_to_index("policy:", &key)
         .await
         .map_err(internal_error)?;
-    broadcast(&state, WsEvent::PolicyUpdated(serde_json::to_value(&policy).unwrap()));
+    broadcast(
+        &state,
+        WsEvent::PolicyUpdated(serde_json::to_value(&policy).unwrap()),
+    );
     Ok(Json(policy))
 }
 
@@ -612,11 +653,16 @@ async fn system_status(State(state): State<Arc<AppState>>) -> Json<SystemStatus>
     })
 }
 
-async fn prometheus_metrics(State(state): State<Arc<AppState>>) -> (StatusCode, [(String, String); 1], String) {
+async fn prometheus_metrics(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, [(String, String); 1], String) {
     let body = crate::metrics::collect(&state).await;
     (
         StatusCode::OK,
-        [("content-type".to_string(), "text/plain; version=0.0.4; charset=utf-8".to_string())],
+        [(
+            "content-type".to_string(),
+            "text/plain; version=0.0.4; charset=utf-8".to_string(),
+        )],
         body,
     )
 }
@@ -630,15 +676,10 @@ async fn reorder_rules(
     let mut updated_rules = Vec::new();
     for (index, rule_id) in req.rule_ids.iter().enumerate() {
         let key = format!("rule:{}", rule_id);
-        let mut rule: FirewallRule = state
-            .db
-            .get(&key)
-            .await
-            .map_err(internal_error)?
-            .ok_or((
-                StatusCode::NOT_FOUND,
-                format!("Rule not found: {}", rule_id),
-            ))?;
+        let mut rule: FirewallRule = state.db.get(&key).await.map_err(internal_error)?.ok_or((
+            StatusCode::NOT_FOUND,
+            format!("Rule not found: {}", rule_id),
+        ))?;
         rule.priority = (index * 10) as u32;
         state.db.put(&key, &rule).await.map_err(internal_error)?;
         updated_rules.push(rule);
@@ -969,12 +1010,7 @@ async fn reserve_dhcp_lease(
         .scan_prefix::<DhcpReservation>("dhcp_reservation:")
         .await
         .map_err(internal_error)?;
-    let next_id = existing
-        .iter()
-        .map(|(_, r)| r.id)
-        .max()
-        .unwrap_or(0)
-        + 1;
+    let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
 
     let reservation = DhcpReservation {
         id: next_id,
@@ -1152,12 +1188,8 @@ async fn toggle_dhcp_client(
     Path(id): Path<u32>,
 ) -> AppResult<DhcpClientConfig> {
     let key = format!("dhcp_client:{}", id);
-    let mut config: DhcpClientConfig = state
-        .db
-        .get(&key)
-        .await
-        .map_err(internal_error)?
-        .ok_or((
+    let mut config: DhcpClientConfig =
+        state.db.get(&key).await.map_err(internal_error)?.ok_or((
             StatusCode::NOT_FOUND,
             "DHCP client config not found".to_string(),
         ))?;
@@ -1214,7 +1246,9 @@ async fn release_dhcp_client(
             WsEvent::DhcpClientStatusChanged(serde_json::to_value(&status).unwrap()),
         );
     }
-    Ok(Json(serde_json::json!({"status": "released", "interface": interface})))
+    Ok(Json(
+        serde_json::json!({"status": "released", "interface": interface}),
+    ))
 }
 
 async fn renew_dhcp_client(
@@ -1326,8 +1360,18 @@ async fn apply_config(
         .await
         .map_err(internal_error)?;
 
-    let ingress_count = rules.iter().filter(|(_, r)| r.enabled && matches!(r.direction, nylon_wall_common::rule::Direction::Ingress)).count();
-    let egress_count = rules.iter().filter(|(_, r)| r.enabled && matches!(r.direction, nylon_wall_common::rule::Direction::Egress)).count();
+    let ingress_count = rules
+        .iter()
+        .filter(|(_, r)| {
+            r.enabled && matches!(r.direction, nylon_wall_common::rule::Direction::Ingress)
+        })
+        .count();
+    let egress_count = rules
+        .iter()
+        .filter(|(_, r)| {
+            r.enabled && matches!(r.direction, nylon_wall_common::rule::Direction::Egress)
+        })
+        .count();
 
     let nat_count = state
         .db

@@ -5,7 +5,7 @@ use crate::protocol::Protocol;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Route {
     pub id: u32,
-    pub destination: String,    // CIDR e.g. "10.0.0.0/8"
+    pub destination: String, // CIDR e.g. "10.0.0.0/8"
     pub gateway: Option<String>,
     pub interface: String,
     pub metric: u32,

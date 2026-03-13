@@ -1,9 +1,9 @@
+use super::ConfirmModal;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
-use super::ConfirmModal;
 
 #[component]
 pub fn Nat() -> Element {
@@ -191,9 +191,9 @@ fn format_translate(entry: &NatEntry) -> String {
 
 #[component]
 fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
-    let mut ext_port = use_signal(|| String::new());
-    let mut int_ip = use_signal(|| String::new());
-    let mut int_port = use_signal(|| String::new());
+    let mut ext_port = use_signal(String::new);
+    let mut int_ip = use_signal(String::new);
+    let mut int_port = use_signal(String::new);
     let mut protocol = use_signal(|| "TCP".to_string());
     let mut in_interface = use_signal(|| "eth0".to_string());
     let mut error = use_signal(|| None::<String>);
@@ -392,10 +392,10 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
 #[component]
 fn NatForm(on_saved: EventHandler<()>) -> Element {
     let mut nat_type = use_signal(|| "SNAT".to_string());
-    let mut src_network = use_signal(|| String::new());
-    let mut dst_network = use_signal(|| String::new());
-    let mut translate_ip = use_signal(|| String::new());
-    let mut out_interface = use_signal(|| String::new());
+    let mut src_network = use_signal(String::new);
+    let mut dst_network = use_signal(String::new);
+    let mut translate_ip = use_signal(String::new);
+    let mut out_interface = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -409,13 +409,29 @@ fn NatForm(on_saved: EventHandler<()>) -> Element {
                 _ => NatType::SNAT,
             },
             enabled: true,
-            src_network: if src_network().is_empty() { None } else { Some(src_network()) },
-            dst_network: if dst_network().is_empty() { None } else { Some(dst_network()) },
+            src_network: if src_network().is_empty() {
+                None
+            } else {
+                Some(src_network())
+            },
+            dst_network: if dst_network().is_empty() {
+                None
+            } else {
+                Some(dst_network())
+            },
             protocol: None,
             dst_port: None,
             in_interface: None,
-            out_interface: if out_interface().is_empty() { None } else { Some(out_interface()) },
-            translate_ip: if translate_ip().is_empty() { None } else { Some(translate_ip()) },
+            out_interface: if out_interface().is_empty() {
+                None
+            } else {
+                Some(out_interface())
+            },
+            translate_ip: if translate_ip().is_empty() {
+                None
+            } else {
+                Some(translate_ip())
+            },
             translate_port: None,
         };
         spawn(async move {

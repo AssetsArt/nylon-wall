@@ -13,3 +13,36 @@ resolver = "3"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+
+[workspace.dependencies]
+# Internal crates
+nylon-wall-common = { path = "nylon-wall-common" }
+
+# Shared
+serde = { version = "1", default-features = false, features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+tracing = "0.1"
+
+# Daemon
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+slatedb = "0.11"
+object_store = "0.12"  # must match slatedb's re-exported version
+tower-http = { version = "0.6", features = ["cors"] }
+toml = "1"
+thiserror = "2"
+anyhow = "1"
+bytes = "1"
+futures-util = "0.3"
+dhcproto = "0.14"
+rand = "0.10"
+socket2 = { version = "0.6", features = ["all"] }
+aya = "0.13"
+aya-log = "0.2"
+
+# UI
+dioxus = "0.7"
+dioxus-free-icons = { version = "0.10", features = ["lucide"] }
+gloo-net = { version = "0.6", features = ["http"] }

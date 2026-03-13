@@ -91,9 +91,8 @@ pub async fn perf_event_loop(state: std::sync::Arc<crate::AppState>) {
                         continue;
                     }
 
-                    let event: EbpfPacketEvent = unsafe {
-                        std::ptr::read_unaligned(buf.as_ptr() as *const EbpfPacketEvent)
-                    };
+                    let event: EbpfPacketEvent =
+                        unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const EbpfPacketEvent) };
 
                     let src_ip = std::net::Ipv4Addr::from(u32::from_be(event.src_ip));
                     let dst_ip = std::net::Ipv4Addr::from(u32::from_be(event.dst_ip));
@@ -138,11 +137,9 @@ pub async fn perf_event_loop(state: std::sync::Arc<crate::AppState>) {
                     }
 
                     // Broadcast to WebSocket subscribers
-                    let _ = state.event_tx.send(
-                        crate::events::WsEvent::LogEvent(
-                            serde_json::to_value(&log).unwrap_or_default(),
-                        ),
-                    );
+                    let _ = state.event_tx.send(crate::events::WsEvent::LogEvent(
+                        serde_json::to_value(&log).unwrap_or_default(),
+                    ));
                 }
             }
         });

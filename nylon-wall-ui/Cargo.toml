@@ -1,17 +1,17 @@
 [package]
 name = "nylon-wall-ui"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-dioxus = { version = "0.7" }
-dioxus-free-icons = { version = "0.10", features = ["lucide"] }
-nylon-wall-common = { path = "../nylon-wall-common", features = ["std"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-gloo-net = { version = "0.6", features = ["http"] }
-chrono = "0.4"
-tracing = "0.1"
+dioxus.workspace = true
+dioxus-free-icons.workspace = true
+nylon-wall-common = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["std"] }
+serde_json.workspace = true
+gloo-net.workspace = true
+chrono.workspace = true
+tracing.workspace = true
 
 [features]
 default = ["web"]

@@ -1,9 +1,9 @@
+use super::ConfirmModal;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
-use super::ConfirmModal;
 
 #[component]
 pub fn Dhcp() -> Element {
@@ -63,7 +63,8 @@ pub fn Dhcp() -> Element {
 
 #[component]
 fn DhcpPoolsTab() -> Element {
-    let mut pools = use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
+    let mut pools =
+        use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
@@ -212,8 +213,11 @@ fn DhcpPoolsTab() -> Element {
 
 #[component]
 fn DhcpLeasesTab() -> Element {
-    let mut leases = use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
-    let mut reservations = use_resource(|| async { api_client::get::<Vec<DhcpReservation>>("/dhcp/reservations").await });
+    let mut leases =
+        use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
+    let mut reservations = use_resource(|| async {
+        api_client::get::<Vec<DhcpReservation>>("/dhcp/reservations").await
+    });
     let mut show_reservation_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_release = use_signal(|| None::<String>); // MAC to release
@@ -435,8 +439,11 @@ fn DhcpLeasesTab() -> Element {
 
 #[component]
 fn DhcpClientTab() -> Element {
-    let mut clients = use_resource(|| async { api_client::get::<Vec<DhcpClientConfig>>("/dhcp/clients").await });
-    let mut statuses = use_resource(|| async { api_client::get::<Vec<DhcpClientStatus>>("/dhcp/clients/status").await });
+    let mut clients =
+        use_resource(|| async { api_client::get::<Vec<DhcpClientConfig>>("/dhcp/clients").await });
+    let mut statuses = use_resource(|| async {
+        api_client::get::<Vec<DhcpClientStatus>>("/dhcp/clients/status").await
+    });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
 
@@ -641,19 +648,21 @@ fn DhcpClientTab() -> Element {
 #[component]
 fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
     let mut interface = use_signal(|| "eth1".to_string());
-    let mut subnet = use_signal(|| String::new());
-    let mut range_start = use_signal(|| String::new());
-    let mut range_end = use_signal(|| String::new());
-    let mut gateway = use_signal(|| String::new());
+    let mut subnet = use_signal(String::new);
+    let mut range_start = use_signal(String::new);
+    let mut range_end = use_signal(String::new);
+    let mut gateway = use_signal(String::new);
     let mut dns_servers = use_signal(|| "8.8.8.8, 8.8.4.4".to_string());
-    let mut domain_name = use_signal(|| String::new());
+    let mut domain_name = use_signal(String::new);
     let mut lease_time = use_signal(|| "3600".to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
     let on_submit = move |_| {
         if subnet().is_empty() || range_start().is_empty() || range_end().is_empty() {
-            error.set(Some("Subnet, range start, and range end are required".to_string()));
+            error.set(Some(
+                "Subnet, range start, and range end are required".to_string(),
+            ));
             return;
         }
         let lt: u32 = match lease_time().parse() {
@@ -680,9 +689,17 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
             subnet: subnet(),
             range_start: range_start(),
             range_end: range_end(),
-            gateway: if gateway().is_empty() { None } else { Some(gateway()) },
+            gateway: if gateway().is_empty() {
+                None
+            } else {
+                Some(gateway())
+            },
             dns_servers: dns,
-            domain_name: if domain_name().is_empty() { None } else { Some(domain_name()) },
+            domain_name: if domain_name().is_empty() {
+                None
+            } else {
+                Some(domain_name())
+            },
             lease_time: lt,
         };
 
@@ -779,9 +796,9 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
 
 #[component]
 fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
-    let mut mac = use_signal(|| String::new());
-    let mut ip = use_signal(|| String::new());
-    let mut hostname = use_signal(|| String::new());
+    let mut mac = use_signal(String::new);
+    let mut ip = use_signal(String::new);
+    let mut hostname = use_signal(String::new);
     let mut pool_id = use_signal(|| "1".to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
@@ -800,11 +817,20 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
             pool_id: pid,
             mac: mac(),
             ip: ip(),
-            hostname: if hostname().is_empty() { None } else { Some(hostname()) },
+            hostname: if hostname().is_empty() {
+                None
+            } else {
+                Some(hostname())
+            },
         };
 
         spawn(async move {
-            match api_client::post::<DhcpReservation, DhcpReservation>("/dhcp/reservations", &reservation).await {
+            match api_client::post::<DhcpReservation, DhcpReservation>(
+                "/dhcp/reservations",
+                &reservation,
+            )
+            .await
+            {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
@@ -865,7 +891,7 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
 #[component]
 fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
     let mut interface = use_signal(|| "eth0".to_string());
-    let mut hostname = use_signal(|| String::new());
+    let mut hostname = use_signal(String::new);
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -881,11 +907,17 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
             id: 0,
             interface: interface(),
             enabled: true,
-            hostname: if hostname().is_empty() { None } else { Some(hostname()) },
+            hostname: if hostname().is_empty() {
+                None
+            } else {
+                Some(hostname())
+            },
         };
 
         spawn(async move {
-            match api_client::post::<DhcpClientConfig, DhcpClientConfig>("/dhcp/clients", &config).await {
+            match api_client::post::<DhcpClientConfig, DhcpClientConfig>("/dhcp/clients", &config)
+                .await
+            {
                 Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }

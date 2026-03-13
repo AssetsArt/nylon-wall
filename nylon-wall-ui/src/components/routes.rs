@@ -1,15 +1,13 @@
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
+use super::ConfirmModal;
 use crate::api_client;
 use crate::models::*;
-use super::ConfirmModal;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 #[component]
 pub fn Routes() -> Element {
-    let mut routes = use_resource(|| async {
-        api_client::get::<Vec<Route>>("/routes").await
-    });
+    let mut routes = use_resource(|| async { api_client::get::<Vec<Route>>("/routes").await });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
@@ -141,9 +139,9 @@ pub fn Routes() -> Element {
 
 #[component]
 fn RouteForm(on_saved: EventHandler<()>) -> Element {
-    let mut destination = use_signal(|| String::new());
-    let mut gateway = use_signal(|| String::new());
-    let mut interface = use_signal(|| String::new());
+    let mut destination = use_signal(String::new);
+    let mut gateway = use_signal(String::new);
+    let mut interface = use_signal(String::new);
     let mut metric = use_signal(|| "100".to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
@@ -153,7 +151,11 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
         let route = Route {
             id: 0,
             destination: destination(),
-            gateway: if gateway().is_empty() { None } else { Some(gateway()) },
+            gateway: if gateway().is_empty() {
+                None
+            } else {
+                Some(gateway())
+            },
             interface: interface(),
             metric: metric().parse().unwrap_or(100),
             table: 254,
@@ -222,9 +224,8 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
 
 #[component]
 pub fn PolicyRoutes() -> Element {
-    let mut policy_routes = use_resource(|| async {
-        api_client::get::<Vec<PolicyRoute>>("/routes/policy").await
-    });
+    let mut policy_routes =
+        use_resource(|| async { api_client::get::<Vec<PolicyRoute>>("/routes/policy").await });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
@@ -351,9 +352,9 @@ pub fn PolicyRoutes() -> Element {
 
 #[component]
 fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
-    let mut src_ip = use_signal(|| String::new());
-    let mut dst_ip = use_signal(|| String::new());
-    let mut src_port = use_signal(|| String::new());
+    let mut src_ip = use_signal(String::new);
+    let mut dst_ip = use_signal(String::new);
+    let mut src_port = use_signal(String::new);
     let mut protocol = use_signal(|| "any".to_string());
     let mut route_table = use_signal(|| "100".to_string());
     let mut priority = use_signal(|| "1000".to_string());
@@ -369,12 +370,15 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
         } else {
             let parts: Vec<&str> = port_val.split(':').collect();
             match parts.len() {
-                1 => parts[0].parse::<u16>().ok().map(|p| PortRange { start: p, end: p }),
+                1 => parts[0]
+                    .parse::<u16>()
+                    .ok()
+                    .map(|p| PortRange { start: p, end: p }),
                 2 => {
                     let s = parts[0].parse::<u16>().unwrap_or(0);
                     let e = parts[1].parse::<u16>().unwrap_or(0);
                     Some(PortRange { start: s, end: e })
-                },
+                }
                 _ => None,
             }
         };
@@ -388,8 +392,16 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
 
         let pr = PolicyRoute {
             id: 0,
-            src_ip: if src_ip().is_empty() { None } else { Some(src_ip()) },
-            dst_ip: if dst_ip().is_empty() { None } else { Some(dst_ip()) },
+            src_ip: if src_ip().is_empty() {
+                None
+            } else {
+                Some(src_ip())
+            },
+            dst_ip: if dst_ip().is_empty() {
+                None
+            } else {
+                Some(dst_ip())
+            },
             src_port: parsed_port,
             protocol: parsed_protocol,
             route_table: route_table().parse().unwrap_or(100),

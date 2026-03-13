@@ -1,15 +1,13 @@
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
+use super::ConfirmModal;
 use crate::api_client;
 use crate::models::*;
-use super::ConfirmModal;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 #[component]
 pub fn Rules() -> Element {
-    let mut rules = use_resource(|| async {
-        api_client::get::<Vec<FirewallRule>>("/rules").await
-    });
+    let mut rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
@@ -174,12 +172,12 @@ pub fn Rules() -> Element {
 
 #[component]
 fn RuleForm(on_saved: EventHandler<()>) -> Element {
-    let mut name = use_signal(|| String::new());
+    let mut name = use_signal(String::new);
     let mut direction = use_signal(|| "Ingress".to_string());
     let mut protocol = use_signal(|| "Any".to_string());
-    let mut src_ip = use_signal(|| String::new());
-    let mut dst_ip = use_signal(|| String::new());
-    let mut dst_port = use_signal(|| String::new());
+    let mut src_ip = use_signal(String::new);
+    let mut dst_ip = use_signal(String::new);
+    let mut dst_port = use_signal(String::new);
     let mut action = use_signal(|| "Allow".to_string());
     let mut priority = use_signal(|| "100".to_string());
     let mut error = use_signal(|| None::<String>);
@@ -191,15 +189,39 @@ fn RuleForm(on_saved: EventHandler<()>) -> Element {
             id: 0,
             name: name(),
             priority: priority().parse().unwrap_or(100),
-            direction: match direction().as_str() { "Egress" => Direction::Egress, _ => Direction::Ingress },
+            direction: match direction().as_str() {
+                "Egress" => Direction::Egress,
+                _ => Direction::Ingress,
+            },
             enabled: true,
-            src_ip: if src_ip().is_empty() { None } else { Some(src_ip()) },
-            dst_ip: if dst_ip().is_empty() { None } else { Some(dst_ip()) },
+            src_ip: if src_ip().is_empty() {
+                None
+            } else {
+                Some(src_ip())
+            },
+            dst_ip: if dst_ip().is_empty() {
+                None
+            } else {
+                Some(dst_ip())
+            },
             src_port: None,
-            dst_port: if dst_port().is_empty() { None } else { dst_port().parse::<u16>().ok().map(PortRange::single) },
-            protocol: match protocol().as_str() { "TCP" => Some(Protocol::TCP), "UDP" => Some(Protocol::UDP), "ICMP" => Some(Protocol::ICMP), _ => None },
+            dst_port: if dst_port().is_empty() {
+                None
+            } else {
+                dst_port().parse::<u16>().ok().map(PortRange::single)
+            },
+            protocol: match protocol().as_str() {
+                "TCP" => Some(Protocol::TCP),
+                "UDP" => Some(Protocol::UDP),
+                "ICMP" => Some(Protocol::ICMP),
+                _ => None,
+            },
             interface: None,
-            action: match action().as_str() { "Drop" => RuleAction::Drop, "Log" => RuleAction::Log, _ => RuleAction::Allow },
+            action: match action().as_str() {
+                "Drop" => RuleAction::Drop,
+                "Log" => RuleAction::Log,
+                _ => RuleAction::Allow,
+            },
             rate_limit_pps: None,
             hit_count: 0,
             created_at: 0,

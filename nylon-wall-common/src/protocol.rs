@@ -32,7 +32,10 @@ pub struct PortRange {
 
 impl PortRange {
     pub fn single(port: u16) -> Self {
-        Self { start: port, end: port }
+        Self {
+            start: port,
+            end: port,
+        }
     }
 
     pub fn range(start: u16, end: u16) -> Self {

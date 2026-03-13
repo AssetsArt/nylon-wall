@@ -1,5 +1,5 @@
 #[cfg(feature = "std")]
-use crate::protocol::{Protocol, PortRange};
+use crate::protocol::{PortRange, Protocol};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]

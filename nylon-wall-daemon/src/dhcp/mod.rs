@@ -1,7 +1,7 @@
-pub mod packet;
-pub mod lease_manager;
-pub mod server;
 pub mod client;
+pub mod lease_manager;
+pub mod packet;
+pub mod server;
 
 #[cfg(target_os = "linux")]
 pub mod socket;

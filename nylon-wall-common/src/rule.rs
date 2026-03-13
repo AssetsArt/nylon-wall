@@ -1,5 +1,5 @@
 #[cfg(feature = "std")]
-use crate::protocol::{Protocol, PortRange};
+use crate::protocol::{PortRange, Protocol};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(serde::Serialize, serde::Deserialize))]
@@ -29,8 +29,8 @@ pub struct EbpfRule {
     pub enabled: u8,
     pub protocol: u8,
     pub action: u8,
-    pub src_ip: u32,       // IPv4 in network byte order, 0 = any
-    pub src_mask: u32,     // CIDR mask
+    pub src_ip: u32,   // IPv4 in network byte order, 0 = any
+    pub src_mask: u32, // CIDR mask
     pub dst_ip: u32,
     pub dst_mask: u32,
     pub src_port_start: u16,
@@ -52,7 +52,7 @@ pub struct FirewallRule {
     pub enabled: bool,
 
     // Match conditions
-    pub src_ip: Option<String>,      // CIDR notation e.g. "192.168.1.0/24"
+    pub src_ip: Option<String>, // CIDR notation e.g. "192.168.1.0/24"
     pub dst_ip: Option<String>,
     pub src_port: Option<PortRange>,
     pub dst_port: Option<PortRange>,

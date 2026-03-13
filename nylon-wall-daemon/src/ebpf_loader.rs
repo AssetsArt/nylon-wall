@@ -2,9 +2,9 @@
 
 #[cfg(target_os = "linux")]
 mod linux {
+    use aya::Ebpf;
     use aya::maps::Array;
     use aya::programs::{SchedClassifier, Xdp, XdpFlags};
-    use aya::Ebpf;
     use nylon_wall_common::rule::EbpfRule;
     use tracing::info;
 
@@ -84,7 +84,9 @@ mod linux {
 
     /// Read all conntrack entries from the eBPF LRU HashMap.
     pub fn read_conntrack(bpf: &mut Ebpf) -> Vec<nylon_wall_common::conntrack::ConntrackInfo> {
-        use nylon_wall_common::conntrack::{ConnState, ConntrackEntry, ConntrackKey, ConntrackInfo};
+        use nylon_wall_common::conntrack::{
+            ConnState, ConntrackEntry, ConntrackInfo, ConntrackKey,
+        };
 
         let map = match bpf.map_mut("CONNTRACK") {
             Some(m) => m,
@@ -139,8 +141,13 @@ mod linux {
         entries
     }
 
-    fn write_rules_to_map(bpf: &mut Ebpf, map_name: &str, rules: &[EbpfRule]) -> anyhow::Result<()> {
-        let map = bpf.map_mut(map_name)
+    fn write_rules_to_map(
+        bpf: &mut Ebpf,
+        map_name: &str,
+        rules: &[EbpfRule],
+    ) -> anyhow::Result<()> {
+        let map = bpf
+            .map_mut(map_name)
             .ok_or_else(|| anyhow::anyhow!("Map {} not found", map_name))?;
         let mut array: Array<_, EbpfRule> = Array::try_from(map)?;
 
@@ -151,7 +158,8 @@ mod linux {
     }
 
     fn set_map_u32(bpf: &mut Ebpf, map_name: &str, index: u32, value: u32) -> anyhow::Result<()> {
-        let map = bpf.map_mut(map_name)
+        let map = bpf
+            .map_mut(map_name)
             .ok_or_else(|| anyhow::anyhow!("Map {} not found", map_name))?;
         let mut array: Array<_, u32> = Array::try_from(map)?;
         array.set(index, value, 0)?;
@@ -159,9 +167,7 @@ mod linux {
     }
 
     /// Convert a userspace FirewallRule to an EbpfRule.
-    pub fn firewall_rule_to_ebpf(
-        rule: &nylon_wall_common::rule::FirewallRule,
-    ) -> EbpfRule {
+    pub fn firewall_rule_to_ebpf(rule: &nylon_wall_common::rule::FirewallRule) -> EbpfRule {
         let (src_ip, src_mask) = parse_cidr(rule.src_ip.as_deref());
         let (dst_ip, dst_mask) = parse_cidr(rule.dst_ip.as_deref());
 
@@ -216,9 +222,3 @@ mod linux {
 
 #[cfg(target_os = "linux")]
 pub use linux::*;
-
-#[cfg(not(target_os = "linux"))]
-pub async fn load_and_attach() -> anyhow::Result<()> {
-    tracing::warn!("eBPF not available on this platform");
-    Ok(())
-}

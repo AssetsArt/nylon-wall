@@ -1,9 +1,9 @@
+use super::ConfirmModal;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
-use super::ConfirmModal;
 
 const ZONE_COLORS: [(&str, &str, &str); 4] = [
     ("border-l-blue-500", "bg-blue-500/10", "text-blue-400"),
@@ -336,8 +336,8 @@ pub fn Policies() -> Element {
 
 #[component]
 fn ZoneForm(on_saved: EventHandler<()>) -> Element {
-    let mut name = use_signal(|| String::new());
-    let mut interfaces = use_signal(|| String::new());
+    let mut name = use_signal(String::new);
+    let mut interfaces = use_signal(String::new);
     let mut default_policy = use_signal(|| "Allow".to_string());
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
@@ -411,11 +411,11 @@ fn ZoneForm(on_saved: EventHandler<()>) -> Element {
 
 #[component]
 fn PolicyForm(on_saved: EventHandler<()>) -> Element {
-    let mut name = use_signal(|| String::new());
-    let mut from_zone = use_signal(|| String::new());
-    let mut to_zone = use_signal(|| String::new());
+    let mut name = use_signal(String::new);
+    let mut from_zone = use_signal(String::new);
+    let mut to_zone = use_signal(String::new);
     let mut protocol = use_signal(|| "Any".to_string());
-    let mut dst_port = use_signal(|| String::new());
+    let mut dst_port = use_signal(String::new);
     let mut action = use_signal(|| "Allow".to_string());
     let mut priority = use_signal(|| "100".to_string());
     let mut log = use_signal(|| false);

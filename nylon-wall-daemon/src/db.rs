@@ -23,8 +23,7 @@ impl Database {
         let path = Path::new(path);
         std::fs::create_dir_all(path).map_err(|e| DbError::Storage(e.to_string()))?;
         let object_store = Arc::new(
-            LocalFileSystem::new_with_prefix(path)
-                .map_err(|e| DbError::Storage(e.to_string()))?,
+            LocalFileSystem::new_with_prefix(path).map_err(|e| DbError::Storage(e.to_string()))?,
         );
         let db = Db::open("/", object_store).await?;
         Ok(Self { inner: db })

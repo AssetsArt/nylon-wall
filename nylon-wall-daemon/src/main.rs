@@ -1,10 +1,12 @@
 mod api;
 mod db;
+#[allow(dead_code)] // DHCP internals used only on Linux
 mod dhcp;
 mod ebpf_loader;
 mod events;
 mod metrics;
 mod rule_engine;
+#[allow(dead_code)] // schedule functions used at runtime via policy engine
 mod schedule;
 mod state;
 

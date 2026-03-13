@@ -1,10 +1,10 @@
-use dioxus::prelude::*;
-use dioxus::document;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
+use super::ConfirmModal;
 use crate::api_client;
 use crate::models::*;
-use super::ConfirmModal;
+use dioxus::document;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 struct NetworkInterface {
@@ -17,9 +17,7 @@ struct NetworkInterface {
 
 #[component]
 pub fn Settings() -> Element {
-    let status = use_resource(|| async {
-        api_client::get::<SystemStatus>("/system/status").await
-    });
+    let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
     let interfaces = use_resource(|| async {
         api_client::get::<Vec<NetworkInterface>>("/system/interfaces").await
     });

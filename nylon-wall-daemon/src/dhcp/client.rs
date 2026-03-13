@@ -1,18 +1,29 @@
-use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::Arc;
 use nylon_wall_common::dhcp::{DhcpClientConfig, DhcpClientState, DhcpClientStatus};
-use tracing::{info, warn, error, debug};
+use std::sync::Arc;
+use tracing::{error, info, warn};
 
 use crate::AppState;
 use crate::events::WsEvent;
-use super::packet::{self, DhcpMessage};
+
+#[cfg(target_os = "linux")]
+use {
+    super::packet::{self, DhcpMessage},
+    std::net::{Ipv4Addr, SocketAddr},
+    tracing::debug,
+};
 
 /// Run the DHCP client state machine for a single WAN interface.
 pub async fn run_dhcp_client(state: Arc<AppState>, config: DhcpClientConfig) {
     info!("DHCP client starting on interface {}", config.interface);
 
     loop {
-        update_status(&state, &config.interface, DhcpClientState::Discovering, None).await;
+        update_status(
+            &state,
+            &config.interface,
+            DhcpClientState::Discovering,
+            None,
+        )
+        .await;
 
         match dhcp_acquire(&state, &config).await {
             Ok(status) => {
@@ -21,7 +32,13 @@ pub async fn run_dhcp_client(state: Arc<AppState>, config: DhcpClientConfig) {
                     _ => 86400,
                 };
 
-                update_status(&state, &config.interface, DhcpClientState::Bound, Some(&status)).await;
+                update_status(
+                    &state,
+                    &config.interface,
+                    DhcpClientState::Bound,
+                    Some(&status),
+                )
+                .await;
                 info!(
                     "DHCP client bound: {} on {} (lease {}s)",
                     status.ip.as_deref().unwrap_or("unknown"),
@@ -34,13 +51,25 @@ pub async fn run_dhcp_client(state: Arc<AppState>, config: DhcpClientConfig) {
                 tokio::time::sleep(tokio::time::Duration::from_secs(t1)).await;
 
                 // Attempt renewal
-                update_status(&state, &config.interface, DhcpClientState::Renewing, Some(&status)).await;
+                update_status(
+                    &state,
+                    &config.interface,
+                    DhcpClientState::Renewing,
+                    Some(&status),
+                )
+                .await;
                 info!("DHCP client renewing lease on {}", config.interface);
 
                 // If renewal fails, sleep until T2 (87.5%) and try rebinding
                 match dhcp_acquire(&state, &config).await {
                     Ok(new_status) => {
-                        update_status(&state, &config.interface, DhcpClientState::Bound, Some(&new_status)).await;
+                        update_status(
+                            &state,
+                            &config.interface,
+                            DhcpClientState::Bound,
+                            Some(&new_status),
+                        )
+                        .await;
                         info!("DHCP lease renewed on {}", config.interface);
                         let new_lease = match (new_status.lease_start, new_status.lease_end) {
                             (Some(start), Some(end)) => (end - start) as u64,
@@ -50,8 +79,17 @@ pub async fn run_dhcp_client(state: Arc<AppState>, config: DhcpClientConfig) {
                         tokio::time::sleep(tokio::time::Duration::from_secs(remaining)).await;
                     }
                     Err(e) => {
-                        warn!("DHCP renewal failed on {}: {}, will rebind", config.interface, e);
-                        update_status(&state, &config.interface, DhcpClientState::Rebinding, Some(&status)).await;
+                        warn!(
+                            "DHCP renewal failed on {}: {}, will rebind",
+                            config.interface, e
+                        );
+                        update_status(
+                            &state,
+                            &config.interface,
+                            DhcpClientState::Rebinding,
+                            Some(&status),
+                        )
+                        .await;
                         // Wait a bit and try full discovery again
                         tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
                     }
@@ -134,13 +172,23 @@ async fn dhcp_acquire(
     // Extract options from ACK
     let subnet_mask = ack.subnet_mask().map(|m| m.to_string());
     let gateway = ack.router().map(|r| r.to_string());
-    let dns_servers = ack.dns_servers().into_iter().map(|ip| ip.to_string()).collect();
+    let dns_servers = ack
+        .dns_servers()
+        .into_iter()
+        .map(|ip| ip.to_string())
+        .collect();
     let lease_time = ack.lease_time().unwrap_or(86400);
 
     let now = chrono::Utc::now().timestamp();
 
     // Apply IP configuration to the interface
-    apply_ip_config(&config.interface, &offered_ip.to_string(), subnet_mask.as_deref(), gateway.as_deref()).await?;
+    apply_ip_config(
+        &config.interface,
+        &offered_ip.to_string(),
+        subnet_mask.as_deref(),
+        gateway.as_deref(),
+    )
+    .await?;
 
     let status = DhcpClientStatus {
         interface: config.interface.clone(),
@@ -167,7 +215,10 @@ async fn dhcp_acquire(
     _state: &Arc<AppState>,
     config: &DhcpClientConfig,
 ) -> anyhow::Result<DhcpClientStatus> {
-    info!("DHCP client not available on this platform (interface {})", config.interface);
+    info!(
+        "DHCP client not available on this platform (interface {})",
+        config.interface
+    );
     anyhow::bail!("DHCP client requires Linux")
 }
 
@@ -219,7 +270,10 @@ async fn apply_ip_config(
         }
     }
 
-    info!("Applied IP config: {}/{} gateway {:?} on {}", ip, prefix, gateway, interface);
+    info!(
+        "Applied IP config: {}/{} gateway {:?} on {}",
+        ip, prefix, gateway, interface
+    );
     Ok(())
 }
 

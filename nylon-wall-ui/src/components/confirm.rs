@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 #[component]
 pub fn ConfirmModal(

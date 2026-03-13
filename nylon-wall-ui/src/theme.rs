@@ -14,7 +14,7 @@ impl Theme {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_theme(s: &str) -> Self {
         match s {
             "light" => Theme::Light,
             _ => Theme::Dark,
@@ -43,10 +43,10 @@ pub fn use_theme_init() -> Signal<Theme> {
                 return t;
                 "#,
             );
-            if let Ok(val) = result.await {
-                if let Some(s) = val.as_str() {
-                    theme.set(Theme::from_str(s));
-                }
+            if let Ok(val) = result.await
+                && let Some(s) = val.as_str()
+            {
+                theme.set(Theme::parse_theme(s));
             }
         });
     });

@@ -1,15 +1,17 @@
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[allow(dead_code)]
 struct PaginatedLogs {
     entries: Vec<PacketLog>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[allow(dead_code)]
 struct PaginatedConntrack {
     total: usize,
     entries: Vec<ConntrackInfo>,
@@ -17,27 +19,17 @@ struct PaginatedConntrack {
 
 #[component]
 pub fn Dashboard() -> Element {
-    let status = use_resource(|| async {
-        api_client::get::<SystemStatus>("/system/status").await
-    });
-    let rules = use_resource(|| async {
-        api_client::get::<Vec<FirewallRule>>("/rules").await
-    });
-    let nat_entries = use_resource(|| async {
-        api_client::get::<Vec<NatEntry>>("/nat").await
-    });
-    let conns = use_resource(|| async {
-        api_client::get::<PaginatedConntrack>("/conntrack").await
-    });
-    let recent_logs = use_resource(|| async {
-        api_client::get::<PaginatedLogs>("/logs?limit=5").await
-    });
-    let dhcp_leases = use_resource(|| async {
-        api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await
-    });
-    let dhcp_pools = use_resource(|| async {
-        api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await
-    });
+    let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
+    let rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
+    let nat_entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
+    let conns =
+        use_resource(|| async { api_client::get::<PaginatedConntrack>("/conntrack").await });
+    let recent_logs =
+        use_resource(|| async { api_client::get::<PaginatedLogs>("/logs?limit=5").await });
+    let dhcp_leases =
+        use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
+    let dhcp_pools =
+        use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
 
     let rule_count = match &*rules.read() {
         Some(Ok(r)) => r.len(),
@@ -56,7 +48,10 @@ pub fn Dashboard() -> Element {
         _ => 0,
     };
     let lease_count = match &*dhcp_leases.read() {
-        Some(Ok(l)) => l.iter().filter(|l| l.state == DhcpLeaseState::Active).count(),
+        Some(Ok(l)) => l
+            .iter()
+            .filter(|l| l.state == DhcpLeaseState::Active)
+            .count(),
         _ => 0,
     };
     let pool_count = match &*dhcp_pools.read() {

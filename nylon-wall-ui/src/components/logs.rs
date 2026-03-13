@@ -1,12 +1,13 @@
-use dioxus::prelude::*;
-use dioxus_free_icons::icons::ld_icons::*;
-use dioxus_free_icons::Icon;
 use crate::api_client;
 use crate::models::*;
+use dioxus::prelude::*;
+use dioxus_free_icons::Icon;
+use dioxus_free_icons::icons::ld_icons::*;
 
 const PAGE_SIZE: usize = 25;
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[allow(dead_code)]
 struct PaginatedLogs {
     total: usize,
     offset: usize,
@@ -17,10 +18,10 @@ struct PaginatedLogs {
 #[component]
 pub fn Logs() -> Element {
     let mut current_page = use_signal(|| 0usize);
-    let mut filter_src = use_signal(|| String::new());
-    let mut filter_dst = use_signal(|| String::new());
-    let mut filter_proto = use_signal(|| String::new());
-    let mut filter_action = use_signal(|| String::new());
+    let mut filter_src = use_signal(String::new);
+    let mut filter_dst = use_signal(String::new);
+    let mut filter_proto = use_signal(String::new);
+    let mut filter_action = use_signal(String::new);
 
     let page = current_page();
     let src = filter_src();
@@ -28,19 +29,26 @@ pub fn Logs() -> Element {
     let proto = filter_proto();
     let action = filter_action();
 
-    let mut logs = use_resource(use_reactive!(|(page, src, dst, proto, action)| async move {
-        let offset = page * PAGE_SIZE;
-        let mut params = vec![
-            format!("limit={}", PAGE_SIZE),
-            format!("offset={}", offset),
-        ];
-        if !src.is_empty() { params.push(format!("src_ip={}", src)); }
-        if !dst.is_empty() { params.push(format!("dst_ip={}", dst)); }
-        if !proto.is_empty() { params.push(format!("protocol={}", proto)); }
-        if !action.is_empty() { params.push(format!("action={}", action)); }
-        let query = params.join("&");
-        api_client::get::<PaginatedLogs>(&format!("/logs?{}", query)).await
-    }));
+    let mut logs = use_resource(use_reactive!(
+        |(page, src, dst, proto, action)| async move {
+            let offset = page * PAGE_SIZE;
+            let mut params = vec![format!("limit={}", PAGE_SIZE), format!("offset={}", offset)];
+            if !src.is_empty() {
+                params.push(format!("src_ip={}", src));
+            }
+            if !dst.is_empty() {
+                params.push(format!("dst_ip={}", dst));
+            }
+            if !proto.is_empty() {
+                params.push(format!("protocol={}", proto));
+            }
+            if !action.is_empty() {
+                params.push(format!("action={}", action));
+            }
+            let query = params.join("&");
+            api_client::get::<PaginatedLogs>(&format!("/logs?{}", query)).await
+        }
+    ));
 
     let (entries, total) = match &*logs.read() {
         Some(Ok(data)) => (data.entries.clone(), data.total),
@@ -50,7 +58,7 @@ pub fn Logs() -> Element {
     let total_pages = if total == 0 {
         1
     } else {
-        (total + PAGE_SIZE - 1) / PAGE_SIZE
+        total.div_ceil(PAGE_SIZE)
     };
 
     rsx! {

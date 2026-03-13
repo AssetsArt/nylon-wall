@@ -1,7 +1,7 @@
-use std::net::Ipv4Addr;
-use dhcproto::{Decodable, Encodable};
 use dhcproto::v4::{self, DhcpOption, Flags, Message, MessageType, Opcode};
+use dhcproto::{Decodable, Encodable};
 use nylon_wall_common::dhcp::DhcpPool;
+use std::net::Ipv4Addr;
 
 /// Parsed DHCP message with convenience accessors.
 pub struct DhcpMessage {
@@ -173,7 +173,7 @@ pub fn build_offer(
         .set_yiaddr(offer_ip)
         .set_siaddr(server_ip)
         .set_giaddr(request.giaddr())
-        .set_chaddr(&request.inner.chaddr());
+        .set_chaddr(request.inner.chaddr());
 
     let opts = msg.opts_mut();
     opts.insert(DhcpOption::MessageType(MessageType::Offer));
@@ -186,10 +186,10 @@ pub fn build_offer(
     }
 
     // Gateway
-    if let Some(ref gw) = pool.gateway {
-        if let Ok(gw_ip) = gw.parse::<Ipv4Addr>() {
-            opts.insert(DhcpOption::Router(vec![gw_ip]));
-        }
+    if let Some(ref gw) = pool.gateway
+        && let Ok(gw_ip) = gw.parse::<Ipv4Addr>()
+    {
+        opts.insert(DhcpOption::Router(vec![gw_ip]));
     }
 
     // DNS servers
@@ -224,7 +224,7 @@ pub fn build_ack(
         .set_yiaddr(assigned_ip)
         .set_siaddr(server_ip)
         .set_giaddr(request.giaddr())
-        .set_chaddr(&request.inner.chaddr());
+        .set_chaddr(request.inner.chaddr());
 
     let opts = msg.opts_mut();
     opts.insert(DhcpOption::MessageType(MessageType::Ack));
@@ -234,10 +234,10 @@ pub fn build_ack(
     if let Some(mask) = subnet_mask_from_cidr(&pool.subnet) {
         opts.insert(DhcpOption::SubnetMask(mask));
     }
-    if let Some(ref gw) = pool.gateway {
-        if let Ok(gw_ip) = gw.parse::<Ipv4Addr>() {
-            opts.insert(DhcpOption::Router(vec![gw_ip]));
-        }
+    if let Some(ref gw) = pool.gateway
+        && let Ok(gw_ip) = gw.parse::<Ipv4Addr>()
+    {
+        opts.insert(DhcpOption::Router(vec![gw_ip]));
     }
     let dns_ips: Vec<Ipv4Addr> = pool
         .dns_servers
@@ -261,7 +261,7 @@ pub fn build_nak(request: &DhcpMessage, server_ip: Ipv4Addr) -> Vec<u8> {
         .set_xid(request.xid())
         .set_flags(request.flags())
         .set_giaddr(request.giaddr())
-        .set_chaddr(&request.inner.chaddr());
+        .set_chaddr(request.inner.chaddr());
 
     let opts = msg.opts_mut();
     opts.insert(DhcpOption::MessageType(MessageType::Nak));
@@ -326,12 +326,7 @@ pub fn build_request(
 }
 
 /// Build a DHCPRELEASE packet (for client).
-pub fn build_release(
-    mac: &[u8; 6],
-    xid: u32,
-    client_ip: Ipv4Addr,
-    server_ip: Ipv4Addr,
-) -> Vec<u8> {
+pub fn build_release(mac: &[u8; 6], xid: u32, client_ip: Ipv4Addr, server_ip: Ipv4Addr) -> Vec<u8> {
     let mut msg = Message::default();
     let mut chaddr = [0u8; 16];
     chaddr[..6].copy_from_slice(mac);

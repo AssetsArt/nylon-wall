@@ -1,30 +1,30 @@
 [package]
 name = "nylon-wall-daemon"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
-nylon-wall-common = { path = "../nylon-wall-common", features = ["std"] }
-tokio = { version = "1", features = ["full"] }
-axum = { version = "0.8", features = ["ws"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-slatedb = "0.11"
-object_store = "0.12"
-tower-http = { version = "0.6", features = ["cors"] }
-toml = "1"
-thiserror = "2"
-anyhow = "1"
-bytes = "1"
-chrono = "0.4"
-futures-util = "0.3"
-dhcproto = "0.14"
-rand = "0.9"
+nylon-wall-common = { workspace = true, features = ["std"] }
+tokio.workspace = true
+axum.workspace = true
+serde = { workspace = true, features = ["std"] }
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+slatedb.workspace = true
+object_store.workspace = true
+tower-http.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+futures-util.workspace = true
+dhcproto.workspace = true
+rand.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-socket2 = { version = "0.5", features = ["all"] }
-nylon-wall-common = { path = "../nylon-wall-common", features = ["aya-pod"] }
-aya = "0.13"
-aya-log = "0.2"
+socket2.workspace = true
+nylon-wall-common = { workspace = true, features = ["aya-pod"] }
+aya.workspace = true
+aya-log.workspace = true

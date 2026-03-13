@@ -1,6 +1,6 @@
-use std::net::Ipv4Addr;
-use nylon_wall_common::dhcp::{DhcpLease, DhcpLeaseState, DhcpPool, DhcpReservation};
 use crate::db::Database;
+use nylon_wall_common::dhcp::{DhcpLease, DhcpLeaseState, DhcpPool, DhcpReservation};
+use std::net::Ipv4Addr;
 
 pub struct LeaseManager<'a> {
     db: &'a Database,
@@ -46,14 +46,13 @@ impl<'a> LeaseManager<'a> {
         let end_u32 = u32::from(end);
 
         // Collect all currently assigned IPs
-        let existing_leases = self
-            .db
-            .scan_prefix::<DhcpLease>("dhcp_lease:")
-            .await?;
+        let existing_leases = self.db.scan_prefix::<DhcpLease>("dhcp_lease:").await?;
         let now = chrono::Utc::now().timestamp();
         let used_ips: std::collections::HashSet<String> = existing_leases
             .iter()
-            .filter(|(_, l)| l.pool_id == pool.id && l.state == DhcpLeaseState::Active && l.lease_end > now)
+            .filter(|(_, l)| {
+                l.pool_id == pool.id && l.state == DhcpLeaseState::Active && l.lease_end > now
+            })
             .map(|(_, l)| l.ip.clone())
             .collect();
 
@@ -84,7 +83,11 @@ impl<'a> LeaseManager<'a> {
     }
 
     /// Renew an existing lease by updating its expiry.
-    pub async fn renew_lease(&self, mac: &str, lease_time: u32) -> anyhow::Result<Option<DhcpLease>> {
+    pub async fn renew_lease(
+        &self,
+        mac: &str,
+        lease_time: u32,
+    ) -> anyhow::Result<Option<DhcpLease>> {
         let key = format!("dhcp_lease:{}", mac);
         if let Some(mut lease) = self.db.get::<DhcpLease>(&key).await? {
             let now = chrono::Utc::now().timestamp();

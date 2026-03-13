@@ -8,6 +8,7 @@ use nylon_wall_common::conntrack::ConnState;
 const PAGE_SIZE: usize = 25;
 
 #[derive(Debug, Clone, serde::Deserialize)]
+#[allow(dead_code)]
 struct PaginatedConntrack {
     total: usize,
     offset: usize,
@@ -49,7 +50,7 @@ pub fn Connections() -> Element {
     let total_pages = if total == 0 {
         1
     } else {
-        (total + PAGE_SIZE - 1) / PAGE_SIZE
+        total.div_ceil(PAGE_SIZE)
     };
     let established = entries
         .iter()
