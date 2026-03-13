@@ -5,6 +5,17 @@ use std::collections::HashMap;
 use crate::api_client;
 use crate::models::*;
 
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PaginatedLogs {
+    entries: Vec<PacketLog>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PaginatedConntrack {
+    total: usize,
+    entries: Vec<ConntrackInfo>,
+}
+
 #[component]
 pub fn Dashboard() -> Element {
     let status = use_resource(|| async {
@@ -17,13 +28,13 @@ pub fn Dashboard() -> Element {
         api_client::get::<Vec<NatEntry>>("/nat").await
     });
     let conns = use_resource(|| async {
-        api_client::get::<Vec<ConntrackInfo>>("/conntrack").await
+        api_client::get::<PaginatedConntrack>("/conntrack").await
     });
     let recent_logs = use_resource(|| async {
-        api_client::get::<Vec<PacketLog>>("/logs?limit=5").await
+        api_client::get::<PaginatedLogs>("/logs?limit=5").await
     });
     let blocked_logs = use_resource(|| async {
-        api_client::get::<Vec<PacketLog>>("/logs?action=drop&limit=50").await
+        api_client::get::<PaginatedLogs>("/logs?action=drop&limit=50").await
     });
 
     let rule_count = match &*rules.read() {
@@ -39,15 +50,15 @@ pub fn Dashboard() -> Element {
         _ => 0,
     };
     let conn_count = match &*conns.read() {
-        Some(Ok(c)) => c.len(),
+        Some(Ok(c)) => c.total,
         _ => 0,
     };
 
     // Aggregate top blocked IPs from blocked_logs
     let top_blocked: Vec<(String, usize)> = match &*blocked_logs.read() {
-        Some(Ok(logs)) => {
+        Some(Ok(data)) => {
             let mut counts: HashMap<String, usize> = HashMap::new();
-            for log in logs.iter() {
+            for log in data.entries.iter() {
                 let action_lower = log.action.to_lowercase();
                 if action_lower == "drop" {
                     *counts.entry(log.src_ip.clone()).or_insert(0) += 1;
@@ -216,8 +227,8 @@ pub fn Dashboard() -> Element {
                     }
                     tbody {
                         match &*recent_logs.read() {
-                            Some(Ok(list)) if !list.is_empty() => rsx! {
-                                for (i, log) in list.iter().enumerate() {
+                            Some(Ok(data)) if !data.entries.is_empty() => rsx! {
+                                for (i, log) in data.entries.iter().enumerate() {
                                     tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
                                         key: "{i}",
                                         td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{log.timestamp}" }
