@@ -36,6 +36,12 @@ pub fn Dashboard() -> Element {
     let blocked_logs = use_resource(|| async {
         api_client::get::<PaginatedLogs>("/logs?action=drop&limit=50").await
     });
+    let dhcp_leases = use_resource(|| async {
+        api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await
+    });
+    let dhcp_pools = use_resource(|| async {
+        api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await
+    });
 
     let rule_count = match &*rules.read() {
         Some(Ok(r)) => r.len(),
@@ -51,6 +57,14 @@ pub fn Dashboard() -> Element {
     };
     let conn_count = match &*conns.read() {
         Some(Ok(c)) => c.total,
+        _ => 0,
+    };
+    let lease_count = match &*dhcp_leases.read() {
+        Some(Ok(l)) => l.iter().filter(|l| l.state == DhcpLeaseState::Active).count(),
+        _ => 0,
+    };
+    let pool_count = match &*dhcp_pools.read() {
+        Some(Ok(p)) => p.iter().filter(|p| p.enabled).count(),
         _ => 0,
     };
 
@@ -79,7 +93,7 @@ pub fn Dashboard() -> Element {
             }
 
             // Stat cards
-            div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8",
+            div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8",
                 // System Status
                 div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-emerald-500/30 transition-colors",
                     div { class: "flex items-center gap-3 mb-3",
@@ -138,6 +152,18 @@ pub fn Dashboard() -> Element {
                     }
                     p { class: "text-2xl font-bold text-white mb-1", "{conn_count}" }
                     p { class: "text-xs text-slate-500", "active" }
+                }
+
+                // DHCP
+                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-teal-500/30 transition-colors",
+                    div { class: "flex items-center gap-3 mb-3",
+                        div { class: "w-9 h-9 rounded-lg bg-teal-500/10 flex items-center justify-center",
+                            Icon { width: 16, height: 16, icon: LdWifi, class: "text-teal-400" }
+                        }
+                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "DHCP" }
+                    }
+                    p { class: "text-2xl font-bold text-white mb-1", "{lease_count}" }
+                    p { class: "text-xs text-slate-500", "{pool_count} pool(s) active" }
                 }
             }
 

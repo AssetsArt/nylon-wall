@@ -20,6 +20,8 @@ pub enum Route {
         Nat,
         #[route("/routes")]
         Routes,
+        #[route("/dhcp")]
+        Dhcp,
         #[route("/policies")]
         Policies,
         #[route("/connections")]
@@ -104,6 +106,10 @@ fn Layout() -> Element {
                     Link { class: sub_cls(&Route::Routes), to: Route::Routes,
                         Icon { width: 13, height: 13, icon: LdNetwork }
                         "Routes"
+                    }
+                    Link { class: sub_cls(&Route::Dhcp), to: Route::Dhcp,
+                        Icon { width: 13, height: 13, icon: LdWifi }
+                        "DHCP"
                     }
                     Link { class: sub_cls(&Route::Policies), to: Route::Policies,
                         Icon { width: 13, height: 13, icon: LdLayers }

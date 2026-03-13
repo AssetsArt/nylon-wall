@@ -40,4 +40,20 @@ pub enum WsEvent {
     LogEvent(serde_json::Value),
     #[serde(rename = "config_restored")]
     ConfigRestored,
+
+    // DHCP events
+    #[serde(rename = "dhcp_pool_created")]
+    DhcpPoolCreated(serde_json::Value),
+    #[serde(rename = "dhcp_pool_updated")]
+    DhcpPoolUpdated(serde_json::Value),
+    #[serde(rename = "dhcp_pool_deleted")]
+    DhcpPoolDeleted { id: u32 },
+    #[serde(rename = "dhcp_lease_changed")]
+    DhcpLeaseChanged(serde_json::Value),
+    #[serde(rename = "dhcp_reservation_created")]
+    DhcpReservationCreated(serde_json::Value),
+    #[serde(rename = "dhcp_reservation_deleted")]
+    DhcpReservationDeleted { id: u32 },
+    #[serde(rename = "dhcp_client_status_changed")]
+    DhcpClientStatusChanged(serde_json::Value),
 }

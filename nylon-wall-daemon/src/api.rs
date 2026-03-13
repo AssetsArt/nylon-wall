@@ -9,6 +9,9 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use nylon_wall_common::conntrack::ConntrackInfo;
+use nylon_wall_common::dhcp::{
+    DhcpClientConfig, DhcpClientStatus, DhcpLease, DhcpLeaseState, DhcpPool, DhcpReservation,
+};
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::nat::NatEntry;
 use nylon_wall_common::route::{PolicyRoute, Route};
@@ -64,6 +67,12 @@ struct BackupData {
     routes: Vec<serde_json::Value>,
     zones: Vec<serde_json::Value>,
     policies: Vec<serde_json::Value>,
+    #[serde(default)]
+    dhcp_pools: Vec<serde_json::Value>,
+    #[serde(default)]
+    dhcp_reservations: Vec<serde_json::Value>,
+    #[serde(default)]
+    dhcp_clients: Vec<serde_json::Value>,
 }
 
 pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
@@ -120,6 +129,36 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         .route("/api/v1/system/apply", post(apply_config))
         .route("/api/v1/system/backup", post(backup_data))
         .route("/api/v1/system/restore", post(restore_data))
+        // DHCP Server — Pools
+        .route("/api/v1/dhcp/pools", get(list_dhcp_pools).post(create_dhcp_pool))
+        .route(
+            "/api/v1/dhcp/pools/{id}",
+            get(get_dhcp_pool).put(update_dhcp_pool).delete(delete_dhcp_pool),
+        )
+        .route("/api/v1/dhcp/pools/{id}/toggle", post(toggle_dhcp_pool))
+        // DHCP Server — Leases
+        .route("/api/v1/dhcp/leases", get(list_dhcp_leases))
+        .route("/api/v1/dhcp/leases/{mac}", axum::routing::delete(delete_dhcp_lease))
+        .route("/api/v1/dhcp/leases/{mac}/reserve", post(reserve_dhcp_lease))
+        // DHCP Server — Reservations
+        .route(
+            "/api/v1/dhcp/reservations",
+            get(list_dhcp_reservations).post(create_dhcp_reservation),
+        )
+        .route(
+            "/api/v1/dhcp/reservations/{id}",
+            put(update_dhcp_reservation).delete(delete_dhcp_reservation),
+        )
+        // DHCP Client
+        .route("/api/v1/dhcp/clients", get(list_dhcp_clients).post(create_dhcp_client))
+        .route(
+            "/api/v1/dhcp/clients/{id}",
+            put(update_dhcp_client).delete(delete_dhcp_client),
+        )
+        .route("/api/v1/dhcp/clients/{id}/toggle", post(toggle_dhcp_client))
+        .route("/api/v1/dhcp/clients/status", get(list_dhcp_client_status))
+        .route("/api/v1/dhcp/clients/{interface}/release", post(release_dhcp_client))
+        .route("/api/v1/dhcp/clients/{interface}/renew", post(renew_dhcp_client))
         // Prometheus metrics
         .route("/metrics", get(prometheus_metrics))
         .layer(CorsLayer::permissive())
@@ -777,6 +816,438 @@ fn mock_interfaces() -> Vec<NetworkInterface> {
     ]
 }
 
+// === DHCP Pools ===
+
+async fn list_dhcp_pools(State(state): State<Arc<AppState>>) -> AppResult<Vec<DhcpPool>> {
+    let results = state
+        .db
+        .scan_prefix::<DhcpPool>("dhcp_pool:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, p)| p).collect()))
+}
+
+async fn get_dhcp_pool(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<DhcpPool> {
+    let key = format!("dhcp_pool:{}", id);
+    match state
+        .db
+        .get::<DhcpPool>(&key)
+        .await
+        .map_err(internal_error)?
+    {
+        Some(pool) => Ok(Json(pool)),
+        None => Err((StatusCode::NOT_FOUND, "DHCP pool not found".to_string())),
+    }
+}
+
+async fn create_dhcp_pool(
+    State(state): State<Arc<AppState>>,
+    Json(pool): Json<DhcpPool>,
+) -> Result<(StatusCode, Json<DhcpPool>), (StatusCode, String)> {
+    let key = format!("dhcp_pool:{}", pool.id);
+    state.db.put(&key, &pool).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("dhcp_pool:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(
+        &state,
+        WsEvent::DhcpPoolCreated(serde_json::to_value(&pool).unwrap()),
+    );
+    // Notify DHCP server to reload pools
+    let _ = state.dhcp_pool_notify.send(());
+    Ok((StatusCode::CREATED, Json(pool)))
+}
+
+async fn update_dhcp_pool(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut pool): Json<DhcpPool>,
+) -> AppResult<DhcpPool> {
+    pool.id = id;
+    let key = format!("dhcp_pool:{}", id);
+    state.db.put(&key, &pool).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("dhcp_pool:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(
+        &state,
+        WsEvent::DhcpPoolUpdated(serde_json::to_value(&pool).unwrap()),
+    );
+    let _ = state.dhcp_pool_notify.send(());
+    Ok(Json(pool))
+}
+
+async fn delete_dhcp_pool(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let key = format!("dhcp_pool:{}", id);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("dhcp_pool:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(&state, WsEvent::DhcpPoolDeleted { id });
+    let _ = state.dhcp_pool_notify.send(());
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_dhcp_pool(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<DhcpPool> {
+    let key = format!("dhcp_pool:{}", id);
+    let mut pool: DhcpPool = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "DHCP pool not found".to_string()))?;
+    pool.enabled = !pool.enabled;
+    state.db.put(&key, &pool).await.map_err(internal_error)?;
+    broadcast(
+        &state,
+        WsEvent::DhcpPoolUpdated(serde_json::to_value(&pool).unwrap()),
+    );
+    let _ = state.dhcp_pool_notify.send(());
+    Ok(Json(pool))
+}
+
+// === DHCP Leases ===
+
+async fn list_dhcp_leases(State(state): State<Arc<AppState>>) -> AppResult<Vec<DhcpLease>> {
+    let results = state
+        .db
+        .scan_prefix::<DhcpLease>("dhcp_lease:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, l)| l).collect()))
+}
+
+async fn delete_dhcp_lease(
+    State(state): State<Arc<AppState>>,
+    Path(mac): Path<String>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let key = format!("dhcp_lease:{}", mac);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("dhcp_lease:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(
+        &state,
+        WsEvent::DhcpLeaseChanged(serde_json::json!({"mac": mac, "action": "released"})),
+    );
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn reserve_dhcp_lease(
+    State(state): State<Arc<AppState>>,
+    Path(mac): Path<String>,
+) -> Result<(StatusCode, Json<DhcpReservation>), (StatusCode, String)> {
+    // Look up the current lease
+    let lease_key = format!("dhcp_lease:{}", mac);
+    let lease: DhcpLease = state
+        .db
+        .get(&lease_key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "Lease not found".to_string()))?;
+
+    // Generate a new reservation ID
+    let existing = state
+        .db
+        .scan_prefix::<DhcpReservation>("dhcp_reservation:")
+        .await
+        .map_err(internal_error)?;
+    let next_id = existing
+        .iter()
+        .map(|(_, r)| r.id)
+        .max()
+        .unwrap_or(0)
+        + 1;
+
+    let reservation = DhcpReservation {
+        id: next_id,
+        pool_id: lease.pool_id,
+        mac: mac.clone(),
+        ip: lease.ip.clone(),
+        hostname: lease.hostname.clone(),
+    };
+
+    let key = format!("dhcp_reservation:{}", next_id);
+    state
+        .db
+        .put(&key, &reservation)
+        .await
+        .map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("dhcp_reservation:", &key)
+        .await
+        .map_err(internal_error)?;
+
+    // Update the lease state to Reserved
+    let mut updated_lease = lease;
+    updated_lease.state = DhcpLeaseState::Reserved;
+    state
+        .db
+        .put(&lease_key, &updated_lease)
+        .await
+        .map_err(internal_error)?;
+
+    broadcast(
+        &state,
+        WsEvent::DhcpReservationCreated(serde_json::to_value(&reservation).unwrap()),
+    );
+    Ok((StatusCode::CREATED, Json(reservation)))
+}
+
+// === DHCP Reservations ===
+
+async fn list_dhcp_reservations(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Vec<DhcpReservation>> {
+    let results = state
+        .db
+        .scan_prefix::<DhcpReservation>("dhcp_reservation:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, r)| r).collect()))
+}
+
+async fn create_dhcp_reservation(
+    State(state): State<Arc<AppState>>,
+    Json(reservation): Json<DhcpReservation>,
+) -> Result<(StatusCode, Json<DhcpReservation>), (StatusCode, String)> {
+    let key = format!("dhcp_reservation:{}", reservation.id);
+    state
+        .db
+        .put(&key, &reservation)
+        .await
+        .map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("dhcp_reservation:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(
+        &state,
+        WsEvent::DhcpReservationCreated(serde_json::to_value(&reservation).unwrap()),
+    );
+    Ok((StatusCode::CREATED, Json(reservation)))
+}
+
+async fn update_dhcp_reservation(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut reservation): Json<DhcpReservation>,
+) -> AppResult<DhcpReservation> {
+    reservation.id = id;
+    let key = format!("dhcp_reservation:{}", id);
+    state
+        .db
+        .put(&key, &reservation)
+        .await
+        .map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("dhcp_reservation:", &key)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(reservation))
+}
+
+async fn delete_dhcp_reservation(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let key = format!("dhcp_reservation:{}", id);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("dhcp_reservation:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(&state, WsEvent::DhcpReservationDeleted { id });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// === DHCP Client ===
+
+async fn list_dhcp_clients(State(state): State<Arc<AppState>>) -> AppResult<Vec<DhcpClientConfig>> {
+    let results = state
+        .db
+        .scan_prefix::<DhcpClientConfig>("dhcp_client:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, c)| c).collect()))
+}
+
+async fn create_dhcp_client(
+    State(state): State<Arc<AppState>>,
+    Json(config): Json<DhcpClientConfig>,
+) -> Result<(StatusCode, Json<DhcpClientConfig>), (StatusCode, String)> {
+    let key = format!("dhcp_client:{}", config.id);
+    state.db.put(&key, &config).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("dhcp_client:", &key)
+        .await
+        .map_err(internal_error)?;
+
+    // If enabled, spawn a client task
+    if config.enabled {
+        let client_state = Arc::clone(&state);
+        let client_config = config.clone();
+        tokio::spawn(async move {
+            crate::dhcp::client::run_dhcp_client(client_state, client_config).await;
+        });
+    }
+
+    Ok((StatusCode::CREATED, Json(config)))
+}
+
+async fn update_dhcp_client(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut config): Json<DhcpClientConfig>,
+) -> AppResult<DhcpClientConfig> {
+    config.id = id;
+    let key = format!("dhcp_client:{}", id);
+    state.db.put(&key, &config).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("dhcp_client:", &key)
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(config))
+}
+
+async fn delete_dhcp_client(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let key = format!("dhcp_client:{}", id);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("dhcp_client:", &key)
+        .await
+        .map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_dhcp_client(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<DhcpClientConfig> {
+    let key = format!("dhcp_client:{}", id);
+    let mut config: DhcpClientConfig = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            "DHCP client config not found".to_string(),
+        ))?;
+    config.enabled = !config.enabled;
+    state.db.put(&key, &config).await.map_err(internal_error)?;
+
+    // If enabling, spawn client task
+    if config.enabled {
+        let client_state = Arc::clone(&state);
+        let client_config = config.clone();
+        tokio::spawn(async move {
+            crate::dhcp::client::run_dhcp_client(client_state, client_config).await;
+        });
+    }
+
+    Ok(Json(config))
+}
+
+async fn list_dhcp_client_status(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Vec<DhcpClientStatus>> {
+    let results = state
+        .db
+        .scan_prefix::<DhcpClientStatus>("dhcp_client_status:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, s)| s).collect()))
+}
+
+async fn release_dhcp_client(
+    State(state): State<Arc<AppState>>,
+    Path(interface): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Update status to Idle
+    let status_key = format!("dhcp_client_status:{}", interface);
+    if let Some(mut status) = state
+        .db
+        .get::<DhcpClientStatus>(&status_key)
+        .await
+        .map_err(internal_error)?
+    {
+        status.state = nylon_wall_common::dhcp::DhcpClientState::Idle;
+        status.ip = None;
+        status.subnet_mask = None;
+        status.gateway = None;
+        status.dns_servers = Vec::new();
+        state
+            .db
+            .put(&status_key, &status)
+            .await
+            .map_err(internal_error)?;
+        broadcast(
+            &state,
+            WsEvent::DhcpClientStatusChanged(serde_json::to_value(&status).unwrap()),
+        );
+    }
+    Ok(Json(serde_json::json!({"status": "released", "interface": interface})))
+}
+
+async fn renew_dhcp_client(
+    State(state): State<Arc<AppState>>,
+    Path(interface): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Find the client config for this interface
+    let configs = state
+        .db
+        .scan_prefix::<DhcpClientConfig>("dhcp_client:")
+        .await
+        .map_err(internal_error)?;
+
+    let config = configs
+        .into_iter()
+        .map(|(_, c)| c)
+        .find(|c| c.interface == interface)
+        .ok_or((
+            StatusCode::NOT_FOUND,
+            format!("No DHCP client config for interface {}", interface),
+        ))?;
+
+    // Spawn a new client task to renew
+    let client_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        crate::dhcp::client::run_dhcp_client(client_state, config).await;
+    });
+
+    Ok(Json(
+        serde_json::json!({"status": "renewing", "interface": interface}),
+    ))
+}
+
 // === eBPF Auto-Sync ===
 
 /// Read all rules from DB, compile them, and push to eBPF maps.
@@ -936,6 +1407,33 @@ async fn backup_data(
         .map(|(_, v)| v)
         .collect();
 
+    let dhcp_pools = state
+        .db
+        .scan_prefix::<serde_json::Value>("dhcp_pool:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
+    let dhcp_reservations = state
+        .db
+        .scan_prefix::<serde_json::Value>("dhcp_reservation:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
+    let dhcp_clients = state
+        .db
+        .scan_prefix::<serde_json::Value>("dhcp_client:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
     let backup = BackupData {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().timestamp(),
@@ -944,6 +1442,9 @@ async fn backup_data(
         routes,
         zones,
         policies,
+        dhcp_pools,
+        dhcp_reservations,
+        dhcp_clients,
     };
 
     Ok(Json(backup))
@@ -954,7 +1455,16 @@ async fn restore_data(
     Json(backup): Json<BackupData>,
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     // Clear existing data for each prefix
-    for prefix in &["rule:", "nat:", "route:", "zone:", "policy:"] {
+    for prefix in &[
+        "rule:",
+        "nat:",
+        "route:",
+        "zone:",
+        "policy:",
+        "dhcp_pool:",
+        "dhcp_reservation:",
+        "dhcp_client:",
+    ] {
         let existing = state
             .db
             .scan_prefix::<serde_json::Value>(prefix)
@@ -1033,6 +1543,45 @@ async fn restore_data(
             .map_err(internal_error)?;
     }
 
+    // Restore DHCP pools
+    for pool in &backup.dhcp_pools {
+        let id = pool.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+        let key = format!("dhcp_pool:{}", id);
+        state.db.put(&key, pool).await.map_err(internal_error)?;
+        state
+            .db
+            .add_to_index("dhcp_pool:", &key)
+            .await
+            .map_err(internal_error)?;
+    }
+
+    // Restore DHCP reservations
+    for res in &backup.dhcp_reservations {
+        let id = res.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+        let key = format!("dhcp_reservation:{}", id);
+        state.db.put(&key, res).await.map_err(internal_error)?;
+        state
+            .db
+            .add_to_index("dhcp_reservation:", &key)
+            .await
+            .map_err(internal_error)?;
+    }
+
+    // Restore DHCP client configs
+    for client in &backup.dhcp_clients {
+        let id = client.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+        let key = format!("dhcp_client:{}", id);
+        state.db.put(&key, client).await.map_err(internal_error)?;
+        state
+            .db
+            .add_to_index("dhcp_client:", &key)
+            .await
+            .map_err(internal_error)?;
+    }
+
+    // Notify DHCP server to reload after restore
+    let _ = state.dhcp_pool_notify.send(());
+
     broadcast(&state, WsEvent::ConfigRestored);
 
     Ok((
@@ -1044,6 +1593,9 @@ async fn restore_data(
             "routes": backup.routes.len(),
             "zones": backup.zones.len(),
             "policies": backup.policies.len(),
+            "dhcp_pools": backup.dhcp_pools.len(),
+            "dhcp_reservations": backup.dhcp_reservations.len(),
+            "dhcp_clients": backup.dhcp_clients.len(),
         })),
     ))
 }

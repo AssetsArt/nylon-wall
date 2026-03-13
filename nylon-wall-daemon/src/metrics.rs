@@ -6,6 +6,7 @@ use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::nat::NatEntry;
 use nylon_wall_common::route::Route;
 use nylon_wall_common::rule::FirewallRule;
+use nylon_wall_common::dhcp::{DhcpClientConfig, DhcpLease, DhcpPool};
 use nylon_wall_common::zone::{NetworkPolicy, Zone};
 
 /// Collect all metrics in Prometheus text exposition format.
@@ -36,6 +37,14 @@ pub async fn collect(state: &Arc<AppState>) -> String {
     prom_gauge(&mut out, "nylon_wall_policies_total", "Total network policies", policies);
     prom_gauge(&mut out, "nylon_wall_logs_total", "Total packet log entries", logs);
     prom_gauge(&mut out, "nylon_wall_conntrack_entries", "Active connection tracking entries", conntrack);
+
+    // DHCP metrics
+    let dhcp_pools = count_prefix::<DhcpPool>(state, "dhcp_pool:").await;
+    let dhcp_leases = count_prefix::<DhcpLease>(state, "dhcp_lease:").await;
+    let dhcp_clients = count_prefix::<DhcpClientConfig>(state, "dhcp_client:").await;
+    prom_gauge(&mut out, "nylon_wall_dhcp_pools_total", "Total DHCP pools", dhcp_pools);
+    prom_gauge(&mut out, "nylon_wall_dhcp_leases_active", "Active DHCP leases", dhcp_leases);
+    prom_gauge(&mut out, "nylon_wall_dhcp_clients_total", "Total DHCP WAN clients", dhcp_clients);
 
     // WebSocket subscribers
     let ws_subs = state.event_tx.receiver_count() as u64;

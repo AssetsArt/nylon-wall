@@ -1,6 +1,7 @@
 mod confirm;
 mod connections;
 mod dashboard;
+mod dhcp;
 mod logs;
 mod nat;
 mod policies;
@@ -11,6 +12,7 @@ mod settings;
 pub use confirm::ConfirmModal;
 pub use connections::Connections;
 pub use dashboard::Dashboard;
+pub use dhcp::Dhcp;
 pub use logs::Logs;
 pub use nat::Nat;
 pub use policies::Policies;

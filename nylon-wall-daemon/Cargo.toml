@@ -20,8 +20,11 @@ anyhow = "1"
 bytes = "1"
 chrono = "0.4"
 futures-util = "0.3"
+dhcproto = "0.14"
+rand = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+socket2 = "0.5"
 nylon-wall-common = { path = "../nylon-wall-common", features = ["aya-pod"] }
 aya = "0.13"
 aya-log = "0.2"

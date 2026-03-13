@@ -1,5 +1,6 @@
 mod api;
 mod db;
+mod dhcp;
 mod ebpf_loader;
 mod events;
 mod metrics;
@@ -19,6 +20,7 @@ pub struct AppState {
     #[cfg(target_os = "linux")]
     pub ebpf: tokio::sync::Mutex<Option<aya::Ebpf>>,
     pub ebpf_loaded: std::sync::atomic::AtomicBool,
+    pub dhcp_pool_notify: tokio::sync::watch::Sender<()>,
 }
 
 #[tokio::main]
@@ -60,6 +62,9 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Create DHCP pool notification channel
+    let (dhcp_pool_tx, _dhcp_pool_rx) = tokio::sync::watch::channel(());
+
     let state = Arc::new(AppState {
         db,
         rule_engine: tokio::sync::RwLock::new(rule_engine),
@@ -68,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(target_os = "linux")]
         ebpf: tokio::sync::Mutex::new(ebpf_handle),
         ebpf_loaded: std::sync::atomic::AtomicBool::new(_ebpf_loaded),
+        dhcp_pool_notify: dhcp_pool_tx,
     });
 
     // Sync existing rules from DB to eBPF maps on startup
@@ -89,6 +95,34 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(not(target_os = "linux"))]
     {
         info!("Not running on Linux - eBPF programs will not be loaded");
+    }
+
+    // Start DHCP server background task
+    {
+        let dhcp_state = Arc::clone(&state);
+        let dhcp_pool_rx = state.dhcp_pool_notify.subscribe();
+        tokio::spawn(async move {
+            dhcp::server::run_dhcp_server(dhcp_state, dhcp_pool_rx).await;
+        });
+        info!("DHCP server task spawned");
+    }
+
+    // Start DHCP client tasks for enabled configs
+    {
+        let configs = state
+            .db
+            .scan_prefix::<nylon_wall_common::dhcp::DhcpClientConfig>("dhcp_client:")
+            .await
+            .unwrap_or_default();
+        for (_, config) in configs {
+            if config.enabled {
+                let client_state = Arc::clone(&state);
+                tokio::spawn(async move {
+                    dhcp::client::run_dhcp_client(client_state, config).await;
+                });
+            }
+        }
+        info!("DHCP client tasks spawned");
     }
 
     // Start API server

@@ -6,4 +6,5 @@ pub mod nat;
 pub mod route;
 pub mod zone;
 pub mod conntrack;
+pub mod dhcp;
 pub mod log;
