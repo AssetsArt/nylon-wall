@@ -9,12 +9,11 @@ use dioxus_free_icons::icons::ld_icons::*;
 pub fn Dhcp() -> Element {
     let mut active_tab = use_signal(|| 0u8); // 0=Pools, 1=Leases, 2=Client
 
-    let pools =
-        use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
-    let leases =
-        use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
-    let reservations =
-        use_resource(|| async { api_client::get::<Vec<DhcpReservation>>("/dhcp/reservations").await });
+    let pools = use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
+    let leases = use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
+    let reservations = use_resource(|| async {
+        api_client::get::<Vec<DhcpReservation>>("/dhcp/reservations").await
+    });
     let clients =
         use_resource(|| async { api_client::get::<Vec<DhcpClientConfig>>("/dhcp/clients").await });
 
@@ -28,7 +27,10 @@ pub fn Dhcp() -> Element {
         _ => 0,
     };
     let lease_count = match &*leases.read() {
-        Some(Ok(l)) => l.iter().filter(|l| l.state == DhcpLeaseState::Active).count(),
+        Some(Ok(l)) => l
+            .iter()
+            .filter(|l| l.state == DhcpLeaseState::Active)
+            .count(),
         _ => 0,
     };
     let reservation_count = match &*reservations.read() {
@@ -159,9 +161,9 @@ fn DhcpPoolsTab() -> Element {
                     }
                     h3 { class: "text-sm font-semibold text-white", "DHCP Server Pools" }
                 }
-                div { class: "flex items-center gap-2",
+                div { class: "flex items-center justify-between gap-2 ",
                     button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
+                        class: "flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
                         onclick: move |_| pools.restart(),
                         Icon { width: 12, height: 12, icon: LdRefreshCw }
                         span { class: "ml-1.5", "Refresh" }
@@ -377,7 +379,7 @@ fn DhcpLeasesTab() -> Element {
                     h3 { class: "text-sm font-semibold text-white", "Active Leases" }
                 }
                 button {
-                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
+                    class: "flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
                     onclick: move |_| { leases.restart(); reservations.restart(); },
                     Icon { width: 12, height: 12, icon: LdRefreshCw }
                     span { class: "ml-1.5", "Refresh" }
@@ -668,7 +670,7 @@ fn DhcpClientTab() -> Element {
                 }
                 div { class: "flex items-center gap-2",
                     button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
+                        class: "flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
                         onclick: move |_| { clients.restart(); statuses.restart(); },
                         Icon { width: 12, height: 12, icon: LdRefreshCw }
                         span { class: "ml-1.5", "Refresh" }
