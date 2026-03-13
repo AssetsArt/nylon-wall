@@ -6,6 +6,7 @@ pub enum ConnState {
     Established = 1,
     Related = 2,
     Invalid = 3,
+    Closing = 4,
 }
 
 impl core::fmt::Display for ConnState {
@@ -15,6 +16,7 @@ impl core::fmt::Display for ConnState {
             ConnState::Established => write!(f, "Established"),
             ConnState::Related => write!(f, "Related"),
             ConnState::Invalid => write!(f, "Invalid"),
+            ConnState::Closing => write!(f, "Closing"),
         }
     }
 }

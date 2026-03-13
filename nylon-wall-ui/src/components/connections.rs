@@ -110,6 +110,7 @@ pub fn Connections() -> Element {
                         option { value: "new", "New" }
                         option { value: "established", "Established" }
                         option { value: "related", "Related" }
+                        option { value: "closing", "Closing" }
                         option { value: "invalid", "Invalid" }
                     }
                 }
@@ -172,6 +173,7 @@ pub fn Connections() -> Element {
                                                     ConnState::New => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
                                                     ConnState::Related => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
                                                     ConnState::Invalid => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20",
+                                                    ConnState::Closing => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20",
                                                 },
                                                 "{conn.state}"
                                             }

@@ -48,7 +48,11 @@ pub fn process_egress(ctx: &TcContext) -> Result<i32, ()> {
         if entry.state == 1 || entry.state == 0 {
             if let Some(entry_mut) = unsafe { crate::CONNTRACK.get_ptr_mut(&rev_key) } {
                 unsafe {
-                    (*entry_mut).state = 1;
+                    if pkt.tcp_flags & (TCP_FIN | TCP_RST) != 0 {
+                        (*entry_mut).state = 4; // Closing
+                    } else {
+                        (*entry_mut).state = 1;
+                    }
                     (*entry_mut).packets_out += 1;
                     (*entry_mut).bytes_out += pkt.pkt_len as u64;
                     (*entry_mut).last_seen = now;
@@ -150,6 +154,9 @@ pub fn process_egress(ctx: &TcContext) -> Result<i32, ()> {
             let _ = crate::CONNTRACK.insert(&fwd_key, &entry, 0);
         } else if let Some(entry_mut) = unsafe { crate::CONNTRACK.get_ptr_mut(&fwd_key) } {
             unsafe {
+                if pkt.tcp_flags & (TCP_FIN | TCP_RST) != 0 {
+                    (*entry_mut).state = 4; // Closing
+                }
                 (*entry_mut).packets_out += 1;
                 (*entry_mut).bytes_out += pkt.pkt_len as u64;
                 (*entry_mut).last_seen = now;

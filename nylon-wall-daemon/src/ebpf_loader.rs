@@ -120,6 +120,7 @@ mod linux {
                 0 => ConnState::New,
                 1 => ConnState::Established,
                 2 => ConnState::Related,
+                4 => ConnState::Closing,
                 _ => ConnState::Invalid,
             };
 

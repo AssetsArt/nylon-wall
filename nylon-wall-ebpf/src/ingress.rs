@@ -57,7 +57,12 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
             // Update the reverse entry's counters
             if let Some(entry_mut) = unsafe { crate::CONNTRACK.get_ptr_mut(&rev_key) } {
                 unsafe {
-                    (*entry_mut).state = 1; // Established
+                    // Mark closing if FIN or RST seen
+                    if pkt.tcp_flags & (TCP_FIN | TCP_RST) != 0 {
+                        (*entry_mut).state = 4; // Closing
+                    } else {
+                        (*entry_mut).state = 1; // Established
+                    }
                     (*entry_mut).packets_in += 1;
                     (*entry_mut).bytes_in += pkt.pkt_len as u64;
                     (*entry_mut).last_seen = now;
@@ -169,6 +174,9 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
             let _ = crate::CONNTRACK.insert(&fwd_key, &entry, 0);
         } else if let Some(entry_mut) = unsafe { crate::CONNTRACK.get_ptr_mut(&fwd_key) } {
             unsafe {
+                if pkt.tcp_flags & (TCP_FIN | TCP_RST) != 0 {
+                    (*entry_mut).state = 4; // Closing
+                }
                 (*entry_mut).packets_in += 1;
                 (*entry_mut).bytes_in += pkt.pkt_len as u64;
                 (*entry_mut).last_seen = now;

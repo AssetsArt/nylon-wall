@@ -11,6 +11,10 @@ pub const IPPROTO_ICMP: u8 = 1;
 pub const IPPROTO_TCP: u8 = 6;
 pub const IPPROTO_UDP: u8 = 17;
 
+// TCP flags (offset 13 in TCP header)
+pub const TCP_FIN: u8 = 0x01;
+pub const TCP_RST: u8 = 0x04;
+
 // Maximum rules to evaluate per packet (bounded loop for eBPF verifier)
 pub const MAX_RULES: u32 = 256;
 
@@ -24,6 +28,7 @@ pub struct PacketInfo {
     pub src_port: u16,
     pub dst_port: u16,
     pub protocol: u8,
+    pub tcp_flags: u8,
     pub pkt_len: u32,
 }
 
@@ -84,6 +89,7 @@ pub fn parse_packet(data: usize, data_end: usize) -> Option<PacketInfo> {
     let transport_base = ip_base + ihl;
     let mut src_port: u16 = 0;
     let mut dst_port: u16 = 0;
+    let mut tcp_flags: u8 = 0;
 
     if protocol == IPPROTO_TCP {
         if transport_base + TCP_HDR_LEN > data_end {
@@ -92,6 +98,7 @@ pub fn parse_packet(data: usize, data_end: usize) -> Option<PacketInfo> {
         unsafe {
             src_port = u16::from_be_bytes(*((transport_base) as *const [u8; 2]));
             dst_port = u16::from_be_bytes(*((transport_base + 2) as *const [u8; 2]));
+            tcp_flags = *((transport_base + 13) as *const u8);
         }
     } else if protocol == IPPROTO_UDP {
         if transport_base + UDP_HDR_LEN > data_end {
@@ -110,6 +117,7 @@ pub fn parse_packet(data: usize, data_end: usize) -> Option<PacketInfo> {
         src_port,
         dst_port,
         protocol,
+        tcp_flags,
         pkt_len: total_len,
     })
 }
