@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 #[component]
 pub fn Rules() -> Element {
     let mut rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
-    let mut editing = use_signal(|| None::<FirewallRule>);
+    let mut editing = use_signal(|| None::<(bool, FirewallRule)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
 
@@ -23,13 +23,13 @@ pub fn Rules() -> Element {
                         if editing().is_some() {
                             editing.set(None);
                         } else {
-                            editing.set(Some(FirewallRule {
+                            editing.set(Some((false, FirewallRule {
                                 id: 0, name: String::new(), priority: 100,
                                 direction: Direction::Ingress, enabled: true,
                                 src_ip: None, dst_ip: None, src_port: None, dst_port: None,
                                 protocol: None, interface: None, action: RuleAction::Allow,
                                 rate_limit_pps: None, hit_count: 0, created_at: 0, updated_at: 0,
-                            }));
+                            })));
                         }
                     },
                 }
@@ -42,9 +42,10 @@ pub fn Rules() -> Element {
                 }
             }
 
-            if let Some(rule) = editing() {
+            if let Some((is_edit, rule)) = editing() {
                 RuleForm {
                     key: "{rule.id}",
+                    is_edit: is_edit,
                     editing: rule,
                     on_saved: move |_| {
                         editing.set(None);
@@ -158,7 +159,7 @@ pub fn Rules() -> Element {
                                                 div { class: "flex items-center gap-1",
                                                     EditBtn {
                                                         onclick: move |_| {
-                                                            editing.set(Some(rule_clone.clone()));
+                                                            editing.set(Some((true, rule_clone.clone())));
                                                         },
                                                     }
                                                     DeleteBtn {
@@ -190,8 +191,7 @@ pub fn Rules() -> Element {
 }
 
 #[component]
-fn RuleForm(editing: FirewallRule, on_saved: EventHandler<()>) -> Element {
-    let is_edit = editing.id != 0;
+fn RuleForm(is_edit: bool, editing: FirewallRule, on_saved: EventHandler<()>) -> Element {
     let edit_id = editing.id;
     let mut name = use_signal(|| editing.name.clone());
     let mut direction = use_signal(|| match editing.direction {

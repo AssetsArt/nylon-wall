@@ -55,8 +55,8 @@ pub fn Policies() -> Element {
     let mut zones = use_resource(|| async { api_client::get::<Vec<Zone>>("/zones").await });
     let mut policies =
         use_resource(|| async { api_client::get::<Vec<NetworkPolicy>>("/policies").await });
-    let mut editing_zone = use_signal(|| None::<Zone>);
-    let mut editing_policy = use_signal(|| None::<NetworkPolicy>);
+    let mut editing_zone = use_signal(|| None::<(bool, Zone)>);
+    let mut editing_policy = use_signal(|| None::<(bool, NetworkPolicy)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete_zone = use_signal(|| None::<(u32, String)>);
     let mut confirm_delete_policy = use_signal(|| None::<(u32, String)>);
@@ -125,18 +125,19 @@ pub fn Policies() -> Element {
                             if editing_zone().is_some() {
                                 editing_zone.set(None);
                             } else {
-                                editing_zone.set(Some(Zone {
+                                editing_zone.set(Some((false, Zone {
                                     id: 0, name: String::new(), interfaces: vec![],
                                     default_policy: RuleAction::Allow,
-                                }));
+                                })));
                             }
                         },
                     }
                 }
 
-                if let Some(zone) = editing_zone() {
+                if let Some((is_edit, zone)) = editing_zone() {
                     ZoneForm {
                         key: "{zone.id}",
+                        is_edit: is_edit,
                         editing: zone,
                         on_saved: move |_| {
                             editing_zone.set(None);
@@ -166,7 +167,7 @@ pub fn Policies() -> Element {
                                                     }
                                                     EditBtn {
                                                         onclick: move |_| {
-                                                            editing_zone.set(Some(zone_clone.clone()));
+                                                            editing_zone.set(Some((true, zone_clone.clone())));
                                                         },
                                                     }
                                                     DeleteBtn {
@@ -225,21 +226,22 @@ pub fn Policies() -> Element {
                             if editing_policy().is_some() {
                                 editing_policy.set(None);
                             } else {
-                                editing_policy.set(Some(NetworkPolicy {
+                                editing_policy.set(Some((false, NetworkPolicy {
                                     id: 0, name: String::new(), enabled: true,
                                     from_zone: String::new(), to_zone: String::new(),
                                     src_ip: None, dst_ip: None, dst_port: None,
                                     protocol: None, schedule: None,
                                     action: RuleAction::Allow, log: false, priority: 100,
-                                }));
+                                })));
                             }
                         },
                     }
                 }
 
-                if let Some(policy) = editing_policy() {
+                if let Some((is_edit, policy)) = editing_policy() {
                     PolicyForm {
                         key: "{policy.id}",
+                        is_edit: is_edit,
                         editing: policy,
                         on_saved: move |_| {
                             editing_policy.set(None);
@@ -319,7 +321,7 @@ pub fn Policies() -> Element {
                                                     div { class: "flex items-center gap-1",
                                                         EditBtn {
                                                             onclick: move |_| {
-                                                                editing_policy.set(Some(policy_clone.clone()));
+                                                                editing_policy.set(Some((true, policy_clone.clone())));
                                                             },
                                                         }
                                                         DeleteBtn {
@@ -352,8 +354,7 @@ pub fn Policies() -> Element {
 }
 
 #[component]
-fn ZoneForm(editing: Zone, on_saved: EventHandler<()>) -> Element {
-    let is_edit = editing.id != 0;
+fn ZoneForm(is_edit: bool, editing: Zone, on_saved: EventHandler<()>) -> Element {
     let edit_id = editing.id;
     let mut name = use_signal(|| editing.name.clone());
     let mut interfaces = use_signal(|| editing.interfaces.join(", "));
@@ -437,8 +438,7 @@ fn ZoneForm(editing: Zone, on_saved: EventHandler<()>) -> Element {
 }
 
 #[component]
-fn PolicyForm(editing: NetworkPolicy, on_saved: EventHandler<()>) -> Element {
-    let is_edit = editing.id != 0;
+fn PolicyForm(is_edit: bool, editing: NetworkPolicy, on_saved: EventHandler<()>) -> Element {
     let edit_id = editing.id;
     let mut name = use_signal(|| editing.name.clone());
     let mut from_zone = use_signal(|| editing.from_zone.clone());

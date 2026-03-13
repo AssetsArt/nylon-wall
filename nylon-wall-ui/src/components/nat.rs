@@ -9,7 +9,7 @@ use dioxus_free_icons::icons::ld_icons::*;
 #[component]
 pub fn Nat() -> Element {
     let mut entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
-    let mut editing = use_signal(|| None::<NatEntry>);
+    let mut editing = use_signal(|| None::<(bool, NatEntry)>);
     let mut show_wizard = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
@@ -46,12 +46,12 @@ pub fn Nat() -> Element {
                             if editing().is_some() {
                                 editing.set(None);
                             } else {
-                                editing.set(Some(NatEntry {
+                                editing.set(Some((false, NatEntry {
                                     id: 0, nat_type: NatType::SNAT, enabled: true,
                                     src_network: None, dst_network: None, protocol: None,
                                     dst_port: None, in_interface: None, out_interface: None,
                                     translate_ip: None, translate_port: None,
-                                }));
+                                })));
                                 show_wizard.set(false);
                             }
                         },
@@ -75,9 +75,10 @@ pub fn Nat() -> Element {
                 }
             }
 
-            if let Some(entry) = editing() {
+            if let Some((is_edit, entry)) = editing() {
                 NatForm {
                     key: "{entry.id}",
+                    is_edit: is_edit,
                     editing: entry,
                     on_saved: move |_| {
                         editing.set(None);
@@ -159,7 +160,7 @@ pub fn Nat() -> Element {
                                                 div { class: "flex items-center gap-1",
                                                     EditBtn {
                                                         onclick: move |_| {
-                                                            editing.set(Some(entry_clone.clone()));
+                                                            editing.set(Some((true, entry_clone.clone())));
                                                         },
                                                     }
                                                     DeleteBtn {
@@ -392,8 +393,7 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
 // === NAT Form (advanced) ===
 
 #[component]
-fn NatForm(editing: NatEntry, on_saved: EventHandler<()>) -> Element {
-    let is_edit = editing.id != 0;
+fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Element {
     let edit_id = editing.id;
     let mut nat_type = use_signal(|| match editing.nat_type {
         NatType::DNAT => "DNAT".to_string(),

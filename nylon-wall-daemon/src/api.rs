@@ -234,8 +234,11 @@ async fn list_rules(State(state): State<Arc<AppState>>) -> AppResult<Vec<Firewal
 
 async fn create_rule(
     State(state): State<Arc<AppState>>,
-    Json(rule): Json<FirewallRule>,
+    Json(mut rule): Json<FirewallRule>,
 ) -> Result<(StatusCode, Json<FirewallRule>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<FirewallRule>("rule:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
+    rule.id = next_id;
     let key = format!("rule:{}", rule.id);
     state.db.put(&key, &rule).await.map_err(internal_error)?;
     state
@@ -338,8 +341,11 @@ async fn list_nat(State(state): State<Arc<AppState>>) -> AppResult<Vec<NatEntry>
 
 async fn create_nat(
     State(state): State<Arc<AppState>>,
-    Json(entry): Json<NatEntry>,
+    Json(mut entry): Json<NatEntry>,
 ) -> Result<(StatusCode, Json<NatEntry>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<NatEntry>("nat:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, e)| e.id).max().unwrap_or(0) + 1;
+    entry.id = next_id;
     let key = format!("nat:{}", entry.id);
     state.db.put(&key, &entry).await.map_err(internal_error)?;
     state
@@ -402,8 +408,11 @@ async fn list_routes(State(state): State<Arc<AppState>>) -> AppResult<Vec<Route>
 
 async fn create_route(
     State(state): State<Arc<AppState>>,
-    Json(route): Json<Route>,
+    Json(mut route): Json<Route>,
 ) -> Result<(StatusCode, Json<Route>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<Route>("route:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
+    route.id = next_id;
     let key = format!("route:{}", route.id);
     state.db.put(&key, &route).await.map_err(internal_error)?;
     state
@@ -466,8 +475,11 @@ async fn list_policy_routes(State(state): State<Arc<AppState>>) -> AppResult<Vec
 
 async fn create_policy_route(
     State(state): State<Arc<AppState>>,
-    Json(route): Json<PolicyRoute>,
+    Json(mut route): Json<PolicyRoute>,
 ) -> Result<(StatusCode, Json<PolicyRoute>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<PolicyRoute>("policy_route:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
+    route.id = next_id;
     let key = format!("policy_route:{}", route.id);
     state.db.put(&key, &route).await.map_err(internal_error)?;
     state
@@ -521,8 +533,11 @@ async fn list_zones(State(state): State<Arc<AppState>>) -> AppResult<Vec<Zone>> 
 
 async fn create_zone(
     State(state): State<Arc<AppState>>,
-    Json(zone): Json<Zone>,
+    Json(mut zone): Json<Zone>,
 ) -> Result<(StatusCode, Json<Zone>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<Zone>("zone:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, z)| z.id).max().unwrap_or(0) + 1;
+    zone.id = next_id;
     let key = format!("zone:{}", zone.id);
     state.db.put(&key, &zone).await.map_err(internal_error)?;
     state
@@ -585,8 +600,11 @@ async fn list_policies(State(state): State<Arc<AppState>>) -> AppResult<Vec<Netw
 
 async fn create_policy(
     State(state): State<Arc<AppState>>,
-    Json(policy): Json<NetworkPolicy>,
+    Json(mut policy): Json<NetworkPolicy>,
 ) -> Result<(StatusCode, Json<NetworkPolicy>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<NetworkPolicy>("policy:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, p)| p.id).max().unwrap_or(0) + 1;
+    policy.id = next_id;
     let key = format!("policy:{}", policy.id);
     state.db.put(&key, &policy).await.map_err(internal_error)?;
     state
@@ -886,8 +904,11 @@ async fn get_dhcp_pool(
 
 async fn create_dhcp_pool(
     State(state): State<Arc<AppState>>,
-    Json(pool): Json<DhcpPool>,
+    Json(mut pool): Json<DhcpPool>,
 ) -> Result<(StatusCode, Json<DhcpPool>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<DhcpPool>("dhcp_pool:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, p)| p.id).max().unwrap_or(0) + 1;
+    pool.id = next_id;
     let key = format!("dhcp_pool:{}", pool.id);
     state.db.put(&key, &pool).await.map_err(internal_error)?;
     state
@@ -1063,8 +1084,11 @@ async fn list_dhcp_reservations(
 
 async fn create_dhcp_reservation(
     State(state): State<Arc<AppState>>,
-    Json(reservation): Json<DhcpReservation>,
+    Json(mut reservation): Json<DhcpReservation>,
 ) -> Result<(StatusCode, Json<DhcpReservation>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<DhcpReservation>("dhcp_reservation:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
+    reservation.id = next_id;
     let key = format!("dhcp_reservation:{}", reservation.id);
     state
         .db
@@ -1131,8 +1155,11 @@ async fn list_dhcp_clients(State(state): State<Arc<AppState>>) -> AppResult<Vec<
 
 async fn create_dhcp_client(
     State(state): State<Arc<AppState>>,
-    Json(config): Json<DhcpClientConfig>,
+    Json(mut config): Json<DhcpClientConfig>,
 ) -> Result<(StatusCode, Json<DhcpClientConfig>), (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<DhcpClientConfig>("dhcp_client:").await.map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, c)| c.id).max().unwrap_or(0) + 1;
+    config.id = next_id;
     let key = format!("dhcp_client:{}", config.id);
     state.db.put(&key, &config).await.map_err(internal_error)?;
     state

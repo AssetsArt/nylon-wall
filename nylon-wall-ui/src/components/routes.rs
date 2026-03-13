@@ -7,7 +7,7 @@ use dioxus::prelude::*;
 #[component]
 pub fn Routes() -> Element {
     let mut routes = use_resource(|| async { api_client::get::<Vec<Route>>("/routes").await });
-    let mut editing = use_signal(|| None::<Route>);
+    let mut editing = use_signal(|| None::<(bool, Route)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
 
@@ -23,10 +23,10 @@ pub fn Routes() -> Element {
                         if editing().is_some() {
                             editing.set(None);
                         } else {
-                            editing.set(Some(Route {
+                            editing.set(Some((false, Route {
                                 id: 0, destination: String::new(), gateway: None,
                                 interface: String::new(), metric: 100, table: 254, enabled: true,
-                            }));
+                            })));
                         }
                     },
                 }
@@ -39,9 +39,10 @@ pub fn Routes() -> Element {
                 }
             }
 
-            if let Some(route) = editing() {
+            if let Some((is_edit, route)) = editing() {
                 RouteForm {
                     key: "{route.id}",
+                    is_edit: is_edit,
                     editing: route,
                     on_saved: move |_| {
                         editing.set(None);
@@ -108,7 +109,7 @@ pub fn Routes() -> Element {
                                                     div { class: "flex items-center gap-1",
                                                         EditBtn {
                                                             onclick: move |_| {
-                                                                editing.set(Some(route_clone.clone()));
+                                                                editing.set(Some((true, route_clone.clone())));
                                                             },
                                                         }
                                                         DeleteBtn {
@@ -144,8 +145,7 @@ pub fn Routes() -> Element {
 }
 
 #[component]
-fn RouteForm(editing: Route, on_saved: EventHandler<()>) -> Element {
-    let is_edit = editing.id != 0;
+fn RouteForm(is_edit: bool, editing: Route, on_saved: EventHandler<()>) -> Element {
     let edit_id = editing.id;
     let mut destination = use_signal(|| editing.destination.clone());
     let mut gateway = use_signal(|| editing.gateway.clone().unwrap_or_default());
@@ -241,7 +241,7 @@ fn RouteForm(editing: Route, on_saved: EventHandler<()>) -> Element {
 pub fn PolicyRoutes() -> Element {
     let mut policy_routes =
         use_resource(|| async { api_client::get::<Vec<PolicyRoute>>("/routes/policy").await });
-    let mut editing = use_signal(|| None::<PolicyRoute>);
+    let mut editing = use_signal(|| None::<(bool, PolicyRoute)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
 
@@ -257,10 +257,10 @@ pub fn PolicyRoutes() -> Element {
                         if editing().is_some() {
                             editing.set(None);
                         } else {
-                            editing.set(Some(PolicyRoute {
+                            editing.set(Some((false, PolicyRoute {
                                 id: 0, src_ip: None, dst_ip: None, src_port: None,
                                 protocol: None, route_table: 100, priority: 1000,
-                            }));
+                            })));
                         }
                     },
                 }
@@ -273,9 +273,10 @@ pub fn PolicyRoutes() -> Element {
                 }
             }
 
-            if let Some(pr) = editing() {
+            if let Some((is_edit, pr)) = editing() {
                 PolicyRouteForm {
                     key: "{pr.id}",
+                    is_edit: is_edit,
                     editing: pr,
                     on_saved: move |_| {
                         editing.set(None);
@@ -343,7 +344,7 @@ pub fn PolicyRoutes() -> Element {
                                                 div { class: "flex items-center gap-1",
                                                     EditBtn {
                                                         onclick: move |_| {
-                                                            editing.set(Some(pr_clone.clone()));
+                                                            editing.set(Some((true, pr_clone.clone())));
                                                         },
                                                     }
                                                     DeleteBtn {
@@ -375,8 +376,7 @@ pub fn PolicyRoutes() -> Element {
 }
 
 #[component]
-fn PolicyRouteForm(editing: PolicyRoute, on_saved: EventHandler<()>) -> Element {
-    let is_edit = editing.id != 0;
+fn PolicyRouteForm(is_edit: bool, editing: PolicyRoute, on_saved: EventHandler<()>) -> Element {
     let edit_id = editing.id;
     let mut src_ip = use_signal(|| editing.src_ip.clone().unwrap_or_default());
     let mut dst_ip = use_signal(|| editing.dst_ip.clone().unwrap_or_default());
