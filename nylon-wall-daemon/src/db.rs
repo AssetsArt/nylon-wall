@@ -19,14 +19,50 @@ pub struct Database {
 }
 
 impl Database {
+    fn make_object_store(path: &Path) -> Result<Arc<LocalFileSystem>, DbError> {
+        Ok(Arc::new(
+            LocalFileSystem::new_with_prefix(path)
+                .map_err(|e| DbError::Storage(e.to_string()))?,
+        ))
+    }
+
     pub async fn open(path: &str) -> Result<Self, DbError> {
         let path = Path::new(path);
         std::fs::create_dir_all(path).map_err(|e| DbError::Storage(e.to_string()))?;
-        let object_store = Arc::new(
-            LocalFileSystem::new_with_prefix(path).map_err(|e| DbError::Storage(e.to_string()))?,
-        );
-        let db = Db::open("/", object_store).await?;
-        Ok(Self { inner: db })
+
+        let object_store = Self::make_object_store(path)?;
+        match Db::open("/", object_store).await {
+            Ok(db) => Ok(Self { inner: db }),
+            Err(e) => {
+                let err_msg = e.to_string();
+                if err_msg.contains("unsupported manifest format version") {
+                    tracing::warn!(
+                        "Incompatible SlateDB data detected (upgraded from older version). \
+                         Clearing old data at {:?} and starting fresh.",
+                        path
+                    );
+                    // Remove old data directory and recreate
+                    if let Err(rm_err) = std::fs::remove_dir_all(path) {
+                        tracing::error!("Failed to remove old database: {}", rm_err);
+                        return Err(DbError::Storage(format!(
+                            "Cannot clear incompatible database at {}: {}. \
+                             Please manually remove the directory or the Docker volume.",
+                            path.display(),
+                            rm_err
+                        )));
+                    }
+                    std::fs::create_dir_all(path)
+                        .map_err(|e| DbError::Storage(e.to_string()))?;
+
+                    let object_store = Self::make_object_store(path)?;
+                    let db = Db::open("/", object_store).await?;
+                    tracing::info!("Database re-initialized successfully after format migration.");
+                    Ok(Self { inner: db })
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
     }
 
     pub async fn put<T: serde::Serialize>(&self, key: &str, value: &T) -> Result<(), DbError> {
