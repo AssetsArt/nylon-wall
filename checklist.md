@@ -181,6 +181,65 @@
 - [x] Interface configuration UI
 - [x] Daemon settings editor
 
+---
+
+## Phase 7: DHCP Server & Client
+
+### nylon-wall-common - DHCP Types
+- [x] `nylon-wall-common/src/dhcp.rs` - `DhcpPool`, `DhcpLease`, `DhcpLeaseState`, `DhcpReservation`
+- [x] `nylon-wall-common/src/dhcp.rs` - `DhcpClientConfig`, `DhcpClientStatus`, `DhcpClientState`
+- [x] `nylon-wall-common/src/lib.rs` - Add `pub mod dhcp`
+
+### nylon-wall-daemon - DHCP Module
+- [x] `nylon-wall-daemon/Cargo.toml` - Add `dhcproto`, `socket2`, `rand`
+- [x] `nylon-wall-daemon/src/dhcp/mod.rs` - Module declarations + shared helpers
+- [x] `nylon-wall-daemon/src/dhcp/packet.rs` - dhcproto wrapper (build/parse DHCP messages)
+- [x] `nylon-wall-daemon/src/dhcp/socket.rs` - Raw UDP socket creation (Linux-only, SO_BINDTODEVICE)
+- [x] `nylon-wall-daemon/src/dhcp/lease_manager.rs` - IP allocation, renewal, expiration logic
+- [x] `nylon-wall-daemon/src/dhcp/server.rs` - DHCP server background task (per-interface)
+- [x] `nylon-wall-daemon/src/dhcp/client.rs` - DHCP client state machine (per-WAN interface)
+- [x] `nylon-wall-daemon/src/main.rs` - AppState fields (`dhcp_pool_notify`, `dhcp_client_statuses`) + spawn tasks
+
+### Daemon - DHCP API
+- [x] API: `GET /api/v1/dhcp/pools` - List DHCP pools
+- [x] API: `POST /api/v1/dhcp/pools` - Create DHCP pool
+- [x] API: `GET /api/v1/dhcp/pools/{id}` - Get DHCP pool
+- [x] API: `PUT /api/v1/dhcp/pools/{id}` - Update DHCP pool
+- [x] API: `DELETE /api/v1/dhcp/pools/{id}` - Delete DHCP pool
+- [x] API: `POST /api/v1/dhcp/pools/{id}/toggle` - Enable/disable pool
+- [x] API: `GET /api/v1/dhcp/leases` - List active leases
+- [x] API: `DELETE /api/v1/dhcp/leases/{mac}` - Release lease
+- [x] API: `POST /api/v1/dhcp/leases/{mac}/reserve` - Create reservation from lease
+- [x] API: `GET /api/v1/dhcp/reservations` - List reservations
+- [x] API: `POST /api/v1/dhcp/reservations` - Create reservation
+- [x] API: `PUT /api/v1/dhcp/reservations/{id}` - Update reservation
+- [x] API: `DELETE /api/v1/dhcp/reservations/{id}` - Delete reservation
+- [x] API: `GET /api/v1/dhcp/clients` - List WAN DHCP clients
+- [x] API: `POST /api/v1/dhcp/clients` - Create WAN client
+- [x] API: `PUT /api/v1/dhcp/clients/{id}` - Update WAN client
+- [x] API: `DELETE /api/v1/dhcp/clients/{id}` - Delete WAN client
+- [x] API: `POST /api/v1/dhcp/clients/{id}/toggle` - Enable/disable client
+- [x] API: `GET /api/v1/dhcp/clients/status` - Get all client statuses
+- [x] API: `POST /api/v1/dhcp/clients/{interface}/release` - Release WAN lease
+- [x] API: `POST /api/v1/dhcp/clients/{interface}/renew` - Renew WAN lease
+
+### Dioxus UI - DHCP
+- [x] `nylon-wall-ui/src/components/dhcp.rs` - DHCP page with 3-tab layout
+- [x] Tab: Server Pools - Pool table + create/edit form + toggle/delete
+- [x] Tab: Leases - Lease table (release/reserve) + Static reservations table + form
+- [x] Tab: WAN Client - Client cards with live status + enable/disable/renew/release
+- [x] `nylon-wall-ui/src/components/mod.rs` - Export `Dhcp` component
+- [x] `nylon-wall-ui/src/app.rs` - Add `/dhcp` route + sidebar nav link
+
+### Integration
+- [x] `nylon-wall-daemon/src/metrics.rs` - DHCP Prometheus metrics (pools, leases, clients)
+- [x] `nylon-wall-ui/src/components/dashboard.rs` - DHCP summary card (active leases + pools)
+- [x] `nylon-wall-daemon/src/api.rs` - Backup/restore includes DHCP pools, reservations, clients
+- [x] `docker-compose.yml` - Add `NET_RAW` capability
+- [ ] ทดสอบ DHCP server assign IP ให้ LAN client
+- [ ] ทดสอบ DHCP client ได้ IP จาก ISP
+
+---
+
 ### Extras (Optional)
-- [ ] DHCP server สำหรับ LAN interfaces
 - [ ] DNS filtering (blocklist + custom responses + query logging)

@@ -73,7 +73,14 @@ nylon-wall/
 │       ├── state.rs              # Connection tracking state
 │       ├── api.rs                # REST API (axum)
 │       ├── metrics.rs            # Prometheus-compatible metrics
-│       └── db.rs                 # SlateDB persistence (key-value store)
+│       ├── db.rs                 # SlateDB persistence (key-value store)
+│       └── dhcp/                 # DHCP server & client
+│           ├── mod.rs            # Module declarations
+│           ├── packet.rs         # dhcproto packet build/parse
+│           ├── socket.rs         # Raw UDP socket (Linux)
+│           ├── lease_manager.rs  # IP allocation & expiration
+│           ├── server.rs         # DHCP server task
+│           └── client.rs         # DHCP client state machine
 ├── nylon-wall-ui/                # Dioxus Web UI
 │   ├── Cargo.toml
 │   ├── Dioxus.toml
@@ -87,6 +94,8 @@ nylon-wall/
 │       │   ├── nat.rs            # NAT configuration
 │       │   ├── routes.rs         # Routing table
 │       │   ├── policies.rs       # Network policies
+│       │   ├── dhcp.rs           # DHCP server/client management
+│       │   ├── connections.rs    # Live conntrack table
 │       │   ├── logs.rs           # Log viewer
 │       │   └── settings.rs       # System settings
 │       ├── api_client.rs         # HTTP client to daemon API
@@ -327,14 +336,85 @@ struct ConntrackEntry {
 - Connection count per zone
 - System health (CPU, memory, interfaces status)
 
-### 8. DHCP Server (Optional Phase 2)
+### 8. DHCP Server & Client
 
+**Implementation:** Pure Rust via `dhcproto` crate (no external dependencies)
+
+#### DHCP Server (LAN)
 - Built-in DHCP server สำหรับ LAN interfaces
-- IP pool management
-- Static lease mapping (MAC -> IP)
-- DNS server assignment
+- Per-interface IP pool management (subnet, range, gateway, DNS, domain, lease time)
+- Static reservation mapping (MAC -> IP)
+- Automatic lease expiration (60s scan interval)
+- Hot-reload เมื่อ pool config เปลี่ยน (via `tokio::sync::watch` channel)
+- Handles DISCOVER→OFFER, REQUEST→ACK/NAK, RELEASE
 
-### 9. DNS Filtering (Optional Phase 2)
+#### DHCP Client (WAN)
+- DHCP client state machine สำหรับ WAN interfaces
+- States: Idle → Discovering → Requesting → Bound → Renewing → Rebinding → Error
+- Auto-apply IP config via `ip addr add` / `ip route add` (iproute2)
+- Persist status to DB + broadcast WsEvent on changes
+- Support release/renew via API
+
+#### DHCP Data Structures
+
+```rust
+struct DhcpPool {
+    id: u32,
+    interface: String,
+    enabled: bool,
+    subnet: String,           // CIDR e.g. "192.168.1.0/24"
+    range_start: String,
+    range_end: String,
+    gateway: Option<String>,
+    dns_servers: Vec<String>,
+    domain_name: Option<String>,
+    lease_time: u32,          // seconds
+}
+
+struct DhcpLease {
+    ip: String,
+    mac: String,
+    hostname: Option<String>,
+    pool_id: u32,
+    lease_start: i64,
+    lease_end: i64,
+    state: DhcpLeaseState,    // Active | Expired | Reserved
+}
+
+struct DhcpReservation {
+    id: u32,
+    pool_id: u32,
+    mac: String,
+    ip: String,
+    hostname: Option<String>,
+}
+
+struct DhcpClientConfig {
+    id: u32,
+    interface: String,
+    enabled: bool,
+    hostname: Option<String>,
+}
+
+struct DhcpClientStatus {
+    interface: String,
+    state: DhcpClientState,   // Idle|Discovering|Requesting|Bound|Renewing|Rebinding|Error
+    ip: Option<String>,
+    subnet_mask: Option<String>,
+    gateway: Option<String>,
+    dns_servers: Vec<String>,
+    dhcp_server: Option<String>,
+    lease_start: Option<i64>,
+    lease_end: Option<i64>,
+    last_renewed: Option<i64>,
+}
+```
+
+#### Required Capabilities
+- `NET_RAW` (for raw UDP sockets on port 67/68)
+- `SO_BINDTODEVICE` + `SO_BROADCAST` via `socket2`
+
+### 9. DNS Filtering (Optional Future Phase)
 
 - Block domains ตาม blocklist
 - Custom DNS responses
@@ -385,6 +465,11 @@ log:{timestamp}:{seq}                → PacketLog
 metric:{name}:{timestamp}            → MetricPoint
 config:{key}                         → ConfigValue
 backup:{timestamp}                   → SnapshotData
+dhcp_pool:{id}                       → DhcpPool
+dhcp_lease:{mac}                     → DhcpLease
+dhcp_reservation:{id}                → DhcpReservation
+dhcp_client:{id}                     → DhcpClientConfig
+dhcp_client_status:{iface}           → DhcpClientStatus
 ```
 
 ### Key Design Decisions
@@ -481,6 +566,35 @@ Base URL: `http://localhost:9450/api/v1`
 | GET | /metrics | Prometheus metrics |
 | WS | /ws/events | Real-time event stream |
 
+### DHCP Server
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /dhcp/pools | List DHCP pools |
+| POST | /dhcp/pools | Create DHCP pool |
+| GET | /dhcp/pools/{id} | Get pool by ID |
+| PUT | /dhcp/pools/{id} | Update pool |
+| DELETE | /dhcp/pools/{id} | Delete pool |
+| POST | /dhcp/pools/{id}/toggle | Enable/disable pool |
+| GET | /dhcp/leases | List active leases |
+| DELETE | /dhcp/leases/{mac} | Release lease |
+| POST | /dhcp/leases/{mac}/reserve | Create reservation from lease |
+| GET | /dhcp/reservations | List reservations |
+| POST | /dhcp/reservations | Create reservation |
+| PUT | /dhcp/reservations/{id} | Update reservation |
+| DELETE | /dhcp/reservations/{id} | Delete reservation |
+
+### DHCP Client
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /dhcp/clients | List WAN DHCP clients |
+| POST | /dhcp/clients | Create WAN client |
+| PUT | /dhcp/clients/{id} | Update WAN client |
+| DELETE | /dhcp/clients/{id} | Delete WAN client |
+| POST | /dhcp/clients/{id}/toggle | Enable/disable client |
+| GET | /dhcp/clients/status | Get all client statuses |
+| POST | /dhcp/clients/{interface}/release | Release WAN lease |
+| POST | /dhcp/clients/{interface}/renew | Renew WAN lease |
+
 ### System
 | Method | Path | Description |
 |--------|------|-------------|
@@ -532,7 +646,12 @@ Base URL: `http://localhost:9450/api/v1`
 - Real-time log stream
 - Export to CSV
 
-### 8. Settings (`/settings`)
+### 8. DHCP (`/dhcp`)
+- Tab 1: Server Pools — pool table + create form + toggle/delete
+- Tab 2: Leases — active lease table (release/reserve) + static reservations
+- Tab 3: WAN Client — client cards with live status + renew/release
+
+### 9. Settings (`/settings`)
 - Interface configuration
 - Daemon settings
 - Backup/restore
