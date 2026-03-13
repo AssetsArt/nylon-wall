@@ -1,3 +1,4 @@
+pub mod ui;
 mod confirm;
 mod connections;
 mod dashboard;

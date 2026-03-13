@@ -1,4 +1,5 @@
 use super::ConfirmModal;
+use super::ui::*;
 use crate::api_client;
 use crate::models::*;
 use dioxus::document;
@@ -27,9 +28,9 @@ pub fn Settings() -> Element {
 
     rsx! {
         div {
-            div { class: "mb-6",
-                h2 { class: "text-xl font-semibold text-white", "Settings" }
-                p { class: "text-sm text-slate-400 mt-1", "System configuration and maintenance" }
+            PageHeader {
+                title: "Settings".to_string(),
+                subtitle: "System configuration and maintenance".to_string(),
             }
 
             if let Some((success, msg)) = backup_msg() {
@@ -79,11 +80,11 @@ pub fn Settings() -> Element {
 
             // System Information
             div { class: "mb-6",
-                div { class: "flex items-center gap-2 mb-4",
-                    Icon { width: 15, height: 15, icon: LdServer, class: "text-slate-500" }
-                    h3 { class: "text-sm font-semibold text-white", "System Information" }
+                SectionHeader {
+                    icon: rsx! { Icon { width: 15, height: 15, icon: LdServer, class: "text-slate-500" } },
+                    title: "System Information".to_string(),
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5",
+                FormCard { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 mb-0",
                     match &*status.read() {
                         Some(Ok(s)) => rsx! {
                             div { class: "space-y-3",
@@ -93,13 +94,9 @@ pub fn Settings() -> Element {
                                 }
                                 div { class: "flex items-center justify-between py-2 border-b border-slate-800/40",
                                     span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "eBPF Status" }
-                                    span {
-                                        class: if s.ebpf_loaded {
-                                            "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                        } else {
-                                            "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20"
-                                        },
-                                        if s.ebpf_loaded { "Loaded" } else { "Not Loaded" }
+                                    Badge {
+                                        color: if s.ebpf_loaded { Color::Emerald } else { Color::Red },
+                                        label: if s.ebpf_loaded { "Loaded".to_string() } else { "Not Loaded".to_string() },
                                     }
                                 }
                                 div { class: "flex items-center justify-between py-2 border-b border-slate-800/40",
@@ -129,76 +126,68 @@ pub fn Settings() -> Element {
 
             // Network Interfaces (only those with a non-empty status)
             div { class: "mb-6",
-                div { class: "flex items-center gap-2 mb-4",
-                    Icon { width: 15, height: 15, icon: LdNetwork, class: "text-slate-500" }
-                    h3 { class: "text-sm font-semibold text-white", "Network Interfaces" }
+                SectionHeader {
+                    icon: rsx! { Icon { width: 15, height: 15, icon: LdNetwork, class: "text-slate-500" } },
+                    title: "Network Interfaces".to_string(),
                 }
-                div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
-                    table { class: "w-full text-left",
-                        thead { class: "bg-slate-900/80",
-                            tr {
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Name" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MTU" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Zone" }
-                            }
+                DataTable {
+                    thead { class: "bg-slate-900/80",
+                        tr {
+                            th { class: TH_CLASS, "Name" }
+                            th { class: TH_CLASS, "IP Address" }
+                            th { class: TH_CLASS, "MAC" }
+                            th { class: TH_CLASS, "MTU" }
+                            th { class: TH_CLASS, "Status" }
+                            th { class: TH_CLASS, "Zone" }
                         }
-                        tbody {
-                            match &*interfaces.read() {
-                                Some(Ok(list)) => {
-                                    let active: Vec<_> = list.iter().filter(|i| !i.status.is_empty() && i.status != "unknown").collect();
-                                    if active.is_empty() {
-                                        rsx! {
-                                            tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "6", "No active interfaces found" } }
-                                        }
-                                    } else {
-                                        rsx! {
-                                            for iface in active.iter() {
-                                                tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
-                                                    key: "{iface.name}",
-                                                    td { class: "px-5 py-3 text-sm text-slate-300 font-mono font-medium", "{iface.name}" }
-                                                    td { class: "px-5 py-3 text-sm text-slate-400 font-mono", "{iface.ip}" }
-                                                    td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{iface.mac}" }
-                                                    td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{iface.mtu}" }
-                                                    td { class: "px-5 py-3 text-sm",
-                                                        span {
-                                                            class: if iface.status == "up" {
-                                                                "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                            } else {
-                                                                "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20"
-                                                            },
-                                                            "{iface.status}"
-                                                        }
+                    }
+                    tbody {
+                        match &*interfaces.read() {
+                            Some(Ok(list)) => {
+                                let active: Vec<_> = list.iter().filter(|i| !i.status.is_empty() && i.status != "unknown").collect();
+                                if active.is_empty() {
+                                    rsx! {
+                                        TableEmpty { colspan: 6, message: "No active interfaces found".to_string() }
+                                    }
+                                } else {
+                                    rsx! {
+                                        for iface in active.iter() {
+                                            tr { class: TR_CLASS,
+                                                key: "{iface.name}",
+                                                td { class: "{TD_CLASS} text-slate-300 font-mono font-medium", "{iface.name}" }
+                                                td { class: "{TD_CLASS} text-slate-400 font-mono", "{iface.ip}" }
+                                                td { class: "{TD_CLASS} text-slate-500 font-mono", "{iface.mac}" }
+                                                td { class: "{TD_CLASS} text-slate-500 font-mono", "{iface.mtu}" }
+                                                td { class: TD_CLASS,
+                                                    Badge {
+                                                        color: if iface.status == "up" { Color::Emerald } else { Color::Slate },
+                                                        label: iface.status.clone(),
                                                     }
-                                                    td { class: "px-5 py-3 text-sm text-slate-500",
-                                                        {
-                                                            let zone = match iface.name.as_str() {
-                                                                "eth0" => "WAN",
-                                                                "eth1" => "LAN",
-                                                                "lo" => "Local",
-                                                                _ => "Unassigned",
-                                                            };
-                                                            rsx! {
-                                                                span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
-                                                                    "{zone}"
-                                                                }
-                                                            }
+                                                }
+                                                td { class: TD_CLASS,
+                                                    {
+                                                        let zone = match iface.name.as_str() {
+                                                            "eth0" => "WAN",
+                                                            "eth1" => "LAN",
+                                                            "lo" => "Local",
+                                                            _ => "Unassigned",
+                                                        };
+                                                        rsx! {
+                                                            Badge { color: Color::Blue, label: zone.to_string() }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                },
-                                Some(Err(e)) => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "6", "Failed to load: {e}" } }
-                                },
-                                None => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "6", "Loading..." } }
-                                },
-                            }
+                                }
+                            },
+                            Some(Err(e)) => rsx! {
+                                TableError { colspan: 6, message: format!("Failed to load: {e}") }
+                            },
+                            None => rsx! {
+                                TableLoading { colspan: 6 }
+                            },
                         }
                     }
                 }
@@ -206,15 +195,17 @@ pub fn Settings() -> Element {
 
             // Backup & Restore
             div {
-                div { class: "flex items-center gap-2 mb-4",
-                    Icon { width: 15, height: 15, icon: LdHardDrive, class: "text-slate-500" }
-                    h3 { class: "text-sm font-semibold text-white", "Backup & Restore" }
+                SectionHeader {
+                    icon: rsx! { Icon { width: 15, height: 15, icon: LdHardDrive, class: "text-slate-500" } },
+                    title: "Backup & Restore".to_string(),
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5",
+                FormCard { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 mb-0",
                     p { class: "text-sm text-slate-400 mb-4", "Export or import your firewall configuration for backup or migration." }
                     div { class: "flex items-center gap-3",
-                        button {
-                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors flex items-center gap-1.5",
+                        Btn {
+                            color: Color::Blue,
+                            label: "Export Configuration".to_string(),
+                            icon: rsx! { Icon { width: 13, height: 13, icon: LdDownload } },
                             onclick: move |_| {
                                 spawn(async move {
                                     match api_client::post::<(), serde_json::Value>("/system/backup", &()).await {
@@ -246,12 +237,12 @@ pub fn Settings() -> Element {
                                     }
                                 });
                             },
-                            Icon { width: 13, height: 13, icon: LdDownload }
-                            span { "Export Configuration" }
                         }
-                        button {
-                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20 hover:bg-slate-500/20 transition-colors flex items-center gap-1.5 disabled:opacity-50",
+                        Btn {
+                            color: Color::Slate,
+                            label: if importing() { "Importing...".to_string() } else { "Import Configuration".to_string() },
                             disabled: importing(),
+                            icon: rsx! { Icon { width: 13, height: 13, icon: LdUpload } },
                             onclick: move |_| {
                                 importing.set(true);
                                 spawn(async move {
@@ -304,8 +295,6 @@ pub fn Settings() -> Element {
                                     importing.set(false);
                                 });
                             },
-                            Icon { width: 13, height: 13, icon: LdUpload }
-                            if importing() { span { "Importing..." } } else { span { "Import Configuration" } }
                         }
                     }
                 }

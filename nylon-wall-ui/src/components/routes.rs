@@ -1,9 +1,8 @@
 use super::ConfirmModal;
+use super::ui::*;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
-use dioxus_free_icons::Icon;
-use dioxus_free_icons::icons::ld_icons::*;
 
 #[component]
 pub fn Routes() -> Element {
@@ -14,26 +13,20 @@ pub fn Routes() -> Element {
 
     rsx! {
         div { class: "pb-6",
-            div { class: "flex items-center justify-between mb-6",
-                div {
-                    h2 { class: "text-xl font-semibold text-white", "Routing Table" }
-                    p { class: "text-sm text-slate-400 mt-1", "Static routes and network paths" }
-                }
-                button {
-                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+            PageHeader {
+                title: "Routing Table".to_string(),
+                subtitle: "Static routes and network paths".to_string(),
+                Btn {
+                    color: Color::Blue,
+                    label: if show_form() { "Cancel".to_string() } else { "+ Add Route".to_string() },
                     onclick: move |_| show_form.set(!show_form()),
-                    if show_form() { "Cancel" } else { "+ Add Route" }
                 }
             }
 
             if let Some(err) = error_msg() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between",
-                    span { "{err}" }
-                    button {
-                        class: "text-red-400 hover:text-red-300",
-                        onclick: move |_| error_msg.set(None),
-                        Icon { width: 14, height: 14, icon: LdX }
-                    }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
                 }
             }
 
@@ -65,51 +58,45 @@ pub fn Routes() -> Element {
                 }
             }
 
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
-                table { class: "w-full text-left",
+            div { class: "mb-8",
+                DataTable {
                     thead { class: "bg-slate-900/80",
                         tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Destination" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Gateway" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Interface" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Metric" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Table" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
+                            th { class: TH_CLASS, "Destination" }
+                            th { class: TH_CLASS, "Gateway" }
+                            th { class: TH_CLASS, "Interface" }
+                            th { class: TH_CLASS, "Metric" }
+                            th { class: TH_CLASS, "Table" }
+                            th { class: TH_CLASS, "Status" }
+                            th { class: TH_CLASS, "" }
                         }
                     }
                     tbody {
                         match &*routes.read() {
                             Some(Ok(list)) if !list.is_empty() => rsx! {
                                 for route in list.iter() {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
+                                    tr { class: TR_CLASS,
                                         key: "{route.id}",
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono font-medium", "{route.destination}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono", {route.gateway.clone().unwrap_or("\u{2014}".to_string())} }
-                                        td { class: "px-5 py-3 text-sm text-slate-400", "{route.interface}" }
-                                        td { class: "px-5 py-3 text-sm text-cyan-400 font-mono", "{route.metric}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-500", "{route.table}" }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span {
-                                                class: if route.enabled {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                } else {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20"
-                                                },
-                                                if route.enabled { "Active" } else { "Inactive" }
+                                        td { class: "{TD_CLASS} text-slate-300 font-mono font-medium", "{route.destination}" }
+                                        td { class: "{TD_CLASS} text-slate-400 font-mono", {route.gateway.clone().unwrap_or("\u{2014}".to_string())} }
+                                        td { class: "{TD_CLASS} text-slate-400", "{route.interface}" }
+                                        td { class: "{TD_CLASS} text-cyan-400 font-mono", "{route.metric}" }
+                                        td { class: "{TD_CLASS} text-slate-500", "{route.table}" }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: if route.enabled { Color::Emerald } else { Color::Slate },
+                                                label: if route.enabled { "Active".to_string() } else { "Inactive".to_string() },
                                             }
                                         }
-                                        td { class: "px-5 py-3 text-sm",
+                                        td { class: TD_CLASS,
                                             {
                                                 let id = route.id;
                                                 let dest = route.destination.clone();
                                                 rsx! {
-                                                    button {
-                                                        class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
+                                                    DeleteBtn {
                                                         onclick: move |_| {
                                                             confirm_delete.set(Some((id, dest.clone())));
                                                         },
-                                                        Icon { width: 13, height: 13, icon: LdTrash2 }
                                                     }
                                                 }
                                             }
@@ -118,13 +105,13 @@ pub fn Routes() -> Element {
                                 }
                             },
                             Some(Ok(_)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "7", "No routes configured" } }
+                                TableEmpty { colspan: 7, message: "No routes configured".to_string() }
                             },
                             Some(Err(e)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "7", "Failed to load routes: {e}" } }
+                                TableError { colspan: 7, message: format!("Failed to load routes: {e}") }
                             },
                             None => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "7", "Loading..." } }
+                                TableLoading { colspan: 7 }
                             },
                         }
                     }
@@ -171,50 +158,49 @@ fn RouteForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6 mb-6",
+        FormCard {
             h3 { class: "text-sm font-semibold text-white mb-4", "Add Static Route" }
             if let Some(err) = error() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error.set(None),
+                }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Destination (CIDR)" }
+                FormField { label: "Destination (CIDR)".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "10.0.0.0/8", value: "{destination}",
                         oninput: move |e| destination.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Gateway" }
+                FormField { label: "Gateway".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.1", value: "{gateway}",
                         oninput: move |e| gateway.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Interface" }
+                FormField { label: "Interface".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "eth0", value: "{interface}",
                         oninput: move |e| interface.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Metric" }
+                FormField { label: "Metric".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", value: "{metric}",
                         oninput: move |e| metric.set(e.value()),
                     }
                 }
             }
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Adding...".to_string() } else { "Add Route".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Adding..." } else { "Add Route" }
             }
         }
     }
@@ -232,26 +218,20 @@ pub fn PolicyRoutes() -> Element {
 
     rsx! {
         div { class: "mt-8",
-            div { class: "flex items-center justify-between mb-6",
-                div {
-                    h2 { class: "text-xl font-semibold text-white", "Policy Routes" }
-                    p { class: "text-sm text-slate-400 mt-1", "Route traffic based on source, destination, port, or protocol" }
-                }
-                button {
-                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors",
+            PageHeader {
+                title: "Policy Routes".to_string(),
+                subtitle: "Route traffic based on source, destination, port, or protocol".to_string(),
+                Btn {
+                    color: Color::Purple,
+                    label: if show_form() { "Cancel".to_string() } else { "+ Add Policy Route".to_string() },
                     onclick: move |_| show_form.set(!show_form()),
-                    if show_form() { "Cancel" } else { "+ Add Policy Route" }
                 }
             }
 
             if let Some(err) = error_msg() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between",
-                    span { "{err}" }
-                    button {
-                        class: "text-red-400 hover:text-red-300",
-                        onclick: move |_| error_msg.set(None),
-                        Icon { width: 14, height: 14, icon: LdX }
-                    }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
                 }
             }
 
@@ -283,66 +263,62 @@ pub fn PolicyRoutes() -> Element {
                 }
             }
 
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
-                table { class: "w-full text-left",
-                    thead { class: "bg-slate-900/80",
-                        tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Priority" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Source" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Destination" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Port" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Protocol" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Table" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
-                        }
+            DataTable {
+                thead { class: "bg-slate-900/80",
+                    tr {
+                        th { class: TH_CLASS, "Priority" }
+                        th { class: TH_CLASS, "Source" }
+                        th { class: TH_CLASS, "Destination" }
+                        th { class: TH_CLASS, "Port" }
+                        th { class: TH_CLASS, "Protocol" }
+                        th { class: TH_CLASS, "Table" }
+                        th { class: TH_CLASS, "" }
                     }
-                    tbody {
-                        match &*policy_routes.read() {
-                            Some(Ok(list)) if !list.is_empty() => rsx! {
-                                for pr in list.iter() {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
-                                        key: "{pr.id}",
-                                        td { class: "px-5 py-3 text-sm text-purple-400 font-mono font-medium", "{pr.priority}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
-                                            {pr.src_ip.clone().unwrap_or("\u{2014}".to_string())}
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
-                                            {pr.dst_ip.clone().unwrap_or("\u{2014}".to_string())}
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono",
-                                            {pr.src_port.map(|p| format!("{}:{}", p.start, p.end)).unwrap_or("\u{2014}".to_string())}
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-slate-400",
-                                            {pr.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())}
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-cyan-400 font-mono", "{pr.route_table}" }
-                                        td { class: "px-5 py-3 text-sm",
-                                            {
-                                                let id = pr.id;
-                                                rsx! {
-                                                    button {
-                                                        class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
-                                                        onclick: move |_| {
-                                                            confirm_delete.set(Some(id));
-                                                        },
-                                                        Icon { width: 13, height: 13, icon: LdTrash2 }
-                                                    }
+                }
+                tbody {
+                    match &*policy_routes.read() {
+                        Some(Ok(list)) if !list.is_empty() => rsx! {
+                            for pr in list.iter() {
+                                tr { class: TR_CLASS,
+                                    key: "{pr.id}",
+                                    td { class: "{TD_CLASS} text-purple-400 font-mono font-medium", "{pr.priority}" }
+                                    td { class: "{TD_CLASS} text-slate-300 font-mono",
+                                        {pr.src_ip.clone().unwrap_or("\u{2014}".to_string())}
+                                    }
+                                    td { class: "{TD_CLASS} text-slate-300 font-mono",
+                                        {pr.dst_ip.clone().unwrap_or("\u{2014}".to_string())}
+                                    }
+                                    td { class: "{TD_CLASS} text-slate-400 font-mono",
+                                        {pr.src_port.map(|p| format!("{}:{}", p.start, p.end)).unwrap_or("\u{2014}".to_string())}
+                                    }
+                                    td { class: "{TD_CLASS} text-slate-400",
+                                        {pr.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())}
+                                    }
+                                    td { class: "{TD_CLASS} text-cyan-400 font-mono", "{pr.route_table}" }
+                                    td { class: TD_CLASS,
+                                        {
+                                            let id = pr.id;
+                                            rsx! {
+                                                DeleteBtn {
+                                                    onclick: move |_| {
+                                                        confirm_delete.set(Some(id));
+                                                    },
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            },
-                            Some(Ok(_)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "7", "No policy routes configured" } }
-                            },
-                            Some(Err(e)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "7", "Failed to load: {e}" } }
-                            },
-                            None => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "7", "Loading..." } }
-                            },
-                        }
+                            }
+                        },
+                        Some(Ok(_)) => rsx! {
+                            TableEmpty { colspan: 7, message: "No policy routes configured".to_string() }
+                        },
+                        Some(Err(e)) => rsx! {
+                            TableError { colspan: 7, message: format!("Failed to load: {e}") }
+                        },
+                        None => rsx! {
+                            TableLoading { colspan: 7 }
+                        },
                     }
                 }
             }
@@ -418,40 +394,40 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-purple-500/20 bg-slate-900/50 p-6 mb-6",
+        FormCard {
+            class: "rounded-xl border border-purple-500/20 bg-slate-900/50 p-6 mb-6",
             h3 { class: "text-sm font-semibold text-white mb-4", "Add Policy Route" }
             if let Some(err) = error() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error.set(None),
+                }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Source IP (CIDR)" }
+                FormField { label: "Source IP (CIDR)".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.0/24", value: "{src_ip}",
                         oninput: move |e| src_ip.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Destination IP (CIDR)" }
+                FormField { label: "Destination IP (CIDR)".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "10.0.0.0/8", value: "{dst_ip}",
                         oninput: move |e| dst_ip.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Source Port (or range start:end)" }
+                FormField { label: "Source Port (or range start:end)".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "80 or 8000:9000", value: "{src_port}",
                         oninput: move |e| src_port.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Protocol" }
+                FormField { label: "Protocol".to_string(),
                     select {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500/60 transition-colors",
+                        class: SELECT_CLASS,
                         value: "{protocol}",
                         onchange: move |e| protocol.set(e.value()),
                         option { value: "any", "Any" }
@@ -460,28 +436,26 @@ fn PolicyRouteForm(on_saved: EventHandler<()>) -> Element {
                         option { value: "icmp", "ICMP" }
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Route Table" }
+                FormField { label: "Route Table".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", value: "{route_table}",
                         oninput: move |e| route_table.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Priority" }
+                FormField { label: "Priority".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-purple-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", value: "{priority}",
                         oninput: move |e| priority.set(e.value()),
                     }
                 }
             }
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Purple,
+                label: if submitting() { "Adding...".to_string() } else { "Add Policy Route".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Adding..." } else { "Add Policy Route" }
             }
         }
     }

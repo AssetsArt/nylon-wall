@@ -3,6 +3,7 @@ use crate::models::*;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
+use super::ui::*;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[allow(dead_code)]
@@ -59,85 +60,65 @@ pub fn Dashboard() -> Element {
         _ => 0,
     };
 
+    let system_value = match &*status.read() {
+        Some(Ok(s)) => {
+            if s.ebpf_loaded {
+                "Online".to_string()
+            } else {
+                "Limited".to_string()
+            }
+        }
+        Some(Err(_)) => "Offline".to_string(),
+        None => "Loading...".to_string(),
+    };
+    let system_subtitle = match &*status.read() {
+        Some(Ok(s)) => Some(format!("v{}", s.version)),
+        _ => None,
+    };
+
     rsx! {
         div {
-            div { class: "mb-6",
-                h2 { class: "text-xl font-semibold text-white", "Dashboard" }
-                p { class: "text-sm text-slate-400 mt-1", "System overview and statistics" }
+            PageHeader {
+                title: "Dashboard".to_string(),
+                subtitle: "System overview and statistics".to_string(),
             }
 
             // Stat cards
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8",
-                // System Status
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-emerald-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdActivity, class: "text-emerald-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "System" }
-                    }
-                    match &*status.read() {
-                        Some(Ok(s)) => rsx! {
-                            p { class: "text-2xl font-bold text-white mb-1",
-                                if s.ebpf_loaded { "Online" } else { "Limited" }
-                            }
-                            p { class: "text-xs text-slate-500", "v{s.version}" }
-                        },
-                        Some(Err(_)) => rsx! {
-                            p { class: "text-2xl font-bold text-red-400", "Offline" }
-                        },
-                        None => rsx! {
-                            p { class: "text-sm text-slate-600", "Loading..." }
-                        },
-                    }
+                StatCard {
+                    color: Color::Emerald,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdActivity, class: "text-emerald-400" } },
+                    label: "System".to_string(),
+                    value: system_value,
+                    subtitle: system_subtitle,
                 }
-
-                // Rules count
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-blue-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdShieldCheck, class: "text-blue-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Rules" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{rule_count}" }
-                    p { class: "text-xs text-slate-500", "{active_count} active" }
+                StatCard {
+                    color: Color::Blue,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdShieldCheck, class: "text-blue-400" } },
+                    label: "Rules".to_string(),
+                    value: format!("{rule_count}"),
+                    subtitle: format!("{active_count} active"),
                 }
-
-                // NAT
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-violet-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-violet-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdArrowLeftRight, class: "text-violet-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "NAT" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{nat_count}" }
-                    p { class: "text-xs text-slate-500", "entries" }
+                StatCard {
+                    color: Color::Violet,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdArrowLeftRight, class: "text-violet-400" } },
+                    label: "NAT".to_string(),
+                    value: format!("{nat_count}"),
+                    subtitle: "entries".to_string(),
                 }
-
-                // Connections
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-cyan-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-cyan-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdCable, class: "text-cyan-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Connections" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{conn_count}" }
-                    p { class: "text-xs text-slate-500", "active" }
+                StatCard {
+                    color: Color::Cyan,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdCable, class: "text-cyan-400" } },
+                    label: "Connections".to_string(),
+                    value: format!("{conn_count}"),
+                    subtitle: "active".to_string(),
                 }
-
-                // DHCP
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-teal-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-teal-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdWifi, class: "text-teal-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "DHCP" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{lease_count}" }
-                    p { class: "text-xs text-slate-500", "{pool_count} pool(s) active" }
+                StatCard {
+                    color: Color::Teal,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdWifi, class: "text-teal-400" } },
+                    label: "DHCP".to_string(),
+                    value: format!("{lease_count}"),
+                    subtitle: format!("{pool_count} pool(s) active"),
                 }
             }
 
@@ -145,65 +126,58 @@ pub fn Dashboard() -> Element {
             div { class: "mb-6",
                 h3 { class: "text-sm font-semibold text-white mb-3", "Recent Rules" }
             }
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
-                table { class: "w-full text-left",
+            div { class: "mb-8",
+                DataTable {
                     thead { class: "bg-slate-900/80",
                         tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Name" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Direction" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Action" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
+                            th { class: TH_CLASS, "Name" }
+                            th { class: TH_CLASS, "Direction" }
+                            th { class: TH_CLASS, "Action" }
+                            th { class: TH_CLASS, "Status" }
                         }
                     }
                     tbody {
                         match &*rules.read() {
                             Some(Ok(list)) if !list.is_empty() => rsx! {
                                 for rule in list.iter().take(5) {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
+                                    tr { class: TR_CLASS,
                                         key: "{rule.id}",
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-medium", "{rule.name}" }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20",
-                                                match rule.direction {
-                                                    Direction::Ingress => "IN",
-                                                    Direction::Egress => "OUT",
-                                                }
+                                        td { class: "{TD_CLASS} text-slate-300 font-medium", "{rule.name}" }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: Color::Slate,
+                                                label: match rule.direction {
+                                                    Direction::Ingress => "IN".to_string(),
+                                                    Direction::Egress => "OUT".to_string(),
+                                                },
                                             }
                                         }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span {
-                                                class: match rule.action {
-                                                    RuleAction::Allow => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-                                                    RuleAction::Drop => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20",
-                                                    _ => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: match rule.action {
+                                                    RuleAction::Allow => Color::Emerald,
+                                                    RuleAction::Drop => Color::Red,
+                                                    _ => Color::Amber,
                                                 },
-                                                match rule.action {
-                                                    RuleAction::Allow => "ALLOW",
-                                                    RuleAction::Drop => "DROP",
-                                                    RuleAction::Log => "LOG",
-                                                    RuleAction::RateLimit => "RATE LIMIT",
-                                                }
+                                                label: match rule.action {
+                                                    RuleAction::Allow => "ALLOW".to_string(),
+                                                    RuleAction::Drop => "DROP".to_string(),
+                                                    RuleAction::Log => "LOG".to_string(),
+                                                    RuleAction::RateLimit => "RATE LIMIT".to_string(),
+                                                },
                                             }
                                         }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span {
-                                                class: if rule.enabled {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                } else {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20"
-                                                },
-                                                if rule.enabled { "Enabled" } else { "Disabled" }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: if rule.enabled { Color::Emerald } else { Color::Slate },
+                                                label: if rule.enabled { "Enabled".to_string() } else { "Disabled".to_string() },
                                             }
                                         }
                                     }
                                 }
                             },
                             _ => rsx! {
-                                tr {
-                                    td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "4",
-                                        "No rules configured"
-                                    }
-                                }
+                                TableEmpty { colspan: 4, message: "No rules configured".to_string() }
                             },
                         }
                     }
@@ -214,58 +188,59 @@ pub fn Dashboard() -> Element {
             div { class: "mb-6",
                 h3 { class: "text-sm font-semibold text-white mb-3", "Recent Logs" }
             }
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
-                table { class: "w-full text-left",
+            div { class: "mb-8",
+                DataTable {
                     thead { class: "bg-slate-900/80",
                         tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Time" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Source" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Destination" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Protocol" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Action" }
+                            th { class: TH_CLASS, "Time" }
+                            th { class: TH_CLASS, "Source" }
+                            th { class: TH_CLASS, "Destination" }
+                            th { class: TH_CLASS, "Protocol" }
+                            th { class: TH_CLASS, "Action" }
                         }
                     }
                     tbody {
                         match &*recent_logs.read() {
                             Some(Ok(data)) if !data.entries.is_empty() => rsx! {
                                 for (i, log) in data.entries.iter().enumerate() {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
+                                    tr { class: TR_CLASS,
                                         key: "{i}",
-                                        td { class: "px-5 py-3 text-sm text-slate-500 font-mono", "{log.timestamp}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
+                                        td { class: "{TD_CLASS} text-slate-500 font-mono", "{log.timestamp}" }
+                                        td { class: "{TD_CLASS} text-slate-300 font-mono",
                                             span { class: "text-slate-300", "{log.src_ip}" }
                                             span { class: "text-slate-600", ":{log.src_port}" }
                                         }
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
+                                        td { class: "{TD_CLASS} text-slate-300 font-mono",
                                             span { class: "text-slate-300", "{log.dst_ip}" }
                                             span { class: "text-slate-600", ":{log.dst_port}" }
                                         }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20",
-                                                "{log.protocol}"
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: Color::Slate,
+                                                label: format!("{}", log.protocol),
                                             }
                                         }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span {
-                                                class: match log.action.to_uppercase().as_str() {
-                                                    "DROP" => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20",
-                                                    "LOG" => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
-                                                    _ => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: match log.action.to_uppercase().as_str() {
+                                                    "DROP" => Color::Red,
+                                                    "LOG" => Color::Amber,
+                                                    _ => Color::Emerald,
                                                 },
-                                                "{log.action}"
+                                                label: format!("{}", log.action),
                                             }
                                         }
                                     }
                                 }
                             },
                             Some(Ok(_)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "No recent logs" } }
+                                TableEmpty { colspan: 5, message: "No recent logs".to_string() }
                             },
                             Some(Err(e)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "5", "Failed to load logs: {e}" } }
+                                TableError { colspan: 5, message: format!("Failed to load logs: {e}") }
                             },
                             None => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "5", "Loading..." } }
+                                TableLoading { colspan: 5 }
                             },
                         }
                     }

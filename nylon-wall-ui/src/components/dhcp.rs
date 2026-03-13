@@ -1,4 +1,5 @@
 use super::ConfirmModal;
+use super::ui::*;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
@@ -49,52 +50,40 @@ pub fn Dhcp() -> Element {
     rsx! {
         div {
             // Page header
-            div { class: "mb-6",
-                h2 { class: "text-xl font-semibold text-white", "DHCP" }
-                p { class: "text-sm text-slate-400 mt-1", "DHCP server pools, leases, and WAN client configuration" }
+            PageHeader {
+                title: "DHCP",
+                subtitle: "DHCP server pools, leases, and WAN client configuration",
             }
 
             // Summary stat cards
             div { class: "grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8",
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-teal-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-teal-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdServer, class: "text-teal-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Pools" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{pool_count}" }
-                    p { class: "text-xs text-slate-500", "{pool_active} active" }
+                StatCard {
+                    color: Color::Teal,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdServer, class: "text-teal-400" } },
+                    label: "Pools",
+                    value: "{pool_count}",
+                    subtitle: "{pool_active} active",
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-emerald-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdCable, class: "text-emerald-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Leases" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{lease_count}" }
-                    p { class: "text-xs text-slate-500", "active" }
+                StatCard {
+                    color: Color::Emerald,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdCable, class: "text-emerald-400" } },
+                    label: "Leases",
+                    value: "{lease_count}",
+                    subtitle: "active",
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-blue-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdBookmark, class: "text-blue-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Reservations" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{reservation_count}" }
-                    p { class: "text-xs text-slate-500", "static" }
+                StatCard {
+                    color: Color::Blue,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdBookmark, class: "text-blue-400" } },
+                    label: "Reservations",
+                    value: "{reservation_count}",
+                    subtitle: "static",
                 }
-                div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-5 hover:border-violet-500/30 transition-colors",
-                    div { class: "flex items-center gap-3 mb-3",
-                        div { class: "w-9 h-9 rounded-lg bg-violet-500/10 flex items-center justify-center",
-                            Icon { width: 16, height: 16, icon: LdWifi, class: "text-violet-400" }
-                        }
-                        span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "WAN Clients" }
-                    }
-                    p { class: "text-2xl font-bold text-white mb-1", "{client_count}" }
-                    p { class: "text-xs text-slate-500", "{client_active} active" }
+                StatCard {
+                    color: Color::Violet,
+                    icon: rsx! { Icon { width: 16, height: 16, icon: LdWifi, class: "text-violet-400" } },
+                    label: "WAN Clients",
+                    value: "{client_count}",
+                    subtitle: "{client_active} active",
                 }
             }
 
@@ -154,36 +143,23 @@ fn DhcpPoolsTab() -> Element {
 
     rsx! {
         div {
-            div { class: "flex items-center justify-between mb-4",
-                div { class: "flex items-center gap-2",
-                    div { class: "w-7 h-7 rounded-lg bg-teal-500/10 flex items-center justify-center",
-                        Icon { width: 13, height: 13, icon: LdServer, class: "text-teal-400" }
-                    }
-                    h3 { class: "text-sm font-semibold text-white", "DHCP Server Pools" }
-                }
+            SectionHeader {
+                icon: rsx! { Icon { width: 13, height: 13, icon: LdServer, class: "text-teal-400" } },
+                title: "DHCP Server Pools",
                 div { class: "flex items-center justify-between gap-2 ",
-                    button {
-                        class: "flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
-                        onclick: move |_| pools.restart(),
-                        Icon { width: 12, height: 12, icon: LdRefreshCw }
-                        span { class: "ml-1.5", "Refresh" }
-                    }
-                    button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                    RefreshBtn { onclick: move |_| pools.restart() }
+                    Btn {
+                        color: Color::Blue,
+                        label: if show_form() { "Cancel".to_string() } else { "+ New Pool".to_string() },
                         onclick: move |_| show_form.set(!show_form()),
-                        if show_form() { "Cancel" } else { "+ New Pool" }
                     }
                 }
             }
 
             if let Some(err) = error_msg() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between",
-                    span { "{err}" }
-                    button {
-                        class: "text-red-400 hover:text-red-300",
-                        onclick: move |_| error_msg.set(None),
-                        Icon { width: 14, height: 14, icon: LdX }
-                    }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
                 }
             }
 
@@ -289,11 +265,8 @@ fn DhcpPoolsTab() -> Element {
                                             {
                                                 let id = pool.id;
                                                 rsx! {
-                                                    button {
-                                                        class: "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
+                                                    DeleteBtn {
                                                         onclick: move |_| confirm_delete.set(Some(id)),
-                                                        Icon { width: 12, height: 12, icon: LdTrash2 }
-                                                        "Delete"
                                                     }
                                                 }
                                             }
@@ -305,18 +278,14 @@ fn DhcpPoolsTab() -> Element {
                     }
                 },
                 Some(Ok(_)) => rsx! {
-                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-12 text-center",
-                        div { class: "flex justify-center mb-4",
-                            div { class: "w-12 h-12 rounded-xl bg-slate-800/50 flex items-center justify-center",
-                                Icon { width: 24, height: 24, icon: LdServer, class: "text-slate-600" }
-                            }
-                        }
-                        p { class: "text-sm font-medium text-slate-400 mb-1", "No DHCP pools configured" }
-                        p { class: "text-xs text-slate-600 mb-4", "Create a pool to start serving DHCP addresses on your network interfaces" }
-                        button {
-                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                    EmptyState {
+                        icon: rsx! { Icon { width: 24, height: 24, icon: LdServer, class: "text-slate-600" } },
+                        title: "No DHCP pools configured",
+                        subtitle: "Create a pool to start serving DHCP addresses on your network interfaces",
+                        Btn {
+                            color: Color::Blue,
+                            label: "+ Create First Pool",
                             onclick: move |_| show_form.set(true),
-                            "+ Create First Pool"
                         }
                     }
                 },
@@ -371,29 +340,16 @@ fn DhcpLeasesTab() -> Element {
     rsx! {
         div {
             // Active Leases section
-            div { class: "flex items-center justify-between mb-4",
-                div { class: "flex items-center gap-2",
-                    div { class: "w-7 h-7 rounded-lg bg-emerald-500/10 flex items-center justify-center",
-                        Icon { width: 13, height: 13, icon: LdCable, class: "text-emerald-400" }
-                    }
-                    h3 { class: "text-sm font-semibold text-white", "Active Leases" }
-                }
-                button {
-                    class: "flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
-                    onclick: move |_| { leases.restart(); reservations.restart(); },
-                    Icon { width: 12, height: 12, icon: LdRefreshCw }
-                    span { class: "ml-1.5", "Refresh" }
-                }
+            SectionHeader {
+                icon: rsx! { Icon { width: 13, height: 13, icon: LdCable, class: "text-emerald-400" } },
+                title: "Active Leases",
+                RefreshBtn { onclick: move |_| { leases.restart(); reservations.restart(); } }
             }
 
             if let Some(err) = error_msg() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between",
-                    span { "{err}" }
-                    button {
-                        class: "text-red-400 hover:text-red-300",
-                        onclick: move |_| error_msg.set(None),
-                        Icon { width: 14, height: 14, icon: LdX }
-                    }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
                 }
             }
 
@@ -419,45 +375,45 @@ fn DhcpLeasesTab() -> Element {
 
             match &*leases.read() {
                 Some(Ok(list)) if !list.is_empty() => rsx! {
-                    div { class: "rounded-xl border border-slate-800/60 overflow-hidden mb-8",
-                        table { class: "w-full text-left",
+                    div { class: "mb-8",
+                        DataTable {
                             thead { class: "bg-slate-900/80",
                                 tr {
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC Address" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Hostname" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Expires" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "State" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
+                                    th { class: TH_CLASS, "IP Address" }
+                                    th { class: TH_CLASS, "MAC Address" }
+                                    th { class: TH_CLASS, "Hostname" }
+                                    th { class: TH_CLASS, "Expires" }
+                                    th { class: TH_CLASS, "State" }
+                                    th { class: TH_CLASS, "" }
                                 }
                             }
                             tbody {
                                 for lease in list.iter() {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
+                                    tr { class: TR_CLASS,
                                         key: "{lease.mac}",
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono", "{lease.ip}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono text-xs", "{lease.mac}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-400",
+                                        td { class: "{TD_CLASS} text-slate-300 font-mono", "{lease.ip}" }
+                                        td { class: "{TD_CLASS} text-slate-400 font-mono text-xs", "{lease.mac}" }
+                                        td { class: "{TD_CLASS} text-slate-400",
                                             {lease.hostname.clone().unwrap_or("\u{2014}".to_string())}
                                         }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 text-xs",
+                                        td { class: "{TD_CLASS} text-slate-400 text-xs",
                                             {format_timestamp(lease.lease_end)}
                                         }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span {
-                                                class: match lease.state {
-                                                    DhcpLeaseState::Active => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-                                                    DhcpLeaseState::Reserved => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
-                                                    DhcpLeaseState::Expired => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20",
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: match lease.state {
+                                                    DhcpLeaseState::Active => Color::Emerald,
+                                                    DhcpLeaseState::Reserved => Color::Blue,
+                                                    DhcpLeaseState::Expired => Color::Slate,
                                                 },
-                                                match lease.state {
-                                                    DhcpLeaseState::Active => "Active",
-                                                    DhcpLeaseState::Reserved => "Reserved",
-                                                    DhcpLeaseState::Expired => "Expired",
-                                                }
+                                                label: match lease.state {
+                                                    DhcpLeaseState::Active => "Active".to_string(),
+                                                    DhcpLeaseState::Reserved => "Reserved".to_string(),
+                                                    DhcpLeaseState::Expired => "Expired".to_string(),
+                                                },
                                             }
                                         }
-                                        td { class: "px-5 py-3 text-sm",
+                                        td { class: TD_CLASS,
                                             {
                                                 let mac = lease.mac.clone();
                                                 let mac2 = lease.mac.clone();
@@ -494,14 +450,12 @@ fn DhcpLeasesTab() -> Element {
                     }
                 },
                 Some(Ok(_)) => rsx! {
-                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-10 text-center mb-8",
-                        div { class: "flex justify-center mb-3",
-                            div { class: "w-10 h-10 rounded-xl bg-slate-800/50 flex items-center justify-center",
-                                Icon { width: 20, height: 20, icon: LdCable, class: "text-slate-600" }
-                            }
+                    div { class: "mb-8",
+                        EmptyState {
+                            icon: rsx! { Icon { width: 20, height: 20, icon: LdCable, class: "text-slate-600" } },
+                            title: "No active DHCP leases",
+                            subtitle: "Leases will appear here when clients receive addresses from your DHCP pools",
                         }
-                        p { class: "text-sm font-medium text-slate-400 mb-1", "No active DHCP leases" }
-                        p { class: "text-xs text-slate-600", "Leases will appear here when clients receive addresses from your DHCP pools" }
                     }
                 },
                 Some(Err(e)) => rsx! {
@@ -531,17 +485,13 @@ fn DhcpLeasesTab() -> Element {
             }
 
             // Reservations section
-            div { class: "flex items-center justify-between mb-4",
-                div { class: "flex items-center gap-2",
-                    div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
-                        Icon { width: 13, height: 13, icon: LdBookmark, class: "text-blue-400" }
-                    }
-                    h3 { class: "text-sm font-semibold text-white", "Static Reservations" }
-                }
-                button {
-                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+            SectionHeader {
+                icon: rsx! { Icon { width: 13, height: 13, icon: LdBookmark, class: "text-blue-400" } },
+                title: "Static Reservations",
+                Btn {
+                    color: Color::Blue,
+                    label: if show_reservation_form() { "Cancel".to_string() } else { "+ New Reservation".to_string() },
                     onclick: move |_| show_reservation_form.set(!show_reservation_form()),
-                    if show_reservation_form() { "Cancel" } else { "+ New Reservation" }
                 }
             }
 
@@ -556,43 +506,41 @@ fn DhcpLeasesTab() -> Element {
 
             match &*reservations.read() {
                 Some(Ok(list)) if !list.is_empty() => rsx! {
-                    div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
-                        table { class: "w-full text-left",
-                            thead { class: "bg-slate-900/80",
-                                tr {
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "MAC Address" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "IP Address" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Hostname" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Pool" }
-                                    th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
-                                }
+                    DataTable {
+                        thead { class: "bg-slate-900/80",
+                            tr {
+                                th { class: TH_CLASS, "MAC Address" }
+                                th { class: TH_CLASS, "IP Address" }
+                                th { class: TH_CLASS, "Hostname" }
+                                th { class: TH_CLASS, "Pool" }
+                                th { class: TH_CLASS, "" }
                             }
-                            tbody {
-                                for res in list.iter() {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
-                                        key: "{res.id}",
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono text-xs", "{res.mac}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono", "{res.ip}" }
-                                        td { class: "px-5 py-3 text-sm text-slate-400",
-                                            {res.hostname.clone().unwrap_or("\u{2014}".to_string())}
-                                        }
-                                        td { class: "px-5 py-3 text-sm text-slate-400", "#{res.pool_id}" }
-                                        td { class: "px-5 py-3 text-sm",
-                                            {
-                                                let id = res.id;
-                                                rsx! {
-                                                    button {
-                                                        class: "p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors",
-                                                        onclick: move |_| {
-                                                            spawn(async move {
-                                                                match api_client::delete(&format!("/dhcp/reservations/{}", id)).await {
-                                                                    Ok(_) => reservations.restart(),
-                                                                    Err(e) => error_msg.set(Some(e)),
-                                                                }
-                                                            });
-                                                        },
-                                                        Icon { width: 13, height: 13, icon: LdTrash2 }
-                                                    }
+                        }
+                        tbody {
+                            for res in list.iter() {
+                                tr { class: TR_CLASS,
+                                    key: "{res.id}",
+                                    td { class: "{TD_CLASS} text-slate-400 font-mono text-xs", "{res.mac}" }
+                                    td { class: "{TD_CLASS} text-slate-300 font-mono", "{res.ip}" }
+                                    td { class: "{TD_CLASS} text-slate-400",
+                                        {res.hostname.clone().unwrap_or("\u{2014}".to_string())}
+                                    }
+                                    td { class: "{TD_CLASS} text-slate-400", "#{res.pool_id}" }
+                                    td { class: TD_CLASS,
+                                        {
+                                            let id = res.id;
+                                            rsx! {
+                                                button {
+                                                    class: "p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors",
+                                                    onclick: move |_| {
+                                                        spawn(async move {
+                                                            match api_client::delete(&format!("/dhcp/reservations/{}", id)).await {
+                                                                Ok(_) => reservations.restart(),
+                                                                Err(e) => error_msg.set(Some(e)),
+                                                            }
+                                                        });
+                                                    },
+                                                    Icon { width: 13, height: 13, icon: LdTrash2 }
                                                 }
                                             }
                                         }
@@ -603,18 +551,14 @@ fn DhcpLeasesTab() -> Element {
                     }
                 },
                 Some(Ok(_)) => rsx! {
-                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-10 text-center",
-                        div { class: "flex justify-center mb-3",
-                            div { class: "w-10 h-10 rounded-xl bg-slate-800/50 flex items-center justify-center",
-                                Icon { width: 20, height: 20, icon: LdBookmark, class: "text-slate-600" }
-                            }
-                        }
-                        p { class: "text-sm font-medium text-slate-400 mb-1", "No static reservations" }
-                        p { class: "text-xs text-slate-600 mb-4", "Reserve fixed IP addresses for specific devices by MAC address" }
-                        button {
-                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                    EmptyState {
+                        icon: rsx! { Icon { width: 20, height: 20, icon: LdBookmark, class: "text-slate-600" } },
+                        title: "No static reservations",
+                        subtitle: "Reserve fixed IP addresses for specific devices by MAC address",
+                        Btn {
+                            color: Color::Blue,
+                            label: "+ Create Reservation",
                             onclick: move |_| show_reservation_form.set(true),
-                            "+ Create Reservation"
                         }
                     }
                 },
@@ -661,36 +605,23 @@ fn DhcpClientTab() -> Element {
 
     rsx! {
         div {
-            div { class: "flex items-center justify-between mb-4",
+            SectionHeader {
+                icon: rsx! { Icon { width: 13, height: 13, icon: LdWifi, class: "text-violet-400" } },
+                title: "WAN DHCP Clients",
                 div { class: "flex items-center gap-2",
-                    div { class: "w-7 h-7 rounded-lg bg-violet-500/10 flex items-center justify-center",
-                        Icon { width: 13, height: 13, icon: LdWifi, class: "text-violet-400" }
-                    }
-                    h3 { class: "text-sm font-semibold text-white", "WAN DHCP Clients" }
-                }
-                div { class: "flex items-center gap-2",
-                    button {
-                        class: "flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
-                        onclick: move |_| { clients.restart(); statuses.restart(); },
-                        Icon { width: 12, height: 12, icon: LdRefreshCw }
-                        span { class: "ml-1.5", "Refresh" }
-                    }
-                    button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                    RefreshBtn { onclick: move |_| { clients.restart(); statuses.restart(); } }
+                    Btn {
+                        color: Color::Blue,
+                        label: if show_form() { "Cancel".to_string() } else { "+ Add WAN Client".to_string() },
                         onclick: move |_| show_form.set(!show_form()),
-                        if show_form() { "Cancel" } else { "+ Add WAN Client" }
                     }
                 }
             }
 
             if let Some(err) = error_msg() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between",
-                    span { "{err}" }
-                    button {
-                        class: "text-red-400 hover:text-red-300",
-                        onclick: move |_| error_msg.set(None),
-                        Icon { width: 14, height: 14, icon: LdX }
-                    }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
                 }
             }
 
@@ -787,12 +718,9 @@ fn DhcpClientTab() -> Element {
 
                                             // Actions
                                             div { class: "flex items-center gap-2 pt-3 border-t border-slate-800/40",
-                                                button {
-                                                    class: if is_enabled {
-                                                        "px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
-                                                    } else {
-                                                        "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20 hover:bg-slate-500/20 transition-colors"
-                                                    },
+                                                Btn {
+                                                    color: if is_enabled { Color::Emerald } else { Color::Slate },
+                                                    label: if is_enabled { "Disable".to_string() } else { "Enable".to_string() },
                                                     onclick: move |_| {
                                                         spawn(async move {
                                                             match api_client::post::<(), serde_json::Value>(&format!("/dhcp/clients/{}/toggle", config_id), &()).await {
@@ -801,10 +729,10 @@ fn DhcpClientTab() -> Element {
                                                             }
                                                         });
                                                     },
-                                                    if is_enabled { "Disable" } else { "Enable" }
                                                 }
-                                                button {
-                                                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                                                Btn {
+                                                    color: Color::Blue,
+                                                    label: "Renew",
                                                     onclick: move |_| {
                                                         let iface_val = iface.clone();
                                                         spawn(async move {
@@ -814,10 +742,10 @@ fn DhcpClientTab() -> Element {
                                                             }
                                                         });
                                                     },
-                                                    "Renew"
                                                 }
-                                                button {
-                                                    class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-colors",
+                                                Btn {
+                                                    color: Color::Amber,
+                                                    label: "Release",
                                                     onclick: move |_| {
                                                         let iface_val = iface2.clone();
                                                         spawn(async move {
@@ -827,20 +755,18 @@ fn DhcpClientTab() -> Element {
                                                             }
                                                         });
                                                     },
-                                                    "Release"
                                                 }
-                                                button {
-                                                    class: "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors ml-auto",
-                                                    onclick: move |_| {
-                                                        spawn(async move {
-                                                            match api_client::delete(&format!("/dhcp/clients/{}", config_id)).await {
-                                                                Ok(_) => { clients.restart(); statuses.restart(); },
-                                                                Err(e) => error_msg.set(Some(e)),
-                                                            }
-                                                        });
-                                                    },
-                                                    Icon { width: 12, height: 12, icon: LdTrash2 }
-                                                    "Delete"
+                                                div { class: "ml-auto",
+                                                    DeleteBtn {
+                                                        onclick: move |_| {
+                                                            spawn(async move {
+                                                                match api_client::delete(&format!("/dhcp/clients/{}", config_id)).await {
+                                                                    Ok(_) => { clients.restart(); statuses.restart(); },
+                                                                    Err(e) => error_msg.set(Some(e)),
+                                                                }
+                                                            });
+                                                        },
+                                                    }
                                                 }
                                             }
                                         }
@@ -851,18 +777,14 @@ fn DhcpClientTab() -> Element {
                     }
                 },
                 Some(Ok(_)) => rsx! {
-                    div { class: "rounded-xl border border-dashed border-slate-800/60 p-12 text-center",
-                        div { class: "flex justify-center mb-4",
-                            div { class: "w-12 h-12 rounded-xl bg-slate-800/50 flex items-center justify-center",
-                                Icon { width: 24, height: 24, icon: LdWifi, class: "text-slate-600" }
-                            }
-                        }
-                        p { class: "text-sm font-medium text-slate-400 mb-1", "No WAN DHCP clients configured" }
-                        p { class: "text-xs text-slate-600 mb-4", "Add a WAN client to obtain IP configuration from an upstream DHCP server" }
-                        button {
-                            class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                    EmptyState {
+                        icon: rsx! { Icon { width: 24, height: 24, icon: LdWifi, class: "text-slate-600" } },
+                        title: "No WAN DHCP clients configured",
+                        subtitle: "Add a WAN client to obtain IP configuration from an upstream DHCP server",
+                        Btn {
+                            color: Color::Blue,
+                            label: "+ Add WAN Client",
                             onclick: move |_| show_form.set(true),
-                            "+ Add WAN Client"
                         }
                     }
                 },
@@ -968,7 +890,7 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
+        FormCard { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
             div { class: "flex items-center gap-2 mb-4",
                 div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
                     Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
@@ -979,76 +901,68 @@ fn DhcpPoolForm(on_saved: EventHandler<()>) -> Element {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Interface" }
+                FormField { label: "Interface",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "eth1", value: "{interface}",
                         oninput: move |e| interface.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Subnet (CIDR)" }
+                FormField { label: "Subnet (CIDR)",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.0/24", value: "{subnet}",
                         oninput: move |e| subnet.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Range Start" }
+                FormField { label: "Range Start",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.100", value: "{range_start}",
                         oninput: move |e| range_start.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Range End" }
+                FormField { label: "Range End",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.200", value: "{range_end}",
                         oninput: move |e| range_end.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Gateway" }
+                FormField { label: "Gateway",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.1", value: "{gateway}",
                         oninput: move |e| gateway.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "DNS Servers" }
+                FormField { label: "DNS Servers",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "8.8.8.8, 8.8.4.4", value: "{dns_servers}",
                         oninput: move |e| dns_servers.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Domain Name" }
+                FormField { label: "Domain Name",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "local", value: "{domain_name}",
                         oninput: move |e| domain_name.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Lease Time (sec)" }
+                FormField { label: "Lease Time (sec)",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", placeholder: "3600", value: "{lease_time}",
                         oninput: move |e| lease_time.set(e.value()),
                     }
                 }
             }
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Creating...".to_string() } else { "Create Pool".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Creating..." } else { "Create Pool" }
             }
         }
     }
@@ -1099,7 +1013,7 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
+        FormCard { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
             div { class: "flex items-center gap-2 mb-4",
                 div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
                     Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
@@ -1110,44 +1024,40 @@ fn DhcpReservationForm(on_saved: EventHandler<()>) -> Element {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "MAC Address" }
+                FormField { label: "MAC Address",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "aa:bb:cc:dd:ee:ff", value: "{mac}",
                         oninput: move |e| mac.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "IP Address" }
+                FormField { label: "IP Address",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.50", value: "{ip}",
                         oninput: move |e| ip.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Hostname" }
+                FormField { label: "Hostname",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "my-server", value: "{hostname}",
                         oninput: move |e| hostname.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Pool ID" }
+                FormField { label: "Pool ID",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", placeholder: "1", value: "{pool_id}",
                         oninput: move |e| pool_id.set(e.value()),
                     }
                 }
             }
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Creating...".to_string() } else { "Create Reservation".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Creating..." } else { "Create Reservation" }
             }
         }
     }
@@ -1191,7 +1101,7 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
+        FormCard { class: "rounded-xl border border-blue-500/20 bg-slate-900/80 p-6 mb-6",
             div { class: "flex items-center gap-2 mb-4",
                 div { class: "w-7 h-7 rounded-lg bg-blue-500/10 flex items-center justify-center",
                     Icon { width: 13, height: 13, icon: LdPlus, class: "text-blue-400" }
@@ -1202,28 +1112,26 @@ fn DhcpClientForm(on_saved: EventHandler<()>) -> Element {
                 div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "WAN Interface" }
+                FormField { label: "WAN Interface",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "eth0", value: "{interface}",
                         oninput: move |e| interface.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Hostname (optional)" }
+                FormField { label: "Hostname (optional)",
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "nylon-wall", value: "{hostname}",
                         oninput: move |e| hostname.set(e.value()),
                     }
                 }
             }
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Creating...".to_string() } else { "Add Client".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Creating..." } else { "Add Client" }
             }
         }
     }

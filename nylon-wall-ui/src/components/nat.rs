@@ -1,4 +1,5 @@
 use super::ConfirmModal;
+use super::ui::*;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
@@ -15,44 +16,44 @@ pub fn Nat() -> Element {
 
     rsx! {
         div {
-            div { class: "flex items-center justify-between mb-6",
-                div {
-                    h2 { class: "text-xl font-semibold text-white", "NAT Configuration" }
-                    p { class: "text-sm text-slate-400 mt-1", "Network address translation entries" }
-                }
+            PageHeader {
+                title: "NAT Configuration".to_string(),
+                subtitle: "Network address translation entries".to_string(),
                 div { class: "flex items-center gap-2",
-                    button {
-                        class: "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors",
-                        onclick: move |_| {
-                            show_wizard.set(!show_wizard());
-                            if show_wizard() { show_form.set(false); }
-                        },
-                        if show_wizard() {
-                            "Cancel"
-                        } else {
-                            Icon { width: 12, height: 12, icon: LdArrowRightLeft }
-                            span { "Port Forward Wizard" }
+                    if show_wizard() {
+                        Btn {
+                            color: Color::Violet,
+                            label: "Cancel".to_string(),
+                            onclick: move |_| {
+                                show_wizard.set(false);
+                            },
+                        }
+                    } else {
+                        Btn {
+                            color: Color::Violet,
+                            label: "Port Forward Wizard".to_string(),
+                            onclick: move |_| {
+                                show_wizard.set(true);
+                                show_form.set(false);
+                            },
+                            icon: rsx! { Icon { width: 12, height: 12, icon: LdArrowRightLeft } },
                         }
                     }
-                    button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                    Btn {
+                        color: Color::Blue,
+                        label: if show_form() { "Cancel".to_string() } else { "+ New NAT Entry".to_string() },
                         onclick: move |_| {
                             show_form.set(!show_form());
                             if show_form() { show_wizard.set(false); }
                         },
-                        if show_form() { "Cancel" } else { "+ New NAT Entry" }
                     }
                 }
             }
 
             if let Some(err) = error_msg() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between",
-                    span { "{err}" }
-                    button {
-                        class: "text-red-400 hover:text-red-300",
-                        onclick: move |_| error_msg.set(None),
-                        Icon { width: 14, height: 14, icon: LdX }
-                    }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
                 }
             }
 
@@ -93,84 +94,76 @@ pub fn Nat() -> Element {
                 }
             }
 
-            div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
-                table { class: "w-full text-left",
-                    thead { class: "bg-slate-900/80",
-                        tr {
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Type" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Source" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Destination" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Protocol" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Translate To" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Interface" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
-                            th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
-                        }
+            DataTable {
+                thead { class: "bg-slate-900/80",
+                    tr {
+                        th { class: TH_CLASS, "Type" }
+                        th { class: TH_CLASS, "Source" }
+                        th { class: TH_CLASS, "Destination" }
+                        th { class: TH_CLASS, "Protocol" }
+                        th { class: TH_CLASS, "Translate To" }
+                        th { class: TH_CLASS, "Interface" }
+                        th { class: TH_CLASS, "Status" }
+                        th { class: TH_CLASS, "" }
                     }
-                    tbody {
-                        match &*entries.read() {
-                            Some(Ok(list)) if !list.is_empty() => rsx! {
-                                for entry in list.iter() {
-                                    tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
-                                        key: "{entry.id}",
-                                        td { class: "px-5 py-3 text-sm",
-                                            span {
-                                                class: match entry.nat_type {
-                                                    NatType::SNAT => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
-                                                    NatType::DNAT => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20",
-                                                    NatType::Masquerade => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20",
-                                                },
-                                                match entry.nat_type {
-                                                    NatType::SNAT => "SNAT",
-                                                    NatType::DNAT => "DNAT",
-                                                    NatType::Masquerade => "MASQ",
-                                                }
-                                            }
+                }
+                tbody {
+                    match &*entries.read() {
+                        Some(Ok(list)) if !list.is_empty() => rsx! {
+                            for entry in list.iter() {
+                                tr { class: TR_CLASS,
+                                    key: "{entry.id}",
+                                    td { class: TD_CLASS,
+                                        Badge {
+                                            color: match entry.nat_type {
+                                                NatType::SNAT => Color::Blue,
+                                                NatType::DNAT => Color::Violet,
+                                                NatType::Masquerade => Color::Cyan,
+                                            },
+                                            label: match entry.nat_type {
+                                                NatType::SNAT => "SNAT".to_string(),
+                                                NatType::DNAT => "DNAT".to_string(),
+                                                NatType::Masquerade => "MASQ".to_string(),
+                                            },
                                         }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono", {entry.src_network.clone().unwrap_or("*".to_string())} }
-                                        td { class: "px-5 py-3 text-sm text-slate-400 font-mono", {entry.dst_network.clone().unwrap_or("*".to_string())} }
-                                        td { class: "px-5 py-3 text-sm text-slate-400", {entry.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())} }
-                                        td { class: "px-5 py-3 text-sm text-slate-300 font-mono",
-                                            {format_translate(entry)}
+                                    }
+                                    td { class: "{TD_CLASS} text-slate-400 font-mono", {entry.src_network.clone().unwrap_or("*".to_string())} }
+                                    td { class: "{TD_CLASS} text-slate-400 font-mono", {entry.dst_network.clone().unwrap_or("*".to_string())} }
+                                    td { class: "{TD_CLASS} text-slate-400", {entry.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())} }
+                                    td { class: "{TD_CLASS} text-slate-300 font-mono",
+                                        {format_translate(entry)}
+                                    }
+                                    td { class: "{TD_CLASS} text-slate-400", {entry.out_interface.clone().unwrap_or("\u{2014}".to_string())} }
+                                    td { class: TD_CLASS,
+                                        Badge {
+                                            color: if entry.enabled { Color::Emerald } else { Color::Slate },
+                                            label: if entry.enabled { "Enabled".to_string() } else { "Disabled".to_string() },
                                         }
-                                        td { class: "px-5 py-3 text-sm text-slate-400", {entry.out_interface.clone().unwrap_or("\u{2014}".to_string())} }
-                                        td { class: "px-5 py-3 text-sm",
-                                            span {
-                                                class: if entry.enabled {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                } else {
-                                                    "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20"
-                                                },
-                                                if entry.enabled { "Enabled" } else { "Disabled" }
-                                            }
-                                        }
-                                        td { class: "px-5 py-3 text-sm",
-                                            {
-                                                let id = entry.id;
-                                                rsx! {
-                                                    button {
-                                                        class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
-                                                        onclick: move |_| {
-                                                            confirm_delete.set(Some(id));
-                                                        },
-                                                        Icon { width: 13, height: 13, icon: LdTrash2 }
-                                                    }
+                                    }
+                                    td { class: TD_CLASS,
+                                        {
+                                            let id = entry.id;
+                                            rsx! {
+                                                DeleteBtn {
+                                                    onclick: move |_| {
+                                                        confirm_delete.set(Some(id));
+                                                    },
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            },
-                            Some(Ok(_)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "8", "No NAT entries configured" } }
-                            },
-                            Some(Err(e)) => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "8", "Failed to load NAT entries: {e}" } }
-                            },
-                            None => rsx! {
-                                tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "8", "Loading..." } }
-                            },
-                        }
+                            }
+                        },
+                        Some(Ok(_)) => rsx! {
+                            TableEmpty { colspan: 8, message: "No NAT entries configured".to_string() }
+                        },
+                        Some(Err(e)) => rsx! {
+                            TableError { colspan: 8, message: format!("Failed to load NAT entries: {e}") }
+                        },
+                        None => rsx! {
+                            TableLoading { colspan: 8 }
+                        },
                     }
                 }
             }
@@ -274,7 +267,7 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-violet-500/20 bg-violet-500/5 p-6 mb-6",
+        FormCard { class: "rounded-xl border border-violet-500/20 bg-violet-500/5 p-6 mb-6",
             div { class: "flex items-center gap-2 mb-4",
                 Icon { width: 18, height: 18, icon: LdArrowRightLeft, class: "text-violet-400" }
                 h3 { class: "text-sm font-semibold text-white", "Port Forward Wizard" }
@@ -282,7 +275,10 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
             p { class: "text-xs text-slate-400 mb-4", "Forward an external port to an internal server. Creates a DNAT rule automatically." }
 
             if let Some(err) = error() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error.set(None),
+                }
             }
 
             // Visual diagram
@@ -324,47 +320,42 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
             }
 
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "External Port" }
+                FormField { label: "External Port".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", placeholder: "e.g. 8080",
                         value: "{ext_port}",
                         oninput: move |e| ext_port.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Internal IP" }
+                FormField { label: "Internal IP".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "e.g. 192.168.1.50",
                         value: "{int_ip}",
                         oninput: move |e| int_ip.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Internal Port" }
+                FormField { label: "Internal Port".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", placeholder: "Same as external",
                         value: "{int_port}",
                         oninput: move |e| int_port.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Protocol" }
+                FormField { label: "Protocol".to_string(),
                     select {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        class: SELECT_CLASS,
                         value: "{protocol}", onchange: move |e| protocol.set(e.value()),
                         option { value: "TCP", "TCP" }
                         option { value: "UDP", "UDP" }
                         option { value: "Both", "TCP + UDP" }
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "WAN Interface" }
+                FormField { label: "WAN Interface".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-violet-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "eth0",
                         value: "{in_interface}",
                         oninput: move |e| in_interface.set(e.value()),
@@ -372,16 +363,11 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
                 }
             }
 
-            button {
-                class: "flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Violet,
+                label: if submitting() { "Creating...".to_string() } else { "Create Port Forward".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() {
-                    "Creating..."
-                } else {
-                    Icon { width: 14, height: 14, icon: LdArrowRightLeft }
-                    span { "Create Port Forward" }
-                }
             }
         }
     }
@@ -444,60 +430,58 @@ fn NatForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6 mb-6",
+        FormCard {
             h3 { class: "text-sm font-semibold text-white mb-4", "Create NAT Entry" }
             if let Some(err) = error() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error.set(None),
+                }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "NAT Type" }
+                FormField { label: "NAT Type".to_string(),
                     select {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: SELECT_CLASS,
                         value: "{nat_type}", onchange: move |e| nat_type.set(e.value()),
                         option { value: "SNAT", "SNAT" }
                         option { value: "DNAT", "DNAT" }
                         option { value: "Masquerade", "Masquerade" }
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Source Network" }
+                FormField { label: "Source Network".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "192.168.1.0/24", value: "{src_network}",
                         oninput: move |e| src_network.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Destination Network" }
+                FormField { label: "Destination Network".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "0.0.0.0/0", value: "{dst_network}",
                         oninput: move |e| dst_network.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Translate IP" }
+                FormField { label: "Translate IP".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "203.0.113.1", value: "{translate_ip}",
                         oninput: move |e| translate_ip.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Out Interface" }
+                FormField { label: "Out Interface".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "eth0", value: "{out_interface}",
                         oninput: move |e| out_interface.set(e.value()),
                     }
                 }
             }
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Creating...".to_string() } else { "Create Entry".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Creating..." } else { "Create Entry" }
             }
         }
     }

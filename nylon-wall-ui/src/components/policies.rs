@@ -1,4 +1,5 @@
 use super::ConfirmModal;
+use super::ui::*;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
@@ -32,6 +33,23 @@ fn format_schedule(schedule: &Schedule) -> String {
     )
 }
 
+fn action_color(action: &RuleAction) -> Color {
+    match action {
+        RuleAction::Allow => Color::Emerald,
+        RuleAction::Drop => Color::Red,
+        _ => Color::Amber,
+    }
+}
+
+fn action_label(action: &RuleAction) -> &'static str {
+    match action {
+        RuleAction::Allow => "ALLOW",
+        RuleAction::Drop => "DROP",
+        RuleAction::Log => "LOG",
+        RuleAction::RateLimit => "RATE LIMIT",
+    }
+}
+
 #[component]
 pub fn Policies() -> Element {
     let mut zones = use_resource(|| async { api_client::get::<Vec<Zone>>("/zones").await });
@@ -45,19 +63,15 @@ pub fn Policies() -> Element {
 
     rsx! {
         div {
-            div { class: "mb-6",
-                h2 { class: "text-xl font-semibold text-white", "Network Policies" }
-                p { class: "text-sm text-slate-400 mt-1", "Zone definitions and inter-zone traffic policies" }
+            PageHeader {
+                title: "Network Policies".to_string(),
+                subtitle: "Zone definitions and inter-zone traffic policies".to_string(),
             }
 
             if let Some(err) = error_msg() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400 flex items-center justify-between",
-                    span { "{err}" }
-                    button {
-                        class: "text-red-400 hover:text-red-300",
-                        onclick: move |_| error_msg.set(None),
-                        Icon { width: 14, height: 14, icon: LdX }
-                    }
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
                 }
             }
 
@@ -101,15 +115,13 @@ pub fn Policies() -> Element {
 
             // Zones section
             div { class: "mb-8",
-                div { class: "flex items-center justify-between mb-4",
-                    div { class: "flex items-center gap-2",
-                        Icon { width: 15, height: 15, icon: LdLayers, class: "text-slate-500" }
-                        h3 { class: "text-sm font-semibold text-white", "Zones" }
-                    }
-                    button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                SectionHeader {
+                    icon: rsx! { Icon { width: 15, height: 15, icon: LdLayers, class: "text-slate-500" } },
+                    title: "Zones".to_string(),
+                    Btn {
+                        color: Color::Blue,
+                        label: if show_zone_form() { "Cancel".to_string() } else { "+ Add Zone".to_string() },
                         onclick: move |_| show_zone_form.set(!show_zone_form()),
-                        if show_zone_form() { "Cancel" } else { "+ Add Zone" }
                     }
                 }
 
@@ -136,28 +148,17 @@ pub fn Policies() -> Element {
                                             div { class: "flex items-center justify-between mb-3",
                                                 h4 { class: "text-sm font-semibold text-white", "{zone.name}" }
                                                 div { class: "flex items-center gap-2",
-                                                    span {
-                                                        class: match zone.default_policy {
-                                                            RuleAction::Allow => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-                                                            RuleAction::Drop => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20",
-                                                            _ => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
-                                                        },
-                                                        match zone.default_policy {
-                                                            RuleAction::Allow => "ALLOW",
-                                                            RuleAction::Drop => "DROP",
-                                                            RuleAction::Log => "LOG",
-                                                            RuleAction::RateLimit => "RATE LIMIT",
-                                                        }
+                                                    Badge {
+                                                        color: action_color(&zone.default_policy),
+                                                        label: action_label(&zone.default_policy).to_string(),
                                                     }
-                                                    button {
-                                                        class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
+                                                    DeleteBtn {
                                                         onclick: {
                                                             let zname = zone.name.clone();
                                                             move |_| {
                                                                 confirm_delete_zone.set(Some((zone_id, zname.clone())));
                                                             }
                                                         },
-                                                        Icon { width: 13, height: 13, icon: LdTrash2 }
                                                     }
                                                 }
                                             }
@@ -197,15 +198,13 @@ pub fn Policies() -> Element {
 
             // Policies section
             div {
-                div { class: "flex items-center justify-between mb-4",
-                    div { class: "flex items-center gap-2",
-                        Icon { width: 15, height: 15, icon: LdShieldCheck, class: "text-slate-500" }
-                        h3 { class: "text-sm font-semibold text-white", "Inter-Zone Policies" }
-                    }
-                    button {
-                        class: "px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors",
+                SectionHeader {
+                    icon: rsx! { Icon { width: 15, height: 15, icon: LdShieldCheck, class: "text-slate-500" } },
+                    title: "Inter-Zone Policies".to_string(),
+                    Btn {
+                        color: Color::Blue,
+                        label: if show_policy_form() { "Cancel".to_string() } else { "+ Add Policy".to_string() },
                         onclick: move |_| show_policy_form.set(!show_policy_form()),
-                        if show_policy_form() { "Cancel" } else { "+ Add Policy" }
                     }
                 }
 
@@ -218,114 +217,93 @@ pub fn Policies() -> Element {
                     }
                 }
 
-                div { class: "rounded-xl border border-slate-800/60 overflow-hidden",
-                    table { class: "w-full text-left",
-                        thead { class: "bg-slate-900/80",
-                            tr {
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Name" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "From" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "To" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Protocol" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Action" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Schedule" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Priority" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Log" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "Status" }
-                                th { class: "px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500", "" }
-                            }
+                DataTable {
+                    thead { class: "bg-slate-900/80",
+                        tr {
+                            th { class: TH_CLASS, "Name" }
+                            th { class: TH_CLASS, "From" }
+                            th { class: TH_CLASS, "To" }
+                            th { class: TH_CLASS, "Protocol" }
+                            th { class: TH_CLASS, "Action" }
+                            th { class: TH_CLASS, "Schedule" }
+                            th { class: TH_CLASS, "Priority" }
+                            th { class: TH_CLASS, "Log" }
+                            th { class: TH_CLASS, "Status" }
+                            th { class: TH_CLASS, "" }
                         }
-                        tbody {
-                            match &*policies.read() {
-                                Some(Ok(list)) if !list.is_empty() => rsx! {
-                                    for policy in list.iter() {
-                                        tr { class: "border-t border-slate-800/40 hover:bg-slate-800/30 transition-colors",
-                                            key: "{policy.id}",
-                                            td { class: "px-5 py-3 text-sm text-slate-300 font-medium", "{policy.name}" }
-                                            td { class: "px-5 py-3 text-sm",
-                                                span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20",
-                                                    "{policy.from_zone}"
-                                                }
+                    }
+                    tbody {
+                        match &*policies.read() {
+                            Some(Ok(list)) if !list.is_empty() => rsx! {
+                                for policy in list.iter() {
+                                    tr { class: TR_CLASS,
+                                        key: "{policy.id}",
+                                        td { class: "{TD_CLASS} text-slate-300 font-medium", "{policy.name}" }
+                                        td { class: TD_CLASS,
+                                            Badge { color: Color::Blue, label: policy.from_zone.clone() }
+                                        }
+                                        td { class: TD_CLASS,
+                                            Badge { color: Color::Violet, label: policy.to_zone.clone() }
+                                        }
+                                        td { class: "{TD_CLASS} text-slate-400", {policy.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())} }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: action_color(&policy.action),
+                                                label: action_label(&policy.action).to_string(),
                                             }
-                                            td { class: "px-5 py-3 text-sm",
-                                                span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20",
-                                                    "{policy.to_zone}"
-                                                }
-                                            }
-                                            td { class: "px-5 py-3 text-sm text-slate-400", {policy.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())} }
-                                            td { class: "px-5 py-3 text-sm",
-                                                span {
-                                                    class: match policy.action {
-                                                        RuleAction::Allow => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20",
-                                                        RuleAction::Drop => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20",
-                                                        _ => "px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20",
-                                                    },
-                                                    match policy.action {
-                                                        RuleAction::Allow => "ALLOW",
-                                                        RuleAction::Drop => "DROP",
-                                                        RuleAction::Log => "LOG",
-                                                        RuleAction::RateLimit => "RATE LIMIT",
+                                        }
+                                        td { class: TD_CLASS,
+                                            match &policy.schedule {
+                                                Some(sched) => rsx! {
+                                                    span { class: Color::Cyan.badge_class(),
+                                                        Icon { width: 10, height: 10, icon: LdClock, class: "inline mr-1" }
+                                                        {format_schedule(sched)}
                                                     }
-                                                }
+                                                },
+                                                None => rsx! {
+                                                    span { class: "text-slate-600 text-xs", "Always" }
+                                                },
                                             }
-                                            td { class: "px-5 py-3 text-sm",
-                                                match &policy.schedule {
-                                                    Some(sched) => rsx! {
-                                                        span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20",
-                                                            Icon { width: 10, height: 10, icon: LdClock, class: "inline mr-1" }
-                                                            {format_schedule(sched)}
-                                                        }
-                                                    },
-                                                    None => rsx! {
-                                                        span { class: "text-slate-600 text-xs", "Always" }
-                                                    },
-                                                }
+                                        }
+                                        td { class: "{TD_CLASS} text-cyan-400 font-mono", "{policy.priority}" }
+                                        td { class: TD_CLASS,
+                                            if policy.log {
+                                                Badge { color: Color::Amber, label: "Yes".to_string() }
+                                            } else {
+                                                span { class: "text-slate-600 text-xs", "No" }
                                             }
-                                            td { class: "px-5 py-3 text-sm text-cyan-400 font-mono", "{policy.priority}" }
-                                            td { class: "px-5 py-3 text-sm",
-                                                if policy.log {
-                                                    span { class: "px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20", "Yes" }
-                                                } else {
-                                                    span { class: "text-slate-600 text-xs", "No" }
-                                                }
+                                        }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: if policy.enabled { Color::Emerald } else { Color::Slate },
+                                                label: if policy.enabled { "Active".to_string() } else { "Inactive".to_string() },
                                             }
-                                            td { class: "px-5 py-3 text-sm",
-                                                span {
-                                                    class: if policy.enabled {
-                                                        "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                                    } else {
-                                                        "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20"
-                                                    },
-                                                    if policy.enabled { "Active" } else { "Inactive" }
-                                                }
-                                            }
-                                            td { class: "px-5 py-3 text-sm",
-                                                {
-                                                    let policy_id = policy.id;
-                                                    let pname = policy.name.clone();
-                                                    rsx! {
-                                                        button {
-                                                            class: "px-2 py-0.5 rounded-lg text-[11px] font-medium text-red-400 hover:bg-red-500/10 transition-colors",
-                                                            onclick: move |_| {
-                                                                confirm_delete_policy.set(Some((policy_id, pname.clone())));
-                                                            },
-                                                            Icon { width: 13, height: 13, icon: LdTrash2 }
-                                                        }
+                                        }
+                                        td { class: TD_CLASS,
+                                            {
+                                                let policy_id = policy.id;
+                                                let pname = policy.name.clone();
+                                                rsx! {
+                                                    DeleteBtn {
+                                                        onclick: move |_| {
+                                                            confirm_delete_policy.set(Some((policy_id, pname.clone())));
+                                                        },
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                },
-                                Some(Ok(_)) => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "10", "No policies configured" } }
-                                },
-                                Some(Err(e)) => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-red-400", colspan: "10", "Failed to load policies: {e}" } }
-                                },
-                                None => rsx! {
-                                    tr { td { class: "px-5 py-16 text-center text-sm text-slate-600", colspan: "10", "Loading..." } }
-                                },
-                            }
+                                }
+                            },
+                            Some(Ok(_)) => rsx! {
+                                TableEmpty { colspan: 10, message: "No policies configured".to_string() }
+                            },
+                            Some(Err(e)) => rsx! {
+                                TableError { colspan: 10, message: format!("Failed to load policies: {e}") }
+                            },
+                            None => rsx! {
+                                TableLoading { colspan: 10 }
+                            },
                         }
                     }
                 }
@@ -367,43 +345,40 @@ fn ZoneForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6 mb-6",
+        FormCard {
             h3 { class: "text-sm font-semibold text-white mb-4", "Create New Zone" }
             if let Some(err) = error() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
+                ErrorAlert { message: err, on_dismiss: move |_| error.set(None) }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Name" }
+                FormField { label: "Name".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "Zone name", value: "{name}",
                         oninput: move |e| name.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Interfaces" }
+                FormField { label: "Interfaces".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "eth0, eth1", value: "{interfaces}",
                         oninput: move |e| interfaces.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Default Policy" }
+                FormField { label: "Default Policy".to_string(),
                     select {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: SELECT_CLASS,
                         value: "{default_policy}", onchange: move |e| default_policy.set(e.value()),
                         option { value: "Allow", "Allow" }
                         option { value: "Drop", "Drop" }
                     }
                 }
             }
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Creating...".to_string() } else { "Create Zone".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Creating..." } else { "Create Zone" }
             }
         }
     }
@@ -491,40 +466,36 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
     };
 
     rsx! {
-        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6 mb-6",
+        FormCard {
             h3 { class: "text-sm font-semibold text-white mb-4", "Create New Policy" }
             if let Some(err) = error() {
-                div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400", "{err}" }
+                ErrorAlert { message: err, on_dismiss: move |_| error.set(None) }
             }
             div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4",
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Name" }
+                FormField { label: "Name".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "Policy name", value: "{name}",
                         oninput: move |e| name.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "From Zone" }
+                FormField { label: "From Zone".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "e.g. lan", value: "{from_zone}",
                         oninput: move |e| from_zone.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "To Zone" }
+                FormField { label: "To Zone".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "e.g. wan", value: "{to_zone}",
                         oninput: move |e| to_zone.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Protocol" }
+                FormField { label: "Protocol".to_string(),
                     select {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: SELECT_CLASS,
                         value: "{protocol}", onchange: move |e| protocol.set(e.value()),
                         option { value: "Any", "Any" }
                         option { value: "TCP", "TCP" }
@@ -532,28 +503,25 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
                         option { value: "ICMP", "ICMP" }
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Dest Port" }
+                FormField { label: "Dest Port".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "text", placeholder: "80 (optional)", value: "{dst_port}",
                         oninput: move |e| dst_port.set(e.value()),
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Action" }
+                FormField { label: "Action".to_string(),
                     select {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: SELECT_CLASS,
                         value: "{action}", onchange: move |e| action.set(e.value()),
                         option { value: "Allow", "Allow" }
                         option { value: "Drop", "Drop" }
                         option { value: "Log", "Log" }
                     }
                 }
-                div {
-                    label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Priority" }
+                FormField { label: "Priority".to_string(),
                     input {
-                        class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                        class: INPUT_CLASS,
                         r#type: "number", value: "{priority}",
                         oninput: move |e| priority.set(e.value()),
                     }
@@ -615,18 +583,16 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
                             }
                         }
                         div { class: "grid grid-cols-2 gap-4",
-                            div {
-                                label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "Start Time" }
+                            FormField { label: "Start Time".to_string(),
                                 input {
-                                    class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                                    class: INPUT_CLASS,
                                     r#type: "time", value: "{sched_start}",
                                     oninput: move |e| sched_start.set(e.value()),
                                 }
                             }
-                            div {
-                                label { class: "text-xs font-medium text-slate-400 mb-1.5 block", "End Time" }
+                            FormField { label: "End Time".to_string(),
                                 input {
-                                    class: "w-full bg-slate-900 border border-slate-700/60 rounded-lg px-3 py-2 text-sm text-slate-300 outline-none focus:border-blue-500/60 transition-colors",
+                                    class: INPUT_CLASS,
                                     r#type: "time", value: "{sched_end}",
                                     oninput: move |e| sched_end.set(e.value()),
                                 }
@@ -636,11 +602,11 @@ fn PolicyForm(on_saved: EventHandler<()>) -> Element {
                 }
             }
 
-            button {
-                class: "px-4 py-2 rounded-lg text-sm font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50",
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Creating...".to_string() } else { "Create Policy".to_string() },
                 disabled: submitting(),
                 onclick: on_submit,
-                if submitting() { "Creating..." } else { "Create Policy" }
             }
         }
     }
