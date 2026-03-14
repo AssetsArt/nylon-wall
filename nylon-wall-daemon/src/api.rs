@@ -76,7 +76,7 @@ async fn changes_pending(State(state): State<Arc<AppState>>) -> Json<PendingChan
 async fn changes_confirm(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
-    let confirmed = changeset::confirm(&state.pending_changes).await;
+    let confirmed = changeset::confirm(&state).await;
     tracing::info!("Confirmed pending change");
     Json(serde_json::json!({ "confirmed": confirmed }))
 }
@@ -321,7 +321,7 @@ async fn create_rule(
         .add_to_index("rule:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "rule:", &key, format!("Created rule '{}'", rule.name)).await;
+    changeset::record_create(&state, "rule:", &key, format!("Created rule '{}'", rule.name)).await;
     broadcast(
         &state,
         WsEvent::RuleCreated(to_json_value(&rule)),
@@ -357,7 +357,7 @@ async fn update_rule(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &rule).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated rule #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated rule #{}", id)).await;
     }
     state
         .db
@@ -386,7 +386,7 @@ async fn delete_rule(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "rule:", &key, old_val, format!("Deleted rule #{}", id)).await;
+        changeset::record_delete(&state, "rule:", &key, old_val, format!("Deleted rule #{}", id)).await;
     }
     broadcast(&state, WsEvent::RuleDeleted { id });
     sync_rules_to_ebpf(&state).await;
@@ -409,7 +409,7 @@ async fn toggle_rule(
     rule.enabled = !rule.enabled;
     state.db.put(&key, &rule).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled rule #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Toggled rule #{}", id)).await;
     }
     broadcast(
         &state,
@@ -445,7 +445,7 @@ async fn create_nat(
         .add_to_index("nat:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "nat:", &key, format!("Created NAT entry #{}", entry.id)).await;
+    changeset::record_create(&state, "nat:", &key, format!("Created NAT entry #{}", entry.id)).await;
     broadcast(
         &state,
         WsEvent::NatCreated(to_json_value(&entry)),
@@ -465,7 +465,7 @@ async fn update_nat(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &entry).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated NAT entry #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated NAT entry #{}", id)).await;
     }
     state
         .db
@@ -494,7 +494,7 @@ async fn delete_nat(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "nat:", &key, old_val, format!("Deleted NAT entry #{}", id)).await;
+        changeset::record_delete(&state, "nat:", &key, old_val, format!("Deleted NAT entry #{}", id)).await;
     }
     broadcast(&state, WsEvent::NatDeleted { id });
     sync_nat_to_ebpf(&state).await;
@@ -517,7 +517,7 @@ async fn toggle_nat(
     entry.enabled = !entry.enabled;
     state.db.put(&key, &entry).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled NAT entry #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Toggled NAT entry #{}", id)).await;
     }
     broadcast(
         &state,
@@ -553,7 +553,7 @@ async fn create_route(
         .add_to_index("route:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "route:", &key, format!("Created route #{}", route.id)).await;
+    changeset::record_create(&state, "route:", &key, format!("Created route #{}", route.id)).await;
     broadcast(
         &state,
         WsEvent::RouteCreated(to_json_value(&route)),
@@ -572,7 +572,7 @@ async fn update_route(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &route).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated route #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated route #{}", id)).await;
     }
     state
         .db
@@ -600,7 +600,7 @@ async fn delete_route(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "route:", &key, old_val, format!("Deleted route #{}", id)).await;
+        changeset::record_delete(&state, "route:", &key, old_val, format!("Deleted route #{}", id)).await;
     }
     broadcast(&state, WsEvent::RouteDeleted { id });
     Ok(StatusCode::NO_CONTENT)
@@ -632,7 +632,7 @@ async fn create_policy_route(
         .add_to_index("policy_route:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "policy_route:", &key, format!("Created policy route #{}", route.id)).await;
+    changeset::record_create(&state, "policy_route:", &key, format!("Created policy route #{}", route.id)).await;
     Ok((StatusCode::CREATED, Json(route)))
 }
 
@@ -647,7 +647,7 @@ async fn update_policy_route(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &route).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated policy route #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated policy route #{}", id)).await;
     }
     state
         .db
@@ -671,7 +671,7 @@ async fn delete_policy_route(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "policy_route:", &key, old_val, format!("Deleted policy route #{}", id)).await;
+        changeset::record_delete(&state, "policy_route:", &key, old_val, format!("Deleted policy route #{}", id)).await;
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -702,7 +702,7 @@ async fn create_zone(
         .add_to_index("zone:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "zone:", &key, format!("Created zone '{}'", zone.name)).await;
+    changeset::record_create(&state, "zone:", &key, format!("Created zone '{}'", zone.name)).await;
     broadcast(
         &state,
         WsEvent::ZoneCreated(to_json_value(&zone)),
@@ -721,7 +721,7 @@ async fn update_zone(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &zone).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated zone #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated zone #{}", id)).await;
     }
     state
         .db
@@ -749,7 +749,7 @@ async fn delete_zone(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "zone:", &key, old_val, format!("Deleted zone #{}", id)).await;
+        changeset::record_delete(&state, "zone:", &key, old_val, format!("Deleted zone #{}", id)).await;
     }
     broadcast(&state, WsEvent::ZoneDeleted { id });
     Ok(StatusCode::NO_CONTENT)
@@ -781,7 +781,7 @@ async fn create_policy(
         .add_to_index("policy:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "policy:", &key, format!("Created policy '{}'", policy.name)).await;
+    changeset::record_create(&state, "policy:", &key, format!("Created policy '{}'", policy.name)).await;
     broadcast(
         &state,
         WsEvent::PolicyCreated(to_json_value(&policy)),
@@ -800,7 +800,7 @@ async fn update_policy(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &policy).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated policy #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated policy #{}", id)).await;
     }
     state
         .db
@@ -828,7 +828,7 @@ async fn delete_policy(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "policy:", &key, old_val, format!("Deleted policy #{}", id)).await;
+        changeset::record_delete(&state, "policy:", &key, old_val, format!("Deleted policy #{}", id)).await;
     }
     broadcast(&state, WsEvent::PolicyDeleted { id });
     Ok(StatusCode::NO_CONTENT)
@@ -1098,7 +1098,7 @@ async fn create_dhcp_pool(
         .add_to_index("dhcp_pool:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "dhcp_pool:", &key, format!("Created DHCP pool #{}", pool.id)).await;
+    changeset::record_create(&state, "dhcp_pool:", &key, format!("Created DHCP pool #{}", pool.id)).await;
     broadcast(
         &state,
         WsEvent::DhcpPoolCreated(to_json_value(&pool)),
@@ -1119,7 +1119,7 @@ async fn update_dhcp_pool(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &pool).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated DHCP pool #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated DHCP pool #{}", id)).await;
     }
     state
         .db
@@ -1148,7 +1148,7 @@ async fn delete_dhcp_pool(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "dhcp_pool:", &key, old_val, format!("Deleted DHCP pool #{}", id)).await;
+        changeset::record_delete(&state, "dhcp_pool:", &key, old_val, format!("Deleted DHCP pool #{}", id)).await;
     }
     broadcast(&state, WsEvent::DhcpPoolDeleted { id });
     let _ = state.dhcp_pool_notify.send(());
@@ -1171,7 +1171,7 @@ async fn toggle_dhcp_pool(
     pool.enabled = !pool.enabled;
     state.db.put(&key, &pool).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled DHCP pool #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Toggled DHCP pool #{}", id)).await;
     }
     broadcast(
         &state,
@@ -1299,7 +1299,7 @@ async fn create_dhcp_reservation(
         .add_to_index("dhcp_reservation:", &key)
         .await
         .map_err(internal_error)?;
-    changeset::record_create(&state.pending_changes, "dhcp_reservation:", &key, format!("Created DHCP reservation #{}", reservation.id)).await;
+    changeset::record_create(&state, "dhcp_reservation:", &key, format!("Created DHCP reservation #{}", reservation.id)).await;
     broadcast(
         &state,
         WsEvent::DhcpReservationCreated(to_json_value(&reservation)),
@@ -1327,7 +1327,7 @@ async fn update_dhcp_reservation(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated DHCP reservation #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated DHCP reservation #{}", id)).await;
     }
     Ok(Json(reservation))
 }
@@ -1346,7 +1346,7 @@ async fn delete_dhcp_reservation(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "dhcp_reservation:", &key, old_val, format!("Deleted DHCP reservation #{}", id)).await;
+        changeset::record_delete(&state, "dhcp_reservation:", &key, old_val, format!("Deleted DHCP reservation #{}", id)).await;
     }
     broadcast(&state, WsEvent::DhcpReservationDeleted { id });
     Ok(StatusCode::NO_CONTENT)
@@ -1379,7 +1379,7 @@ async fn create_dhcp_client(
         .await
         .map_err(internal_error)?;
 
-    changeset::record_create(&state.pending_changes, "dhcp_client:", &key, format!("Created DHCP client #{}", config.id)).await;
+    changeset::record_create(&state, "dhcp_client:", &key, format!("Created DHCP client #{}", config.id)).await;
 
     // If enabled, spawn a client task
     if config.enabled {
@@ -1404,7 +1404,7 @@ async fn update_dhcp_client(
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &config).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated DHCP client #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Updated DHCP client #{}", id)).await;
     }
     state
         .db
@@ -1428,7 +1428,7 @@ async fn delete_dhcp_client(
         .await
         .map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_delete(&state.pending_changes, "dhcp_client:", &key, old_val, format!("Deleted DHCP client #{}", id)).await;
+        changeset::record_delete(&state, "dhcp_client:", &key, old_val, format!("Deleted DHCP client #{}", id)).await;
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1448,7 +1448,7 @@ async fn toggle_dhcp_client(
     config.enabled = !config.enabled;
     state.db.put(&key, &config).await.map_err(internal_error)?;
     if let Some(old_val) = old {
-        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled DHCP client #{}", id)).await;
+        changeset::record_update(&state, &key, old_val, format!("Toggled DHCP client #{}", id)).await;
     }
 
     // If enabling, spawn client task
@@ -2011,8 +2011,7 @@ async fn restore_data(
         .map_err(internal_error)?;
 
     // Record pending change for revert
-    changeset::record_full_restore(
-        &state.pending_changes,
+    changeset::record_full_restore(&state,
         old_snapshot,
         "Restore configuration from backup".to_string(),
     )

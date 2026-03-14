@@ -73,10 +73,23 @@ pub fn ChangeTimerModal() -> Element {
     let mut reverting = use_signal(|| false);
     let mut reverted = use_signal(|| false);
     let mut was_active = use_signal(|| false);
+    let mut first_run = use_signal(|| true);
 
     // Local 1-second countdown ticker
     use_future(move || async move {
         loop {
+            if first_run() {
+                if let Ok(status) = api_client::get::<PendingStatus>("/changes/pending").await {
+                    if status.pending {
+                        guard.set(ChangeGuardState {
+                            active: true,
+                            remaining: status.remaining_secs as u32,
+                            total: status.total_secs as u32,
+                        });
+                    }
+                }
+                first_run.set(false);
+            }
             gloo_timers::future::TimeoutFuture::new(1_000).await;
 
             let ctx = guard();

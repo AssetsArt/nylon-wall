@@ -131,6 +131,9 @@ async fn main() -> anyhow::Result<()> {
         pending_changes: tokio::sync::Mutex::new(None),
     });
 
+    // Recover any un-confirmed change from a previous crash
+    changeset::recover_pending(&state).await;
+
     // Sync existing rules from DB to eBPF maps on startup
     #[cfg(target_os = "linux")]
     if _ebpf_loaded {

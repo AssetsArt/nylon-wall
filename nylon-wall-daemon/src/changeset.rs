@@ -9,6 +9,9 @@ use crate::AppState;
 /// Default revert timeout (seconds). Overridden by config.toml `[changes].revert_timeout_secs`.
 const DEFAULT_REVERT_TIMEOUT_SECS: u64 = 6;
 
+/// DB key used to persist the undo action across daemon restarts.
+const PENDING_UNDO_KEY: &str = "__pending_undo";
+
 /// Runtime-configurable revert timeout, set once at startup.
 static REVERT_TIMEOUT: AtomicU64 = AtomicU64::new(DEFAULT_REVERT_TIMEOUT_SECS);
 
@@ -23,7 +26,7 @@ pub fn revert_timeout_secs() -> u64 {
 }
 
 /// Describes how to undo a single change.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum UndoAction {
     /// Undo a create: delete the key and remove from index.
     Create { prefix: String, key: String },
@@ -40,6 +43,13 @@ pub enum UndoAction {
     },
     /// Undo a full restore: wipe current data and re-import old snapshot.
     FullRestore { old_snapshot: serde_json::Value },
+}
+
+/// Persisted form of a pending change (survives daemon restart).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PersistedUndo {
+    action: UndoAction,
+    description: String,
 }
 
 /// A single pending (unconfirmed) change.
@@ -65,6 +75,24 @@ impl PendingChange {
     }
 }
 
+/// Persist the undo action to DB so it survives crashes.
+async fn persist_undo(state: &AppState, action: &UndoAction, description: &str) {
+    let record = PersistedUndo {
+        action: action.clone(),
+        description: description.to_string(),
+    };
+    if let Err(e) = state.db.put(PENDING_UNDO_KEY, &record).await {
+        warn!("Failed to persist undo to DB: {}", e);
+    }
+}
+
+/// Remove persisted undo from DB (called on confirm or after rollback).
+async fn clear_persisted_undo(state: &AppState) {
+    if let Err(e) = state.db.delete(PENDING_UNDO_KEY).await {
+        warn!("Failed to clear persisted undo: {}", e);
+    }
+}
+
 /// Check if there's already a pending change (blocks new mutations).
 pub async fn has_pending(pending: &Mutex<Option<PendingChange>>) -> bool {
     pending.lock().await.is_some()
@@ -72,75 +100,73 @@ pub async fn has_pending(pending: &Mutex<Option<PendingChange>>) -> bool {
 
 /// Record a create (undo = delete). Replaces any existing pending change.
 pub async fn record_create(
-    pending: &Mutex<Option<PendingChange>>,
+    state: &AppState,
     prefix: &str,
     key: &str,
     description: String,
 ) {
-    let mut guard = pending.lock().await;
-    *guard = Some(PendingChange::new(
-        UndoAction::Create {
-            prefix: prefix.to_string(),
-            key: key.to_string(),
-        },
-        description,
-    ));
+    let action = UndoAction::Create {
+        prefix: prefix.to_string(),
+        key: key.to_string(),
+    };
+    persist_undo(state, &action, &description).await;
+    let mut guard = state.pending_changes.lock().await;
+    *guard = Some(PendingChange::new(action, description));
 }
 
 /// Record an update (undo = restore old value).
 pub async fn record_update(
-    pending: &Mutex<Option<PendingChange>>,
+    state: &AppState,
     key: &str,
     old_value: serde_json::Value,
     description: String,
 ) {
-    let mut guard = pending.lock().await;
-    *guard = Some(PendingChange::new(
-        UndoAction::Update {
-            key: key.to_string(),
-            old_value,
-        },
-        description,
-    ));
+    let action = UndoAction::Update {
+        key: key.to_string(),
+        old_value,
+    };
+    persist_undo(state, &action, &description).await;
+    let mut guard = state.pending_changes.lock().await;
+    *guard = Some(PendingChange::new(action, description));
 }
 
 /// Record a delete (undo = re-create).
 pub async fn record_delete(
-    pending: &Mutex<Option<PendingChange>>,
+    state: &AppState,
     prefix: &str,
     key: &str,
     old_value: serde_json::Value,
     description: String,
 ) {
-    let mut guard = pending.lock().await;
-    *guard = Some(PendingChange::new(
-        UndoAction::Delete {
-            prefix: prefix.to_string(),
-            key: key.to_string(),
-            old_value,
-        },
-        description,
-    ));
+    let action = UndoAction::Delete {
+        prefix: prefix.to_string(),
+        key: key.to_string(),
+        old_value,
+    };
+    persist_undo(state, &action, &description).await;
+    let mut guard = state.pending_changes.lock().await;
+    *guard = Some(PendingChange::new(action, description));
 }
 
 /// Record a full restore (undo = restore old snapshot).
 pub async fn record_full_restore(
-    pending: &Mutex<Option<PendingChange>>,
+    state: &AppState,
     old_snapshot: serde_json::Value,
     description: String,
 ) {
-    let mut guard = pending.lock().await;
-    *guard = Some(PendingChange::new(
-        UndoAction::FullRestore { old_snapshot },
-        description,
-    ));
+    let action = UndoAction::FullRestore { old_snapshot };
+    persist_undo(state, &action, &description).await;
+    let mut guard = state.pending_changes.lock().await;
+    *guard = Some(PendingChange::new(action, description));
 }
 
 /// Confirm the pending change (discard undo).
-pub async fn confirm(pending: &Mutex<Option<PendingChange>>) -> bool {
-    let mut guard = pending.lock().await;
+pub async fn confirm(state: &AppState) -> bool {
+    let mut guard = state.pending_changes.lock().await;
     let had = guard.is_some();
     *guard = None;
+    drop(guard);
+    clear_persisted_undo(state).await;
     had
 }
 
@@ -164,17 +190,48 @@ pub async fn rollback(state: &AppState) -> Result<bool, String> {
         None => return Ok(false),
     };
 
-    match change.action {
+    execute_undo(state, &change.action).await;
+    clear_persisted_undo(state).await;
+
+    info!("Rolled back change: {}", change.description);
+    Ok(true)
+}
+
+/// On daemon startup, check for a persisted undo and auto-revert it.
+/// This covers the case where the daemon crashed while a change was pending.
+pub async fn recover_pending(state: &AppState) {
+    let persisted: Option<PersistedUndo> = match state.db.get(PENDING_UNDO_KEY).await {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("Failed to check for persisted undo: {}", e);
+            return;
+        }
+    };
+
+    if let Some(undo) = persisted {
+        warn!(
+            "Found un-confirmed change from previous run: {}. Auto-reverting...",
+            undo.description
+        );
+        execute_undo(state, &undo.action).await;
+        clear_persisted_undo(state).await;
+        info!("Startup recovery: reverted pending change successfully");
+    }
+}
+
+/// Execute an undo action against the database.
+async fn execute_undo(state: &AppState, action: &UndoAction) {
+    match action {
         UndoAction::Create { prefix, key } => {
-            if let Err(e) = state.db.delete(&key).await {
+            if let Err(e) = state.db.delete(key).await {
                 warn!("Rollback: failed to delete {}: {}", key, e);
             }
-            if let Err(e) = state.db.remove_from_index(&prefix, &key).await {
+            if let Err(e) = state.db.remove_from_index(prefix, key).await {
                 warn!("Rollback: failed to update index for {}: {}", prefix, e);
             }
         }
         UndoAction::Update { key, old_value } => {
-            if let Err(e) = state.db.put_raw(&key, &old_value).await {
+            if let Err(e) = state.db.put_raw(key, old_value).await {
                 warn!("Rollback: failed to restore {}: {}", key, e);
             }
         }
@@ -183,23 +240,19 @@ pub async fn rollback(state: &AppState) -> Result<bool, String> {
             key,
             old_value,
         } => {
-            if let Err(e) = state.db.put_raw(&key, &old_value).await {
+            if let Err(e) = state.db.put_raw(key, old_value).await {
                 warn!("Rollback: failed to re-create {}: {}", key, e);
             }
-            if let Err(e) = state.db.add_to_index(&prefix, &key).await {
+            if let Err(e) = state.db.add_to_index(prefix, key).await {
                 warn!("Rollback: failed to update index for {}: {}", prefix, e);
             }
         }
         UndoAction::FullRestore { old_snapshot } => {
-            // Re-run restore with the old snapshot to revert
-            if let Err(e) = crate::api::perform_restore(&state, &old_snapshot).await {
+            if let Err(e) = crate::api::perform_restore(state, old_snapshot).await {
                 warn!("Rollback: full restore failed: {}", e);
             }
         }
     }
-
-    info!("Rolled back change: {}", change.description);
-    Ok(true)
 }
 
 /// Background task that checks for expired pending change and auto-reverts.
