@@ -242,5 +242,43 @@
 
 ---
 
+## Phase 8: VLAN Management
+
+### nylon-wall-common - VLAN Types
+- [ ] `nylon-wall-common/src/vlan.rs` - `VlanInterface` struct (id, parent, vlan_id, name, ip_config)
+- [ ] `nylon-wall-common/src/lib.rs` - Add `pub mod vlan`
+
+### nylon-wall-daemon - VLAN Module
+- [ ] `nylon-wall-daemon/src/vlan.rs` - Create/delete VLAN sub-interfaces via netlink/`ip link`
+- [ ] VLAN creation: `ip link add link {parent} name {parent}.{vlan_id} type vlan id {vlan_id}`
+- [ ] VLAN deletion: `ip link delete {parent}.{vlan_id}`
+- [ ] IP assignment: `ip addr add {cidr} dev {parent}.{vlan_id}`
+- [ ] Auto bring-up: `ip link set {parent}.{vlan_id} up`
+- [ ] Persist VLAN config in SlateDB (recreate on daemon restart)
+
+### Daemon - VLAN API
+- [ ] API: `GET /api/v1/vlans` - List VLAN interfaces
+- [ ] API: `POST /api/v1/vlans` - Create VLAN sub-interface
+- [ ] API: `PUT /api/v1/vlans/{id}` - Update VLAN (IP config)
+- [ ] API: `DELETE /api/v1/vlans/{id}` - Delete VLAN sub-interface
+- [ ] Validation: prevent duplicate VLAN ID on same parent interface
+- [ ] Validation: parent interface must exist
+
+### Dioxus UI - VLAN
+- [ ] `nylon-wall-ui/src/components/vlans.rs` - VLAN table + create/edit form
+- [ ] Form fields: Parent Interface (select), VLAN ID (1-4094), IP Address (CIDR, optional)
+- [ ] Show created VLANs in interface selects across all pages (rules, NAT, DHCP, routes)
+- [ ] `nylon-wall-ui/src/components/mod.rs` - Export `Vlans` component
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/vlans` route + sidebar nav link
+
+### Integration
+- [ ] Backup/restore includes VLAN configs
+- [ ] Dashboard: VLAN count in system status
+- [ ] DHCP pool can use VLAN sub-interface (e.g. `eth0.10`)
+- [ ] Firewall rules can target VLAN sub-interface
+- [ ] ทดสอบ VLAN creation + DHCP pool on VLAN interface
+
+---
+
 ### Extras (Optional)
 - [ ] DNS filtering (blocklist + custom responses + query logging)
