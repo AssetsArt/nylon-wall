@@ -1806,10 +1806,14 @@ async fn backup_data(
     Ok(Json(backup))
 }
 
-async fn restore_data(
-    State(state): State<Arc<AppState>>,
-    Json(backup): Json<BackupData>,
-) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+/// Perform the actual restore operation (shared between handler and rollback).
+pub async fn perform_restore(
+    state: &AppState,
+    backup_json: &serde_json::Value,
+) -> Result<(), String> {
+    let backup: BackupData =
+        serde_json::from_value(backup_json.clone()).map_err(|e| format!("Invalid backup: {}", e))?;
+
     // Clear existing data for each prefix
     for prefix in &[
         "rule:",
@@ -1825,118 +1829,104 @@ async fn restore_data(
             .db
             .scan_prefix::<serde_json::Value>(prefix)
             .await
-            .map_err(internal_error)?;
+            .map_err(|e| e.to_string())?;
         for (key, _) in &existing {
-            state.db.delete(key).await.map_err(internal_error)?;
+            state.db.delete(key).await.map_err(|e| e.to_string())?;
         }
-        // Clear the index
         let index_key = format!("{}__index", prefix);
         let empty: Vec<String> = Vec::new();
         state
             .db
             .put(&index_key, &empty)
             .await
-            .map_err(internal_error)?;
+            .map_err(|e| e.to_string())?;
     }
 
-    // Restore rules
-    for rule in &backup.rules {
-        let id = rule.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("rule:{}", id);
-        state.db.put(&key, rule).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("rule:", &key)
-            .await
-            .map_err(internal_error)?;
-    }
+    let restore_items: &[(&str, &Vec<serde_json::Value>)] = &[
+        ("rule:", &backup.rules),
+        ("nat:", &backup.nat_entries),
+        ("route:", &backup.routes),
+        ("zone:", &backup.zones),
+        ("policy:", &backup.policies),
+        ("dhcp_pool:", &backup.dhcp_pools),
+        ("dhcp_reservation:", &backup.dhcp_reservations),
+        ("dhcp_client:", &backup.dhcp_clients),
+    ];
 
-    // Restore NAT entries
-    for entry in &backup.nat_entries {
-        let id = entry.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("nat:{}", id);
-        state.db.put(&key, entry).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("nat:", &key)
-            .await
-            .map_err(internal_error)?;
-    }
-
-    // Restore routes
-    for route in &backup.routes {
-        let id = route.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("route:{}", id);
-        state.db.put(&key, route).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("route:", &key)
-            .await
-            .map_err(internal_error)?;
-    }
-
-    // Restore zones
-    for zone in &backup.zones {
-        let id = zone.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("zone:{}", id);
-        state.db.put(&key, zone).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("zone:", &key)
-            .await
-            .map_err(internal_error)?;
-    }
-
-    // Restore policies
-    for policy in &backup.policies {
-        let id = policy.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("policy:{}", id);
-        state.db.put(&key, policy).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("policy:", &key)
-            .await
-            .map_err(internal_error)?;
-    }
-
-    // Restore DHCP pools
-    for pool in &backup.dhcp_pools {
-        let id = pool.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("dhcp_pool:{}", id);
-        state.db.put(&key, pool).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("dhcp_pool:", &key)
-            .await
-            .map_err(internal_error)?;
-    }
-
-    // Restore DHCP reservations
-    for res in &backup.dhcp_reservations {
-        let id = res.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("dhcp_reservation:{}", id);
-        state.db.put(&key, res).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("dhcp_reservation:", &key)
-            .await
-            .map_err(internal_error)?;
-    }
-
-    // Restore DHCP client configs
-    for client in &backup.dhcp_clients {
-        let id = client.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
-        let key = format!("dhcp_client:{}", id);
-        state.db.put(&key, client).await.map_err(internal_error)?;
-        state
-            .db
-            .add_to_index("dhcp_client:", &key)
-            .await
-            .map_err(internal_error)?;
+    for (prefix, items) in restore_items {
+        for item in *items {
+            let id = item.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+            let key = format!("{}{}", prefix, id);
+            state
+                .db
+                .put(&key, item)
+                .await
+                .map_err(|e| e.to_string())?;
+            state
+                .db
+                .add_to_index(prefix, &key)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
     }
 
     // Notify DHCP server to reload after restore
     let _ = state.dhcp_pool_notify.send(());
+
+    Ok(())
+}
+
+/// Take a snapshot of the current DB state as a BackupData JSON value.
+async fn snapshot_current(state: &AppState) -> Result<serde_json::Value, String> {
+    let scan = |prefix: &'static str| async move {
+        state
+            .db
+            .scan_prefix::<serde_json::Value>(prefix)
+            .await
+            .map_err(|e| e.to_string())
+            .map(|v| v.into_iter().map(|(_, val)| val).collect::<Vec<_>>())
+    };
+
+    let backup = BackupData {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp: chrono::Utc::now().timestamp(),
+        rules: scan("rule:").await?,
+        nat_entries: scan("nat:").await?,
+        routes: scan("route:").await?,
+        zones: scan("zone:").await?,
+        policies: scan("policy:").await?,
+        dhcp_pools: scan("dhcp_pool:").await?,
+        dhcp_reservations: scan("dhcp_reservation:").await?,
+        dhcp_clients: scan("dhcp_client:").await?,
+    };
+
+    serde_json::to_value(&backup).map_err(|e| e.to_string())
+}
+
+async fn restore_data(
+    State(state): State<Arc<AppState>>,
+    Json(backup): Json<BackupData>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
+
+    // Snapshot current state before restore (for undo)
+    let old_snapshot = snapshot_current(&state).await.map_err(internal_error)?;
+
+    // Convert incoming backup to JSON value for perform_restore
+    let backup_json = serde_json::to_value(&backup).map_err(internal_error)?;
+
+    // Perform the restore
+    perform_restore(&state, &backup_json)
+        .await
+        .map_err(internal_error)?;
+
+    // Record pending change for revert
+    changeset::record_full_restore(
+        &state.pending_changes,
+        old_snapshot,
+        "Restore configuration from backup".to_string(),
+    )
+    .await;
 
     broadcast(&state, WsEvent::ConfigRestored);
 

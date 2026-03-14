@@ -24,6 +24,10 @@ pub enum UndoAction {
         key: String,
         old_value: serde_json::Value,
     },
+    /// Undo a full restore: wipe current data and re-import old snapshot.
+    FullRestore {
+        old_snapshot: serde_json::Value,
+    },
 }
 
 /// A single pending (unconfirmed) change.
@@ -107,6 +111,19 @@ pub async fn record_delete(
     ));
 }
 
+/// Record a full restore (undo = restore old snapshot).
+pub async fn record_full_restore(
+    pending: &Mutex<Option<PendingChange>>,
+    old_snapshot: serde_json::Value,
+    description: String,
+) {
+    let mut guard = pending.lock().await;
+    *guard = Some(PendingChange::new(
+        UndoAction::FullRestore { old_snapshot },
+        description,
+    ));
+}
+
 /// Confirm the pending change (discard undo).
 pub async fn confirm(pending: &Mutex<Option<PendingChange>>) -> bool {
     let mut guard = pending.lock().await;
@@ -159,6 +176,12 @@ pub async fn rollback(state: &AppState) -> Result<bool, String> {
             }
             if let Err(e) = state.db.add_to_index(&prefix, &key).await {
                 warn!("Rollback: failed to update index for {}: {}", prefix, e);
+            }
+        }
+        UndoAction::FullRestore { old_snapshot } => {
+            // Re-run restore with the old snapshot to revert
+            if let Err(e) = crate::api::perform_restore(&state, &old_snapshot).await {
+                warn!("Rollback: full restore failed: {}", e);
             }
         }
     }

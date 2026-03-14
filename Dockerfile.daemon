@@ -13,8 +13,6 @@ COPY nylon-wall-ebpf/ nylon-wall-ebpf/
 # Stub out workspace members that aren't needed for eBPF build
 COPY nylon-wall-daemon/Cargo.toml nylon-wall-daemon/Cargo.toml
 RUN mkdir -p nylon-wall-daemon/src && echo "fn main() {}" > nylon-wall-daemon/src/main.rs
-COPY nylon-wall-ui/Cargo.toml nylon-wall-ui/Cargo.toml
-RUN mkdir -p nylon-wall-ui/src && echo "fn main() {}" > nylon-wall-ui/src/main.rs
 
 # eBPF MUST be --release (verifier rejects debug builds)
 RUN cd nylon-wall-ebpf && \
@@ -31,10 +29,6 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY nylon-wall-common/ nylon-wall-common/
 COPY nylon-wall-daemon/ nylon-wall-daemon/
-COPY nylon-wall-ui/Cargo.toml nylon-wall-ui/Cargo.toml
-COPY nylon-wall-ui/src/ nylon-wall-ui/src/
-COPY nylon-wall-ui/Dioxus.toml nylon-wall-ui/Dioxus.toml
-RUN mkdir -p nylon-wall-ui/assets
 
 # Daemon in debug for faster dev builds
 RUN cargo build -p nylon-wall-daemon
@@ -43,7 +37,7 @@ RUN cargo build -p nylon-wall-daemon
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates iproute2 \
+    ca-certificates iproute2 iputils-ping zsh curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/target/debug/nylon-wall-daemon /usr/local/bin/nylon-wall-daemon
