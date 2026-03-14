@@ -30,11 +30,21 @@ fn read_be16(ptr: usize) -> usize {
     (hi << 8) | lo
 }
 
-/// FNV-1a hash from packet memory with per-byte bounds checks.
-/// Must match the hash used by daemon when populating the map.
-#[inline(always)]
-fn fnv1a_hash_pkt(data: usize, len: usize, data_end: usize) -> u32 {
+/// Hash the full domain AND its first parent domain in a single pass,
+/// then check both against the SNI_POLICY map.  Returns true if blocked.
+///
+/// For SNI "www.google.com":
+///   full_hash  = FNV-1a("www.google.com")  → matches exact rule
+///   parent_hash = FNV-1a("google.com")     → matches wildcard "*.google.com"
+///
+/// `#[inline(never)]` creates a separate BPF function so the hash loop's
+/// states are verified once, not duplicated at every call site.
+#[inline(never)]
+fn check_sni_policy(data: usize, len: usize, data_end: usize) -> bool {
     let mut hash: u32 = 2166136261;
+    let mut parent_hash: u32 = 0;
+    let mut found_dot = false;
+
     for i in 0..MAX_DOMAIN_SCAN {
         if i as usize >= len {
             break;
@@ -47,19 +57,50 @@ fn fnv1a_hash_pkt(data: usize, len: usize, data_end: usize) -> u32 {
         if byte >= b'A' && byte <= b'Z' {
             byte += 32;
         }
+
+        // Full domain hash (always updated)
         hash ^= byte as u32;
         hash = hash.wrapping_mul(16777619);
+
+        // Parent domain hash: start fresh AFTER the first '.'
+        if !found_dot {
+            if byte == b'.' {
+                found_dot = true;
+                parent_hash = 2166136261; // FNV offset basis
+            }
+        } else {
+            parent_hash ^= byte as u32;
+            parent_hash = parent_hash.wrapping_mul(16777619);
+        }
     }
-    hash
+
+    // 1. Exact match
+    if unsafe { crate::SNI_POLICY.get(&hash) }
+        .map(|a| *a == 1)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+
+    // 2. Wildcard match (parent domain)
+    if found_dot {
+        if unsafe { crate::SNI_POLICY.get(&parent_hash) }
+            .map(|a| *a == 1)
+            .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Check if a TCP packet contains a TLS ClientHello with a blocked SNI domain.
 /// Returns true if the packet should be dropped.
 ///
-/// This is the minimal eBPF-side implementation: parse TLS → hash domain →
-/// single map lookup. No domain copying, no wildcard matching, no event
-/// emission. The daemon handles wildcard rules by pre-populating parent
-/// domain hashes in the SNI_POLICY map.
+/// Supports both exact ("www.google.com") and single-level wildcard
+/// ("*.google.com") matching. The daemon inserts wildcard rules with
+/// the parent domain hash (e.g. hash of "google.com" for "*.google.com").
 ///
 /// IMPORTANT (TC egress callers): The linear buffer of TC skbs may not
 /// include the TCP payload. Call `ctx.pull_data(512)` and re-read
@@ -130,9 +171,7 @@ pub fn check_sni_block(
     // NOTE: All bounds checks use `data_end` directly, NOT a derived variable
     // like `extensions_end`. The eBPF verifier only recognises comparisons
     // against the original data_end register (PKT_END) as valid packet
-    // bounds checks. Comparisons against any other register — even one
-    // logically equal to or smaller than data_end — produce r=0 (no
-    // validated range), causing "invalid access to packet" rejections.
+    // bounds checks.
     let _extensions_len = read_be16(pos);
     pos += 2;
 
@@ -163,11 +202,7 @@ pub fn check_sni_block(
                 return false;
             }
 
-            // Hash domain directly from packet memory and lookup
-            let hash = fnv1a_hash_pkt(name_start, name_len, data_end);
-            return unsafe { crate::SNI_POLICY.get(&hash) }
-                .map(|a| *a == 1) // 1 = block
-                .unwrap_or(false);
+            return check_sni_policy(name_start, name_len, data_end);
         }
 
         pos += 4 + ext_len;
