@@ -153,6 +153,7 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         // NAT
         .route("/api/v1/nat", get(list_nat).post(create_nat))
         .route("/api/v1/nat/{id}", put(update_nat).delete(delete_nat))
+        .route("/api/v1/nat/{id}/toggle", post(toggle_nat))
         // Routes (policy routes must be before {id} to avoid "policy" being matched as an id)
         .route(
             "/api/v1/routes/policy",
@@ -489,6 +490,32 @@ async fn delete_nat(
     broadcast(&state, WsEvent::NatDeleted { id });
     sync_nat_to_ebpf(&state).await;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_nat(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<NatEntry> {
+    require_no_pending(&state).await?;
+    let key = format!("nat:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
+    let mut entry: NatEntry = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "NAT entry not found".to_string()))?;
+    entry.enabled = !entry.enabled;
+    state.db.put(&key, &entry).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled NAT entry #{}", id)).await;
+    }
+    broadcast(
+        &state,
+        WsEvent::NatToggled(serde_json::to_value(&entry).unwrap()),
+    );
+    sync_nat_to_ebpf(&state).await;
+    Ok(Json(entry))
 }
 
 // === Routes ===

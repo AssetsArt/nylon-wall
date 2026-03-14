@@ -153,9 +153,27 @@ pub fn Nat() -> Element {
                                     }
                                     td { class: "{TD_CLASS} text-slate-400", {format_interface(entry)} }
                                     td { class: TD_CLASS,
-                                        Badge {
-                                            color: if entry.enabled { Color::Emerald } else { Color::Slate },
-                                            label: if entry.enabled { "Enabled".to_string() } else { "Disabled".to_string() },
+                                        {
+                                            let id = entry.id;
+                                            let enabled = entry.enabled;
+                                            rsx! {
+                                                button {
+                                                    class: if enabled {
+                                                        "px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors cursor-pointer"
+                                                    } else {
+                                                        "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-500 border border-slate-500/20 hover:bg-slate-500/20 transition-colors cursor-pointer"
+                                                    },
+                                                    onclick: move |_| {
+                                                        spawn(async move {
+                                                            match api_client::post::<(), NatEntry>(&format!("/nat/{}/toggle", id), &()).await {
+                                                                Ok(_) => { entries.restart(); notify_change(&mut guard); },
+                                                                Err(e) => error_msg.set(Some(e)),
+                                                            }
+                                                        });
+                                                    },
+                                                    if enabled { "Enabled" } else { "Disabled" }
+                                                }
+                                            }
                                         }
                                     }
                                     td { class: TD_CLASS,

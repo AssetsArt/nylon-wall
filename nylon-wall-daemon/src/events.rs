@@ -16,6 +16,8 @@ pub enum WsEvent {
     NatCreated(serde_json::Value),
     #[serde(rename = "nat_updated")]
     NatUpdated(serde_json::Value),
+    #[serde(rename = "nat_toggled")]
+    NatToggled(serde_json::Value),
     #[serde(rename = "nat_deleted")]
     NatDeleted { id: u32 },
     #[serde(rename = "zone_created")]
