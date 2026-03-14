@@ -420,7 +420,7 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
         NatType::SNAT => "SNAT".to_string(),
     });
     let mut src_network = use_signal(|| editing.src_network.clone().unwrap_or_default());
-    let mut dst_network = use_signal(|| editing.dst_network.clone().unwrap_or_default());
+    let dst_network = use_signal(|| editing.dst_network.clone().unwrap_or_default());
     let mut protocol = use_signal(|| match editing.protocol {
         Some(Protocol::TCP) => "TCP".to_string(),
         Some(Protocol::UDP) => "UDP".to_string(),
@@ -536,52 +536,74 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
                         option { value: "ICMP", "ICMP" }
                     }
                 }
-                FormField { label: "Source Network".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "192.168.1.0/24", value: "{src_network}",
-                        oninput: move |e| src_network.set(e.value()),
+                // SNAT & Masquerade: Source Network (which internal IPs to translate)
+                if nat_type() == "SNAT" || nat_type() == "Masquerade" {
+                    FormField { label: "Source Network".to_string(),
+                        input {
+                            class: INPUT_CLASS,
+                            r#type: "text", placeholder: "192.168.1.0/24", value: "{src_network}",
+                            oninput: move |e| src_network.set(e.value()),
+                        }
                     }
                 }
-                FormField { label: "Destination Network".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "0.0.0.0/0", value: "{dst_network}",
-                        oninput: move |e| dst_network.set(e.value()),
+                // DNAT: Destination Port (external port to match)
+                if nat_type() == "DNAT" {
+                    FormField { label: "Destination Port".to_string(),
+                        input {
+                            class: INPUT_CLASS,
+                            r#type: "text", placeholder: "e.g. 8080 or 8000-8100", value: "{dst_port}",
+                            oninput: move |e| dst_port.set(e.value()),
+                        }
                     }
                 }
-                FormField { label: "Destination Port".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "e.g. 8080 or 8000-8100", value: "{dst_port}",
-                        oninput: move |e| dst_port.set(e.value()),
+                // SNAT & DNAT: Translate IP (new address to rewrite to)
+                if nat_type() == "SNAT" || nat_type() == "DNAT" {
+                    FormField { label: "Translate IP".to_string(),
+                        input {
+                            class: INPUT_CLASS,
+                            r#type: "text",
+                            placeholder: if nat_type() == "DNAT" { "e.g. 192.168.1.50" } else { "e.g. 203.0.113.1" },
+                            value: "{translate_ip}",
+                            oninput: move |e| translate_ip.set(e.value()),
+                        }
                     }
                 }
-                FormField { label: "Translate IP".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "203.0.113.1", value: "{translate_ip}",
-                        oninput: move |e| translate_ip.set(e.value()),
+                // DNAT: Translate Port (internal port to forward to)
+                if nat_type() == "DNAT" {
+                    FormField { label: "Translate Port".to_string(),
+                        input {
+                            class: INPUT_CLASS,
+                            r#type: "text", placeholder: "e.g. 9450 or 5000-5100", value: "{translate_port}",
+                            oninput: move |e| translate_port.set(e.value()),
+                        }
                     }
                 }
-                FormField { label: "Translate Port".to_string(),
-                    input {
-                        class: INPUT_CLASS,
-                        r#type: "text", placeholder: "e.g. 9450 or 5000-5100", value: "{translate_port}",
-                        oninput: move |e| translate_port.set(e.value()),
+                // DNAT: In Interface (which WAN interface to listen on)
+                if nat_type() == "DNAT" {
+                    InterfaceSelect {
+                        value: in_interface(),
+                        onchange: move |v| in_interface.set(v),
+                        label: "In Interface",
+                        allow_empty: true,
                     }
                 }
-                InterfaceSelect {
-                    value: in_interface(),
-                    onchange: move |v| in_interface.set(v),
-                    label: "In Interface",
-                    allow_empty: true,
+                // SNAT & Masquerade: Out Interface (which WAN interface to use)
+                if nat_type() == "SNAT" || nat_type() == "Masquerade" {
+                    InterfaceSelect {
+                        value: out_interface(),
+                        onchange: move |v| out_interface.set(v),
+                        label: "Out Interface",
+                        allow_empty: true,
+                    }
                 }
-                InterfaceSelect {
-                    value: out_interface(),
-                    onchange: move |v| out_interface.set(v),
-                    label: "Out Interface",
-                    allow_empty: true,
+            }
+            // Hint explaining the selected NAT type
+            p { class: "text-xs text-slate-500 mb-4",
+                match nat_type().as_str() {
+                    "DNAT" => "Destination NAT \u{2014} Redirect incoming traffic to an internal server (port forwarding).",
+                    "SNAT" => "Source NAT \u{2014} Rewrite the source IP of outgoing traffic to a specific public IP.",
+                    "Masquerade" => "Masquerade \u{2014} Like SNAT but automatically uses the outgoing interface\u{2019}s IP (ideal for dynamic IPs).",
+                    _ => "",
                 }
             }
             SubmitBtn {
