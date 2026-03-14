@@ -260,6 +260,7 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         .route("/api/v1/tls/sni/rules/{id}/toggle", post(toggle_sni_rule))
         .route("/api/v1/tls/sni/stats", get(sni_stats))
         .route("/api/v1/tls/sni/toggle", post(toggle_sni_filtering))
+        .route("/api/v1/tls/sni/debug", get(debug_sni_maps))
         // Change management (auto-revert)
         .route("/api/v1/changes/pending", get(changes_pending))
         .route("/api/v1/changes/confirm", post(changes_confirm))
@@ -2290,6 +2291,67 @@ async fn toggle_sni_filtering(
     Ok(Json(serde_json::json!({
         "enabled": new_state
     })))
+}
+
+async fn debug_sni_maps(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<serde_json::Value> {
+    let mut result = serde_json::json!({
+        "sni_enabled": null,
+        "policy_entries": [],
+        "expected_hashes": [],
+    });
+
+    // Show expected hashes from rules
+    let rules = state.db.scan_prefix::<SniRule>("sni_rule:").await.map_err(internal_error)?;
+    let mut expected: Vec<serde_json::Value> = Vec::new();
+    for (_, rule) in &rules {
+        let domain = if rule.domain.starts_with("*.") { &rule.domain[2..] } else { &rule.domain };
+        let hash = fnv1a_hash(domain);
+        expected.push(serde_json::json!({
+            "domain": domain,
+            "hash": hash,
+            "hash_hex": format!("0x{:08x}", hash),
+            "action": format!("{:?}", rule.action),
+            "enabled": rule.enabled,
+        }));
+    }
+    result["expected_hashes"] = serde_json::json!(expected);
+
+    #[cfg(target_os = "linux")]
+    {
+        let mut ebpf_guard = state.ebpf.lock().await;
+        if let Some(ref mut bpf) = *ebpf_guard {
+            // Read SNI_ENABLED
+            if let Some(map) = bpf.map_mut("SNI_ENABLED") {
+                if let Ok(array) = aya::maps::Array::<_, u32>::try_from(map) {
+                    if let Ok(val) = array.get(&0, 0) {
+                        result["sni_enabled"] = serde_json::json!(val);
+                    }
+                }
+            }
+
+            // Read SNI_POLICY entries
+            if let Some(map) = bpf.map_mut("SNI_POLICY") {
+                if let Ok(hashmap) = aya::maps::HashMap::<_, u32, u8>::try_from(map) {
+                    let mut entries: Vec<serde_json::Value> = Vec::new();
+                    for item in hashmap.iter() {
+                        if let Ok((key, value)) = item {
+                            entries.push(serde_json::json!({
+                                "hash": key,
+                                "hash_hex": format!("0x{:08x}", key),
+                                "action": value,
+                            }));
+                        }
+                    }
+                    result["policy_entries"] = serde_json::json!(entries);
+                }
+            }
+
+        }
+    }
+
+    Ok(Json(result))
 }
 
 // === SNI eBPF Sync ===

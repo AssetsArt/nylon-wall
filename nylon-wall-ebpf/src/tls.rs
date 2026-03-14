@@ -18,7 +18,7 @@ const MAX_DOMAIN_SCAN: u32 = 64;
 // (no validated range) on subsequent packet accesses.
 const SESSION_ID_MASK: usize = 0xFF;       // max 255 bytes (spec: max 32, but be safe)
 const CIPHER_SUITES_MASK: usize = 0x1FF;   // max 511 bytes (plenty for real-world)
-const COMPRESS_MASK: usize = 0xFF;          // max 255 bytes
+const COMPRESS_MASK: usize = 0xFF;         // max 255 bytes
 const EXT_LEN_MASK: usize = 0x7FF;         // max 2047 bytes per extension
 
 /// Read a big-endian u16 from two consecutive bytes in packet memory.
@@ -60,6 +60,10 @@ fn fnv1a_hash_pkt(data: usize, len: usize, data_end: usize) -> u32 {
 /// single map lookup. No domain copying, no wildcard matching, no event
 /// emission. The daemon handles wildcard rules by pre-populating parent
 /// domain hashes in the SNI_POLICY map.
+///
+/// IMPORTANT (TC egress callers): The linear buffer of TC skbs may not
+/// include the TCP payload. Call `ctx.pull_data(512)` and re-read
+/// `ctx.data()`/`ctx.data_end()` before calling this function.
 #[inline(always)]
 pub fn check_sni_block(
     data: usize,

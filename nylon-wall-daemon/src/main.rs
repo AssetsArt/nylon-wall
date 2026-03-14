@@ -141,6 +141,7 @@ async fn main() -> anyhow::Result<()> {
         api::sync_rules_to_ebpf(&state).await;
         api::sync_nat_to_ebpf(&state).await;
         api::sync_zones_to_ebpf(&state).await;
+        api::sync_sni_to_ebpf(&state).await;
     }
 
     // Sync routes to kernel on startup (Linux only)

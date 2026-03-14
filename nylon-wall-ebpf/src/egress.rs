@@ -58,7 +58,18 @@ pub fn process_egress(ctx: &TcContext) -> Result<i32, ()> {
     // SNI filtering: check TLS ClientHello for blocked domains
     let sni_enabled = unsafe { crate::SNI_ENABLED.get(0).copied().unwrap_or(0) };
     if sni_enabled == 1 && pkt.protocol == IPPROTO_TCP && pkt.dst_port == 443 {
+        // TC skb may have TCP payload in non-linear fragments.
+        // Pull first 512 bytes into the linear buffer so we can parse
+        // the TLS ClientHello up to the SNI extension via direct access.
+        let _ = ctx.pull_data(512);
+        // Re-read data pointers — pull_data may reallocate the buffer.
+        let data = ctx.data();
+        let data_end = ctx.data_end();
+
         let ip_base = data + ETH_HDR_LEN;
+        if ip_base + 1 > data_end {
+            return Ok(TC_ACT_OK);
+        }
         let ihl = unsafe { (*((ip_base) as *const u8) & 0x0F) as usize * 4 };
         let transport_base = ip_base + ihl;
 
