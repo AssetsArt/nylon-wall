@@ -13,39 +13,53 @@ use aya_ebpf::{
 };
 
 use nylon_wall_common::conntrack::{ConntrackEntry, ConntrackKey};
-use nylon_wall_common::log::EbpfPacketEvent;
+use nylon_wall_common::log::{EbpfMetrics, EbpfPacketEvent, EbpfRateState};
 use nylon_wall_common::rule::EbpfRule;
+use nylon_wall_common::zone::EbpfPolicyValue;
 
-// === eBPF Maps ===
+// === Firewall Rule Maps ===
 
-/// Ingress firewall rules (indexed array, max 256 rules).
 #[map]
 static INGRESS_RULES: Array<EbpfRule> = Array::with_max_entries(256, 0);
 
-/// Egress firewall rules (indexed array, max 256 rules).
 #[map]
 static EGRESS_RULES: Array<EbpfRule> = Array::with_max_entries(256, 0);
 
-/// Number of active ingress rules (single-element array to communicate count).
 #[map]
 static INGRESS_RULE_COUNT: Array<u32> = Array::with_max_entries(1, 0);
 
-/// Number of active egress rules.
 #[map]
 static EGRESS_RULE_COUNT: Array<u32> = Array::with_max_entries(1, 0);
 
-/// Connection tracking table (LRU, evicts oldest on full).
+// === Connection Tracking ===
+
 #[map]
 static CONNTRACK: LruHashMap<ConntrackKey, ConntrackEntry> =
     LruHashMap::with_max_entries(65536, 0);
 
-/// Packet event log (perf ring buffer to userspace).
+// === Event & Logging ===
+
 #[map]
 static EVENTS: PerfEventArray<EbpfPacketEvent> = PerfEventArray::new(0);
 
-/// Per-rule hit counters (indexed by rule id).
 #[map]
 static RULE_HITS: HashMap<u32, u64> = HashMap::with_max_entries(512, 0);
+
+// === Zone & Policy ===
+
+#[map]
+static ZONE_MAP: HashMap<u32, u32> = HashMap::with_max_entries(64, 0);
+
+#[map]
+static POLICY_MAP: HashMap<u32, EbpfPolicyValue> = HashMap::with_max_entries(256, 0);
+
+// === Metrics & Rate Limiting ===
+
+#[map]
+static METRICS: Array<EbpfMetrics> = Array::with_max_entries(1, 0);
+
+#[map]
+static RATE_LIMIT: HashMap<u32, EbpfRateState> = HashMap::with_max_entries(256, 0);
 
 // === XDP ingress program ===
 
@@ -70,5 +84,5 @@ pub fn nylon_wall_egress(ctx: TcContext) -> i32 {
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+    unsafe { core::hint::unreachable_unchecked() }
 }

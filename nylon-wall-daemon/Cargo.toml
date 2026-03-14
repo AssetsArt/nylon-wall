@@ -28,3 +28,4 @@ socket2.workspace = true
 nylon-wall-common = { workspace = true, features = ["aya-pod"] }
 aya.workspace = true
 aya-log.workspace = true
+libc = "0.2"

@@ -32,6 +32,32 @@ pub struct EbpfPacketEvent {
 #[cfg(feature = "aya-pod")]
 unsafe impl aya::Pod for EbpfPacketEvent {}
 
+/// Global metrics counters for eBPF (single entry in PerCpuArray)
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct EbpfMetrics {
+    pub packets_total: u64,
+    pub bytes_total: u64,
+    pub packets_dropped: u64,
+    pub packets_allowed: u64,
+    pub packets_nat: u64,
+    pub _pad: u64,
+}
+
+/// Per-rule rate limiting state (token bucket)
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct EbpfRateState {
+    pub tokens: u64,
+    pub last_update: u64,
+}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfMetrics {}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfRateState {}
+
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MetricPoint {

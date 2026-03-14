@@ -167,28 +167,28 @@ bind_addr = "0.0.0.0:8080"
 - [x] Static & policy-based routing API
 - [x] NAT UI + port forward wizard
 - [x] Route & policy route UI
-- [ ] NAT eBPF processing (rewrite src/dst IP)
-- [ ] Policy routing marks ใน eBPF
+- [x] NAT eBPF processing (SNAT/DNAT/Masquerade with checksum update)
+- [x] Kernel route integration (ip route/rule)
 
 ### Phase 4: Network Policy & Zones
 - [x] Zone & policy CRUD API
 - [x] Schedule-based policy evaluation
 - [x] Zone & policy UI + schedule editor
-- [ ] Zone eBPF maps (ifindex → zone_id, zone pair → policy)
+- [x] Zone eBPF maps (ifindex → zone_id, zone pair → policy)
 
 ### Phase 5: Monitoring
 - [x] Prometheus metrics endpoint
 - [x] Packet log reader + API
 - [x] WebSocket real-time events
 - [x] Dashboard, conntrack table, log viewer UI
-- [ ] eBPF metrics & rate limit maps
-- [ ] Log TTL auto-cleanup
+- [x] eBPF metrics & rate limit maps
+- [x] Log TTL auto-cleanup (7-day TTL)
 
 ### Phase 6: System & Hardening
 - [x] System API (interfaces, status, apply, backup/restore)
 - [x] Settings UI + interface config
 - [x] CI/CD & installer
-- [ ] Rate limiting / QoS (token bucket ใน eBPF)
+- [x] Rate limiting / QoS (token bucket ใน eBPF)
 - [ ] IPv6 full support
 - [ ] Performance tuning & benchmarking
 

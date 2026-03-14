@@ -55,3 +55,21 @@ pub struct EbpfPolicyKey {
     pub from_zone: u32,
     pub to_zone: u32,
 }
+
+/// eBPF policy value (action for zone pair)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct EbpfPolicyValue {
+    pub action: u8,  // 0=Allow, 1=Drop, 2=Log
+    pub log: u8,
+    pub _pad: [u8; 2],
+}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfZoneMapping {}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfPolicyKey {}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfPolicyValue {}

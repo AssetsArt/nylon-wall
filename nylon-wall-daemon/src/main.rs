@@ -5,6 +5,8 @@ mod dhcp;
 mod ebpf_loader;
 mod events;
 mod metrics;
+mod nat;
+mod route;
 mod rule_engine;
 #[allow(dead_code)] // schedule functions used at runtime via policy engine
 mod schedule;
@@ -83,6 +85,14 @@ async fn main() -> anyhow::Result<()> {
     if _ebpf_loaded {
         info!("Syncing existing rules from DB to eBPF maps...");
         api::sync_rules_to_ebpf(&state).await;
+        api::sync_zones_to_ebpf(&state).await;
+    }
+
+    // Sync routes to kernel on startup (Linux only)
+    #[cfg(target_os = "linux")]
+    {
+        info!("Syncing routes to kernel...");
+        route::sync_routes(&state).await;
     }
 
     // Start perf event reader background task on Linux
@@ -97,6 +107,15 @@ async fn main() -> anyhow::Result<()> {
     #[cfg(not(target_os = "linux"))]
     {
         info!("Not running on Linux - eBPF programs will not be loaded");
+    }
+
+    // Start log TTL cleanup background task
+    {
+        let cleanup_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            log_ttl_cleanup(cleanup_state).await;
+        });
+        info!("Log TTL cleanup task spawned");
     }
 
     // Start DHCP server background task
@@ -133,4 +152,45 @@ async fn main() -> anyhow::Result<()> {
     api::serve(state, listen_addr).await?;
 
     Ok(())
+}
+
+/// Background task to clean up old log entries based on TTL.
+/// Default TTL: 7 days (604800 seconds).
+async fn log_ttl_cleanup(state: Arc<AppState>) {
+    use nylon_wall_common::log::PacketLog;
+
+    let ttl_seconds: i64 = 604800; // 7 days
+    let cleanup_interval = tokio::time::Duration::from_secs(3600); // Run every hour
+
+    loop {
+        tokio::time::sleep(cleanup_interval).await;
+
+        let now = chrono::Utc::now().timestamp();
+        let cutoff = now - ttl_seconds;
+
+        let logs = match state.db.scan_prefix::<PacketLog>("log:").await {
+            Ok(logs) => logs,
+            Err(e) => {
+                tracing::warn!("Log cleanup: failed to scan logs: {}", e);
+                continue;
+            }
+        };
+
+        let mut removed = 0u32;
+        for (key, log) in &logs {
+            if log.timestamp < cutoff {
+                if let Err(e) = state.db.delete(key).await {
+                    tracing::warn!("Log cleanup: failed to delete {}: {}", key, e);
+                }
+                if let Err(e) = state.db.remove_from_index("log:", key).await {
+                    tracing::warn!("Log cleanup: failed to update index: {}", e);
+                }
+                removed += 1;
+            }
+        }
+
+        if removed > 0 {
+            info!("Log TTL cleanup: removed {} expired entries", removed);
+        }
+    }
 }

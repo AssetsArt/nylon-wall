@@ -46,8 +46,8 @@
 ## Phase 2: Core Firewall
 
 ### eBPF Programs
-- [x] `nylon-wall-ebpf/src/ingress.rs` - XDP ingress filter + rule evaluation
-- [x] `nylon-wall-ebpf/src/egress.rs` - TC egress filter + rule evaluation
+- [x] `nylon-wall-ebpf/src/ingress.rs` - XDP ingress filter + rule evaluation + NAT + zone + rate limiting
+- [x] `nylon-wall-ebpf/src/egress.rs` - TC egress filter + rule evaluation + NAT + zone + rate limiting
 - [x] eBPF maps: `ingress_rules`, `egress_rules` (Array)
 - [x] eBPF maps: `conntrack` (LRU HashMap)
 - [x] eBPF maps: `events` (PerfEventArray)
@@ -83,16 +83,17 @@
 ## Phase 3: NAT & Routing
 
 ### eBPF Programs
-- [ ] `nylon-wall-ebpf/src/nat.rs` - NAT processing (SNAT/DNAT/Masquerade)
-- [ ] eBPF maps: `nat_table` (HashMap)
-- [ ] SNAT - rewrite source IP/port on egress
-- [ ] DNAT - rewrite dest IP/port on ingress
-- [ ] Masquerade - auto SNAT to outgoing interface IP
-- [ ] eBPF maps: `route_marks` (HashMap) - policy routing marks
+- [x] `nylon-wall-ebpf/src/nat.rs` - NAT processing (SNAT/DNAT/Masquerade)
+- [x] eBPF maps: `nat_table` (Array)
+- [x] SNAT - rewrite source IP/port on egress
+- [x] DNAT - rewrite dest IP/port on ingress
+- [x] Masquerade - auto SNAT to outgoing interface IP
+- [x] eBPF maps: `nat_conntrack` (LRU HashMap) - NAT state for return traffic
+- [x] eBPF maps: `masquerade_ip` (Array) - outgoing interface IP
 
 ### Daemon - NAT & Route
-- [ ] `nylon-wall-daemon/src/nat.rs` - NAT CRUD + compile to eBPF maps
-- [ ] `nylon-wall-daemon/src/route.rs` - Route management + kernel route integration
+- [x] `nylon-wall-daemon/src/nat.rs` - NAT CRUD + compile to eBPF maps
+- [x] `nylon-wall-daemon/src/route.rs` - Route management + kernel route integration
 - [x] API: `GET /api/v1/nat` - List NAT entries
 - [x] API: `POST /api/v1/nat` - Create NAT entry
 - [x] API: `PUT /api/v1/nat/{id}` - Update NAT entry
@@ -116,9 +117,9 @@
 ## Phase 4: Network Policy & Zones
 
 ### eBPF Programs
-- [ ] eBPF maps: `zone_map` (HashMap - ifindex -> zone_id)
-- [ ] eBPF maps: `policy_map` (HashMap - zone pair -> policy rules)
-- [ ] Zone-based packet evaluation ใน XDP/TC programs
+- [x] eBPF maps: `zone_map` (HashMap - ifindex -> zone_id)
+- [x] eBPF maps: `policy_map` (HashMap - zone pair -> policy rules)
+- [x] Zone-based packet evaluation ใน XDP/TC programs
 
 ### Daemon - Policy Engine
 - [x] API: `GET /api/v1/zones` - List zones
@@ -143,9 +144,9 @@
 ## Phase 5: Monitoring & Polish
 
 ### eBPF Programs
-- [ ] eBPF maps: `metrics_map` (PerCpuArray - counters)
-- [ ] eBPF maps: `rate_limit` (PerCpuArray - token bucket)
-- [ ] Perf event logging สำหรับ matched packets
+- [x] eBPF maps: `metrics` (Array - global counters)
+- [x] eBPF maps: `rate_limit` (HashMap - per-rule token bucket)
+- [x] Perf event logging สำหรับ matched packets
 
 ### Daemon - Monitoring
 - [x] `nylon-wall-daemon/src/metrics.rs` - Prometheus metrics endpoint (`/metrics`)
@@ -153,7 +154,7 @@
 - [x] API: `GET /api/v1/conntrack` - List active connections
 - [x] API: `GET /api/v1/logs` - Query packet logs (with filters)
 - [x] API: `WS /api/v1/ws/events` - WebSocket real-time event stream
-- [ ] Log TTL auto-cleanup via SlateDB TTL
+- [x] Log TTL auto-cleanup (background task, 7-day TTL, hourly sweep)
 
 ### Dioxus UI - Monitoring
 - [x] `nylon-wall-ui/src/components/dashboard.rs` - Dashboard (stat cards, recent rules)
@@ -172,7 +173,7 @@
 - [x] API: `POST /api/v1/system/apply` - Apply pending configuration
 - [x] API: `POST /api/v1/system/backup` - Export full config from SlateDB
 - [x] API: `POST /api/v1/system/restore` - Import config to SlateDB
-- [ ] Rate limiting / QoS (token bucket in eBPF)
+- [x] Rate limiting / QoS (token bucket in eBPF)
 - [ ] IPv6 full support (all eBPF programs + rules)
 - [ ] Performance tuning & benchmarking
 

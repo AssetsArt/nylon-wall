@@ -39,7 +39,7 @@ futures-util = "0.3"
 dhcproto = "0.14"
 rand = "0.10"
 socket2 = { version = "0.6", features = ["all"] }
-aya = "0.13"
+aya = { version = "0.13", features = ["async_tokio"] }
 aya-log = "0.2"
 
 # UI

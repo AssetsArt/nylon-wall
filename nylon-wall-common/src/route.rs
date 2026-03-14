@@ -37,3 +37,6 @@ pub struct EbpfRouteMark {
     pub _pad: [u8; 3],
     pub fwmark: u32,
 }
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfRouteMark {}

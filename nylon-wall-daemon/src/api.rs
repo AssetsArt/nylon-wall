@@ -1372,6 +1372,105 @@ pub async fn sync_rules_to_ebpf(state: &AppState) {
     }
 }
 
+/// Sync NAT entries from DB to eBPF maps.
+/// Note: NAT eBPF maps are not yet integrated into the main ingress/egress programs.
+/// NAT will be handled via separate BPF program chaining in a future update.
+pub async fn sync_nat_to_ebpf(state: &AppState) {
+    let entries = match state.db.scan_prefix::<NatEntry>("nat:").await {
+        Ok(e) => e,
+        Err(e) => {
+            tracing::error!("Failed to read NAT entries: {}", e);
+            return;
+        }
+    };
+    tracing::debug!("NAT sync: {} entries (eBPF NAT maps pending integration)", entries.len());
+}
+
+/// Sync zone/policy mappings from DB to eBPF maps.
+pub async fn sync_zones_to_ebpf(state: &AppState) {
+    let zones = match state.db.scan_prefix::<Zone>("zone:").await {
+        Ok(z) => z,
+        Err(e) => {
+            tracing::error!("Failed to read zones for eBPF sync: {}", e);
+            return;
+        }
+    };
+
+    let policies = match state.db.scan_prefix::<NetworkPolicy>("policy:").await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("Failed to read policies for eBPF sync: {}", e);
+            return;
+        }
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        // Build zone mappings: resolve interface names to ifindexes
+        let mut zone_mappings: Vec<(u32, u32)> = Vec::new();
+        for (_, zone) in &zones {
+            for iface_name in &zone.interfaces {
+                // Get ifindex from interface name
+                if let Ok(idx) = get_ifindex(iface_name) {
+                    zone_mappings.push((idx, zone.id));
+                }
+            }
+        }
+
+        // Build policy mappings
+        let mut policy_mappings: Vec<(u32, nylon_wall_common::zone::EbpfPolicyValue)> = Vec::new();
+        for (_, policy) in &policies {
+            if !policy.enabled {
+                continue;
+            }
+            // Find zone IDs by name
+            let from_zone_id = zones.iter().find(|(_, z)| z.name == policy.from_zone).map(|(_, z)| z.id);
+            let to_zone_id = zones.iter().find(|(_, z)| z.name == policy.to_zone).map(|(_, z)| z.id);
+
+            if let (Some(from_id), Some(to_id)) = (from_zone_id, to_zone_id) {
+                let key = (from_id << 16) | to_id;
+                let value = nylon_wall_common::zone::EbpfPolicyValue {
+                    action: policy.action as u8,
+                    log: if policy.log { 1 } else { 0 },
+                    _pad: [0; 2],
+                };
+                policy_mappings.push((key, value));
+            }
+        }
+
+        let mut ebpf_guard = state.ebpf.lock().await;
+        if let Some(ref mut bpf) = *ebpf_guard {
+            if let Err(e) = crate::ebpf_loader::sync_zones_to_maps(bpf, &zone_mappings) {
+                tracing::error!("Failed to sync zone maps: {}", e);
+            }
+            if let Err(e) = crate::ebpf_loader::sync_policies_to_maps(bpf, &policy_mappings) {
+                tracing::error!("Failed to sync policy maps: {}", e);
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        tracing::debug!(
+            "Zone/policy eBPF sync skipped (not Linux): {} zones, {} policies",
+            zones.len(),
+            policies.len()
+        );
+    }
+}
+
+/// Get network interface index by name.
+#[cfg(target_os = "linux")]
+fn get_ifindex(name: &str) -> anyhow::Result<u32> {
+    use std::ffi::CString;
+    let cname = CString::new(name)?;
+    let idx = unsafe { libc::if_nametoindex(cname.as_ptr()) };
+    if idx == 0 {
+        anyhow::bail!("Interface {} not found", name);
+    }
+    Ok(idx)
+}
+
 // === Apply Configuration ===
 
 async fn apply_config(

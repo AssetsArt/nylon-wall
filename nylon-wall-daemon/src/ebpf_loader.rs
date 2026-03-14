@@ -6,6 +6,7 @@ mod linux {
     use aya::maps::Array;
     use aya::programs::{SchedClassifier, Xdp, XdpFlags};
     use nylon_wall_common::rule::EbpfRule;
+    use nylon_wall_common::zone::EbpfPolicyValue;
     use tracing::info;
 
     const EBPF_OBJ_PATH: &str = "/usr/lib/nylon-wall/nylon-wall-ebpf";
@@ -26,8 +27,9 @@ mod linux {
 
         let mut bpf = Ebpf::load(&data)?;
 
+        // Initialize eBPF logger (optional — warns if AYA_LOGS map doesn't exist)
         if let Err(e) = aya_log::EbpfLogger::init(&mut bpf) {
-            tracing::warn!("Failed to initialize eBPF logger: {}", e);
+            tracing::debug!("eBPF logger not available: {}", e);
         }
 
         let iface = std::env::var("NYLON_WALL_IFACE").unwrap_or_else(|_| "eth0".to_string());
@@ -155,6 +157,61 @@ mod linux {
         for (i, rule) in rules.iter().enumerate() {
             array.set(i as u32, *rule, 0)?;
         }
+        Ok(())
+    }
+
+    /// Sync zone mappings (ifindex → zone_id) to eBPF map.
+    pub fn sync_zones_to_maps(
+        bpf: &mut Ebpf,
+        zone_mappings: &[(u32, u32)], // (ifindex, zone_id)
+    ) -> anyhow::Result<()> {
+        let map = bpf
+            .map_mut("ZONE_MAP")
+            .ok_or_else(|| anyhow::anyhow!("ZONE_MAP map not found"))?;
+        let mut hashmap: aya::maps::HashMap<_, u32, u32> =
+            aya::maps::HashMap::try_from(map)?;
+
+        // Clear existing entries (best-effort)
+        let existing_keys: Vec<u32> = hashmap
+            .keys()
+            .filter_map(|k| k.ok())
+            .collect();
+        for key in existing_keys {
+            let _ = hashmap.remove(&key);
+        }
+
+        for (ifindex, zone_id) in zone_mappings {
+            hashmap.insert(ifindex, zone_id, 0)?;
+        }
+
+        info!("Synced {} zone mappings to eBPF maps", zone_mappings.len());
+        Ok(())
+    }
+
+    /// Sync zone policies to eBPF map.
+    pub fn sync_policies_to_maps(
+        bpf: &mut Ebpf,
+        policies: &[(u32, EbpfPolicyValue)], // (key = from_zone<<16|to_zone, value)
+    ) -> anyhow::Result<()> {
+        let map = bpf
+            .map_mut("POLICY_MAP")
+            .ok_or_else(|| anyhow::anyhow!("POLICY_MAP map not found"))?;
+        let mut hashmap: aya::maps::HashMap<_, u32, EbpfPolicyValue> =
+            aya::maps::HashMap::try_from(map)?;
+
+        let existing_keys: Vec<u32> = hashmap
+            .keys()
+            .filter_map(|k| k.ok())
+            .collect();
+        for key in existing_keys {
+            let _ = hashmap.remove(&key);
+        }
+
+        for (key, value) in policies {
+            hashmap.insert(key, value, 0)?;
+        }
+
+        info!("Synced {} zone policies to eBPF maps", policies.len());
         Ok(())
     }
 

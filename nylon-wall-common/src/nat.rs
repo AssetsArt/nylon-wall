@@ -30,6 +30,24 @@ pub struct EbpfNatEntry {
     pub translate_port_end: u16,
 }
 
+/// NAT connection state for tracking active translations (return traffic)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct EbpfNatState {
+    pub original_ip: u32,
+    pub original_port: u16,
+    pub translated_ip: u32,
+    pub translated_port: u16,
+    pub nat_type: u8,
+    pub _pad: [u8; 3],
+}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfNatEntry {}
+
+#[cfg(feature = "aya-pod")]
+unsafe impl aya::Pod for EbpfNatState {}
+
 /// Full NAT entry for userspace
 #[cfg(feature = "std")]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
