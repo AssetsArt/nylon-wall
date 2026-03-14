@@ -29,6 +29,10 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY nylon-wall-common/ nylon-wall-common/
 COPY nylon-wall-daemon/ nylon-wall-daemon/
+COPY nylon-wall-ui/Cargo.toml nylon-wall-ui/Cargo.toml
+COPY nylon-wall-ui/src/ nylon-wall-ui/src/
+COPY nylon-wall-ui/Dioxus.toml nylon-wall-ui/Dioxus.toml
+RUN mkdir -p nylon-wall-ui/assets
 
 # Daemon in debug for faster dev builds
 RUN cargo build -p nylon-wall-daemon
