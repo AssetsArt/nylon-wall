@@ -4,7 +4,6 @@
   <img src="https://img.shields.io/badge/UI-Dioxus%200.7-blue" alt="Dioxus">
   <img src="https://img.shields.io/github/license/AssetsArt/nylon-wall" alt="License">
   <img src="https://img.shields.io/github/v/release/AssetsArt/nylon-wall" alt="Release">
-  <a href="https://github.com/AssetsArt/nylon-wall/actions/workflows/ci.yml"><img src="https://github.com/AssetsArt/nylon-wall/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 # Nylon Wall
