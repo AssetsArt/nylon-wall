@@ -45,7 +45,7 @@ jobs:
       - name: Build eBPF programs
         run: |
           cargo +nightly build \
-            -p nylon-wall-ebpf \
+            --manifest-path nylon-wall-ebpf/Cargo.toml \
             --target bpfel-unknown-none \
             -Z build-std=core \
             --release
