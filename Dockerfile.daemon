@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/target/debug/nylon-wall-daemon /usr/local/bin/nylon-wall-daemon
 COPY --from=ebpf-builder /app/nylon-wall-ebpf/target/bpfel-unknown-none/release/nylon-wall-ebpf /usr/lib/nylon-wall/nylon-wall-ebpf
 
-EXPOSE 9450
+EXPOSE 9450 8888
 
 ENV RUST_LOG=nylon_wall_daemon=info
 
