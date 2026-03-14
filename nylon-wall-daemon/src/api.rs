@@ -1089,6 +1089,13 @@ async fn create_dhcp_pool(
 ) -> Result<(StatusCode, Json<DhcpPool>), (StatusCode, String)> {
     require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<DhcpPool>("dhcp_pool:").await.map_err(internal_error)?;
+    // Prevent duplicate interface
+    if existing.iter().any(|(_, p)| p.interface == pool.interface) {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("A DHCP pool already exists for interface '{}'", pool.interface),
+        ));
+    }
     let next_id = existing.iter().map(|(_, p)| p.id).max().unwrap_or(0) + 1;
     pool.id = next_id;
     let key = format!("dhcp_pool:{}", pool.id);
@@ -1115,6 +1122,14 @@ async fn update_dhcp_pool(
 ) -> AppResult<DhcpPool> {
     require_no_pending(&state).await?;
     pool.id = id;
+    // Prevent duplicate interface (exclude self)
+    let existing = state.db.scan_prefix::<DhcpPool>("dhcp_pool:").await.map_err(internal_error)?;
+    if existing.iter().any(|(_, p)| p.interface == pool.interface && p.id != id) {
+        return Err((
+            StatusCode::CONFLICT,
+            format!("A DHCP pool already exists for interface '{}'", pool.interface),
+        ));
+    }
     let key = format!("dhcp_pool:{}", id);
     let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &pool).await.map_err(internal_error)?;
