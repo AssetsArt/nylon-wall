@@ -1,4 +1,4 @@
-use super::ConfirmModal;
+use super::{ConfirmModal, use_change_guard, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -60,6 +60,7 @@ pub fn Policies() -> Element {
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete_zone = use_signal(|| None::<(u32, String)>);
     let mut confirm_delete_policy = use_signal(|| None::<(u32, String)>);
+    let mut guard = use_change_guard();
 
     rsx! {
         div {
@@ -85,7 +86,10 @@ pub fn Policies() -> Element {
                         confirm_delete_zone.set(None);
                         spawn(async move {
                             match api_client::delete(&format!("/zones/{}", del_id)).await {
-                                Ok(_) => zones.restart(),
+                                Ok(_) => {
+                                    zones.restart();
+                                    notify_change(&mut guard);
+                                }
                                 Err(e) => error_msg.set(Some(e)),
                             }
                         });
@@ -104,7 +108,10 @@ pub fn Policies() -> Element {
                         confirm_delete_policy.set(None);
                         spawn(async move {
                             match api_client::delete(&format!("/policies/{}", del_id)).await {
-                                Ok(_) => policies.restart(),
+                                Ok(_) => {
+                                    policies.restart();
+                                    notify_change(&mut guard);
+                                }
                                 Err(e) => error_msg.set(Some(e)),
                             }
                         });
@@ -142,6 +149,7 @@ pub fn Policies() -> Element {
                         on_saved: move |_| {
                             editing_zone.set(None);
                             zones.restart();
+                            notify_change(&mut guard);
                         }
                     }
                 }
@@ -246,6 +254,7 @@ pub fn Policies() -> Element {
                         on_saved: move |_| {
                             editing_policy.set(None);
                             policies.restart();
+                            notify_change(&mut guard);
                         }
                     }
                 }

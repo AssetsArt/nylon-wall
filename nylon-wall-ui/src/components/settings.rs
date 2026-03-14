@@ -1,4 +1,4 @@
-use super::ConfirmModal;
+use super::{ConfirmModal, use_change_guard, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -22,6 +22,7 @@ pub fn Settings() -> Element {
     let interfaces = use_resource(|| async {
         api_client::get::<Vec<NetworkInterface>>("/system/interfaces").await
     });
+    let mut guard = use_change_guard();
     let mut backup_msg = use_signal(|| None::<(bool, String)>);
     let mut importing = use_signal(|| false);
     let mut confirm_import = use_signal(|| None::<String>);
@@ -65,6 +66,7 @@ pub fn Settings() -> Element {
                                             Ok(resp) => {
                                                 let status = resp.get("status").and_then(|s| s.as_str()).unwrap_or("done");
                                                 backup_msg.set(Some((true, format!("Configuration restored ({})", status))));
+                                                notify_change(&mut guard);
                                             }
                                             Err(e) => backup_msg.set(Some((false, format!("Restore failed: {}", e)))),
                                         }

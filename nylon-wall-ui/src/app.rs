@@ -3,6 +3,7 @@ use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
 
 use crate::components::*;
+use crate::components::change_guard;
 use crate::theme::{self, Theme};
 
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
@@ -45,6 +46,7 @@ pub fn App() -> Element {
 fn Layout() -> Element {
     let route: Route = use_route();
     let theme = theme::use_theme_init();
+    let _change_guard = change_guard::use_change_guard_provider();
 
     let nav_cls = |target: &Route| {
         if *target == route {
@@ -159,6 +161,9 @@ fn Layout() -> Element {
                     Outlet::<Route> {}
                 }
             }
+
+            // Change confirmation modal (auto-revert countdown)
+            ChangeTimerModal {}
         }
     }
 }

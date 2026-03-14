@@ -1,4 +1,5 @@
 mod api;
+mod changeset;
 mod db;
 #[allow(dead_code)] // DHCP internals used only on Linux
 mod dhcp;
@@ -25,6 +26,7 @@ pub struct AppState {
     pub ebpf: tokio::sync::Mutex<Option<aya::Ebpf>>,
     pub ebpf_loaded: std::sync::atomic::AtomicBool,
     pub dhcp_pool_notify: tokio::sync::watch::Sender<()>,
+    pub pending_changes: tokio::sync::Mutex<Option<changeset::PendingChange>>,
 }
 
 #[tokio::main]
@@ -78,6 +80,7 @@ async fn main() -> anyhow::Result<()> {
         ebpf: tokio::sync::Mutex::new(ebpf_handle),
         ebpf_loaded: std::sync::atomic::AtomicBool::new(_ebpf_loaded),
         dhcp_pool_notify: dhcp_pool_tx,
+        pending_changes: tokio::sync::Mutex::new(None),
     });
 
     // Sync existing rules from DB to eBPF maps on startup
@@ -145,6 +148,10 @@ async fn main() -> anyhow::Result<()> {
         }
         info!("DHCP client tasks spawned");
     }
+
+    // Start auto-revert background task
+    changeset::spawn_auto_revert_task(Arc::clone(&state));
+    info!("Change auto-revert task spawned ({}s timeout)", changeset::REVERT_TIMEOUT_SECS);
 
     // Start API server
     let listen_addr = "0.0.0.0:9450";

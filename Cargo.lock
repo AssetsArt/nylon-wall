@@ -3797,6 +3797,7 @@ dependencies = [
  "dioxus",
  "dioxus-free-icons",
  "gloo-net",
+ "gloo-timers",
  "nylon-wall-common",
  "serde",
  "serde_json",

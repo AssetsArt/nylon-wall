@@ -1,4 +1,5 @@
 pub mod ui;
+pub mod change_guard;
 mod confirm;
 mod connections;
 mod dashboard;
@@ -10,6 +11,7 @@ mod routes;
 mod rules;
 mod settings;
 
+pub use change_guard::{ChangeTimerModal, use_change_guard, notify_change};
 pub use confirm::ConfirmModal;
 pub use connections::Connections;
 pub use dashboard::Dashboard;

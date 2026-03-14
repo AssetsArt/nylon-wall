@@ -1,4 +1,4 @@
-use super::ConfirmModal;
+use super::{ConfirmModal, use_change_guard, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -140,6 +140,7 @@ fn DhcpPoolsTab() -> Element {
     let mut editing = use_signal(|| None::<(bool, DhcpPool)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
+    let mut guard = use_change_guard();
 
     rsx! {
         div {
@@ -183,6 +184,7 @@ fn DhcpPoolsTab() -> Element {
                     on_saved: move |_| {
                         editing.set(None);
                         pools.restart();
+                        notify_change(&mut guard);
                     }
                 }
             }
@@ -197,7 +199,7 @@ fn DhcpPoolsTab() -> Element {
                         confirm_delete.set(None);
                         spawn(async move {
                             match api_client::delete(&format!("/dhcp/pools/{}", del_id)).await {
-                                Ok(_) => pools.restart(),
+                                Ok(_) => { pools.restart(); notify_change(&mut guard); },
                                 Err(e) => error_msg.set(Some(e)),
                             }
                         });
@@ -238,7 +240,7 @@ fn DhcpPoolsTab() -> Element {
                                                     onclick: move |_| {
                                                         spawn(async move {
                                                             match api_client::post::<(), serde_json::Value>(&format!("/dhcp/pools/{}/toggle", pool_id), &()).await {
-                                                                Ok(_) => pools.restart(),
+                                                                Ok(_) => { pools.restart(); notify_change(&mut guard); },
                                                                 Err(e) => error_msg.set(Some(e)),
                                                             }
                                                         });
@@ -365,6 +367,7 @@ fn DhcpLeasesTab() -> Element {
     let mut editing_reservation = use_signal(|| None::<(bool, DhcpReservation)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_release = use_signal(|| None::<String>); // MAC to release
+    let mut guard = use_change_guard();
 
     rsx! {
         div {
@@ -393,7 +396,7 @@ fn DhcpLeasesTab() -> Element {
                         confirm_release.set(None);
                         spawn(async move {
                             match api_client::delete(&format!("/dhcp/leases/{}", mac_val)).await {
-                                Ok(_) => leases.restart(),
+                                Ok(_) => { leases.restart(); notify_change(&mut guard); },
                                 Err(e) => error_msg.set(Some(e)),
                             }
                         });
@@ -455,7 +458,7 @@ fn DhcpLeasesTab() -> Element {
                                                                 let mac_val = mac.clone();
                                                                 spawn(async move {
                                                                     match api_client::post::<(), serde_json::Value>(&format!("/dhcp/leases/{}/reserve", mac_val), &()).await {
-                                                                        Ok(_) => { leases.restart(); reservations.restart(); },
+                                                                        Ok(_) => { leases.restart(); reservations.restart(); notify_change(&mut guard); },
                                                                         Err(e) => error_msg.set(Some(e)),
                                                                     }
                                                                 });
@@ -541,6 +544,7 @@ fn DhcpLeasesTab() -> Element {
                     on_saved: move |_| {
                         editing_reservation.set(None);
                         reservations.restart();
+                        notify_change(&mut guard);
                     }
                 }
             }
@@ -583,7 +587,7 @@ fn DhcpLeasesTab() -> Element {
                                                         onclick: move |_| {
                                                             spawn(async move {
                                                                 match api_client::delete(&format!("/dhcp/reservations/{}", id)).await {
-                                                                    Ok(_) => reservations.restart(),
+                                                                    Ok(_) => { reservations.restart(); notify_change(&mut guard); },
                                                                     Err(e) => error_msg.set(Some(e)),
                                                                 }
                                                             });
@@ -656,6 +660,7 @@ fn DhcpClientTab() -> Element {
     });
     let mut editing = use_signal(|| None::<(bool, DhcpClientConfig)>);
     let mut error_msg = use_signal(|| None::<String>);
+    let mut guard = use_change_guard();
 
     rsx! {
         div {
@@ -697,6 +702,7 @@ fn DhcpClientTab() -> Element {
                         editing.set(None);
                         clients.restart();
                         statuses.restart();
+                        notify_change(&mut guard);
                     }
                 }
             }
@@ -791,7 +797,7 @@ fn DhcpClientTab() -> Element {
                                                     onclick: move |_| {
                                                         spawn(async move {
                                                             match api_client::post::<(), serde_json::Value>(&format!("/dhcp/clients/{}/toggle", config_id), &()).await {
-                                                                Ok(_) => { clients.restart(); statuses.restart(); },
+                                                                Ok(_) => { clients.restart(); statuses.restart(); notify_change(&mut guard); },
                                                                 Err(e) => error_msg.set(Some(e)),
                                                             }
                                                         });
@@ -804,7 +810,7 @@ fn DhcpClientTab() -> Element {
                                                         let iface_val = iface.clone();
                                                         spawn(async move {
                                                             match api_client::post::<(), serde_json::Value>(&format!("/dhcp/clients/{}/renew", iface_val), &()).await {
-                                                                Ok(_) => statuses.restart(),
+                                                                Ok(_) => { statuses.restart(); notify_change(&mut guard); },
                                                                 Err(e) => error_msg.set(Some(e)),
                                                             }
                                                         });
@@ -817,7 +823,7 @@ fn DhcpClientTab() -> Element {
                                                         let iface_val = iface2.clone();
                                                         spawn(async move {
                                                             match api_client::post::<(), serde_json::Value>(&format!("/dhcp/clients/{}/release", iface_val), &()).await {
-                                                                Ok(_) => statuses.restart(),
+                                                                Ok(_) => { statuses.restart(); notify_change(&mut guard); },
                                                                 Err(e) => error_msg.set(Some(e)),
                                                             }
                                                         });
@@ -833,7 +839,7 @@ fn DhcpClientTab() -> Element {
                                                         onclick: move |_| {
                                                             spawn(async move {
                                                                 match api_client::delete(&format!("/dhcp/clients/{}", config_id)).await {
-                                                                    Ok(_) => { clients.restart(); statuses.restart(); },
+                                                                    Ok(_) => { clients.restart(); statuses.restart(); notify_change(&mut guard); },
                                                                     Err(e) => error_msg.set(Some(e)),
                                                                 }
                                                             });

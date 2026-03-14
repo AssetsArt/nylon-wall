@@ -10,6 +10,7 @@ nylon-wall-common = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["std"] }
 serde_json.workspace = true
 gloo-net.workspace = true
+gloo-timers.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 

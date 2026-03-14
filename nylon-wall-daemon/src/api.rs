@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 
 use crate::AppState;
+use crate::changeset;
 use crate::events::WsEvent;
 
 type AppResult<T> = Result<Json<T>, (StatusCode, String)>;
@@ -35,6 +36,62 @@ fn internal_error(e: impl std::fmt::Display) -> (StatusCode, String) {
 /// Helper to broadcast an event (best-effort, ignores errors if no subscribers).
 fn broadcast(state: &AppState, event: WsEvent) {
     let _ = state.event_tx.send(event);
+}
+
+// === Change Management ===
+
+#[derive(Serialize)]
+struct PendingChangeStatus {
+    pending: bool,
+    description: String,
+    remaining_secs: u64,
+}
+
+async fn changes_pending(State(state): State<Arc<AppState>>) -> Json<PendingChangeStatus> {
+    match changeset::status(&state.pending_changes).await {
+        Some((desc, remaining)) => Json(PendingChangeStatus {
+            pending: true,
+            description: desc,
+            remaining_secs: remaining,
+        }),
+        None => Json(PendingChangeStatus {
+            pending: false,
+            description: String::new(),
+            remaining_secs: 0,
+        }),
+    }
+}
+
+async fn changes_confirm(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let confirmed = changeset::confirm(&state.pending_changes).await;
+    tracing::info!("Confirmed pending change");
+    Json(serde_json::json!({ "confirmed": confirmed }))
+}
+
+async fn changes_revert(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let reverted = changeset::rollback(&state).await.map_err(internal_error)?;
+    tracing::warn!("Manually reverted pending change");
+    // Re-sync eBPF after revert
+    sync_rules_to_ebpf(&state).await;
+    sync_zones_to_ebpf(&state).await;
+    broadcast(&state, WsEvent::ChangesReverted { count: if reverted { 1 } else { 0 } });
+    Ok(Json(serde_json::json!({ "reverted": reverted })))
+}
+
+/// Check if there's already a pending change. If so, reject the mutation.
+async fn require_no_pending(state: &AppState) -> Result<(), (StatusCode, String)> {
+    if changeset::has_pending(&state.pending_changes).await {
+        return Err((
+            StatusCode::CONFLICT,
+            "A change is pending confirmation. Confirm or revert before making another change."
+                .to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -176,6 +233,10 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
             "/api/v1/dhcp/clients/{interface}/renew",
             post(renew_dhcp_client),
         )
+        // Change management (auto-revert)
+        .route("/api/v1/changes/pending", get(changes_pending))
+        .route("/api/v1/changes/confirm", post(changes_confirm))
+        .route("/api/v1/changes/revert", post(changes_revert))
         // Prometheus metrics
         .route("/metrics", get(prometheus_metrics))
         .layer(CorsLayer::permissive())
@@ -236,6 +297,7 @@ async fn create_rule(
     State(state): State<Arc<AppState>>,
     Json(mut rule): Json<FirewallRule>,
 ) -> Result<(StatusCode, Json<FirewallRule>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<FirewallRule>("rule:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
     rule.id = next_id;
@@ -246,6 +308,7 @@ async fn create_rule(
         .add_to_index("rule:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "rule:", &key, format!("Created rule '{}'", rule.name)).await;
     broadcast(
         &state,
         WsEvent::RuleCreated(serde_json::to_value(&rule).unwrap()),
@@ -275,9 +338,14 @@ async fn update_rule(
     Path(id): Path<u32>,
     Json(mut rule): Json<FirewallRule>,
 ) -> AppResult<FirewallRule> {
+    require_no_pending(&state).await?;
     rule.id = id;
     let key = format!("rule:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &rule).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated rule #{}", id)).await;
+    }
     state
         .db
         .add_to_index("rule:", &key)
@@ -295,13 +363,18 @@ async fn delete_rule(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("rule:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("rule:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "rule:", &key, old_val, format!("Deleted rule #{}", id)).await;
+    }
     broadcast(&state, WsEvent::RuleDeleted { id });
     sync_rules_to_ebpf(&state).await;
     Ok(StatusCode::NO_CONTENT)
@@ -311,7 +384,9 @@ async fn toggle_rule(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> AppResult<FirewallRule> {
+    require_no_pending(&state).await?;
     let key = format!("rule:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     let mut rule: FirewallRule = state
         .db
         .get(&key)
@@ -320,6 +395,9 @@ async fn toggle_rule(
         .ok_or((StatusCode::NOT_FOUND, "Rule not found".to_string()))?;
     rule.enabled = !rule.enabled;
     state.db.put(&key, &rule).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled rule #{}", id)).await;
+    }
     broadcast(
         &state,
         WsEvent::RuleToggled(serde_json::to_value(&rule).unwrap()),
@@ -343,6 +421,7 @@ async fn create_nat(
     State(state): State<Arc<AppState>>,
     Json(mut entry): Json<NatEntry>,
 ) -> Result<(StatusCode, Json<NatEntry>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<NatEntry>("nat:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, e)| e.id).max().unwrap_or(0) + 1;
     entry.id = next_id;
@@ -353,6 +432,7 @@ async fn create_nat(
         .add_to_index("nat:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "nat:", &key, format!("Created NAT entry #{}", entry.id)).await;
     broadcast(
         &state,
         WsEvent::NatCreated(serde_json::to_value(&entry).unwrap()),
@@ -365,9 +445,14 @@ async fn update_nat(
     Path(id): Path<u32>,
     Json(mut entry): Json<NatEntry>,
 ) -> AppResult<NatEntry> {
+    require_no_pending(&state).await?;
     entry.id = id;
     let key = format!("nat:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &entry).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated NAT entry #{}", id)).await;
+    }
     state
         .db
         .add_to_index("nat:", &key)
@@ -384,13 +469,18 @@ async fn delete_nat(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("nat:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("nat:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "nat:", &key, old_val, format!("Deleted NAT entry #{}", id)).await;
+    }
     broadcast(&state, WsEvent::NatDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
@@ -410,6 +500,7 @@ async fn create_route(
     State(state): State<Arc<AppState>>,
     Json(mut route): Json<Route>,
 ) -> Result<(StatusCode, Json<Route>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<Route>("route:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
     route.id = next_id;
@@ -420,6 +511,7 @@ async fn create_route(
         .add_to_index("route:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "route:", &key, format!("Created route #{}", route.id)).await;
     broadcast(
         &state,
         WsEvent::RouteCreated(serde_json::to_value(&route).unwrap()),
@@ -432,9 +524,14 @@ async fn update_route(
     Path(id): Path<u32>,
     Json(mut route): Json<Route>,
 ) -> AppResult<Route> {
+    require_no_pending(&state).await?;
     route.id = id;
     let key = format!("route:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &route).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated route #{}", id)).await;
+    }
     state
         .db
         .add_to_index("route:", &key)
@@ -451,13 +548,18 @@ async fn delete_route(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("route:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("route:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "route:", &key, old_val, format!("Deleted route #{}", id)).await;
+    }
     broadcast(&state, WsEvent::RouteDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
@@ -477,6 +579,7 @@ async fn create_policy_route(
     State(state): State<Arc<AppState>>,
     Json(mut route): Json<PolicyRoute>,
 ) -> Result<(StatusCode, Json<PolicyRoute>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<PolicyRoute>("policy_route:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
     route.id = next_id;
@@ -487,6 +590,7 @@ async fn create_policy_route(
         .add_to_index("policy_route:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "policy_route:", &key, format!("Created policy route #{}", route.id)).await;
     Ok((StatusCode::CREATED, Json(route)))
 }
 
@@ -495,9 +599,14 @@ async fn update_policy_route(
     Path(id): Path<u32>,
     Json(mut route): Json<PolicyRoute>,
 ) -> AppResult<PolicyRoute> {
+    require_no_pending(&state).await?;
     route.id = id;
     let key = format!("policy_route:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &route).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated policy route #{}", id)).await;
+    }
     state
         .db
         .add_to_index("policy_route:", &key)
@@ -510,13 +619,18 @@ async fn delete_policy_route(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("policy_route:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("policy_route:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "policy_route:", &key, old_val, format!("Deleted policy route #{}", id)).await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -535,6 +649,7 @@ async fn create_zone(
     State(state): State<Arc<AppState>>,
     Json(mut zone): Json<Zone>,
 ) -> Result<(StatusCode, Json<Zone>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<Zone>("zone:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, z)| z.id).max().unwrap_or(0) + 1;
     zone.id = next_id;
@@ -545,6 +660,7 @@ async fn create_zone(
         .add_to_index("zone:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "zone:", &key, format!("Created zone '{}'", zone.name)).await;
     broadcast(
         &state,
         WsEvent::ZoneCreated(serde_json::to_value(&zone).unwrap()),
@@ -557,9 +673,14 @@ async fn update_zone(
     Path(id): Path<u32>,
     Json(mut zone): Json<Zone>,
 ) -> AppResult<Zone> {
+    require_no_pending(&state).await?;
     zone.id = id;
     let key = format!("zone:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &zone).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated zone #{}", id)).await;
+    }
     state
         .db
         .add_to_index("zone:", &key)
@@ -576,13 +697,18 @@ async fn delete_zone(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("zone:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("zone:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "zone:", &key, old_val, format!("Deleted zone #{}", id)).await;
+    }
     broadcast(&state, WsEvent::ZoneDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
@@ -602,6 +728,7 @@ async fn create_policy(
     State(state): State<Arc<AppState>>,
     Json(mut policy): Json<NetworkPolicy>,
 ) -> Result<(StatusCode, Json<NetworkPolicy>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<NetworkPolicy>("policy:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, p)| p.id).max().unwrap_or(0) + 1;
     policy.id = next_id;
@@ -612,6 +739,7 @@ async fn create_policy(
         .add_to_index("policy:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "policy:", &key, format!("Created policy '{}'", policy.name)).await;
     broadcast(
         &state,
         WsEvent::PolicyCreated(serde_json::to_value(&policy).unwrap()),
@@ -624,9 +752,14 @@ async fn update_policy(
     Path(id): Path<u32>,
     Json(mut policy): Json<NetworkPolicy>,
 ) -> AppResult<NetworkPolicy> {
+    require_no_pending(&state).await?;
     policy.id = id;
     let key = format!("policy:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &policy).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated policy #{}", id)).await;
+    }
     state
         .db
         .add_to_index("policy:", &key)
@@ -643,13 +776,18 @@ async fn delete_policy(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("policy:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("policy:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "policy:", &key, old_val, format!("Deleted policy #{}", id)).await;
+    }
     broadcast(&state, WsEvent::PolicyDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
@@ -691,6 +829,7 @@ async fn reorder_rules(
     State(state): State<Arc<AppState>>,
     Json(req): Json<ReorderRequest>,
 ) -> Result<Json<Vec<FirewallRule>>, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let mut updated_rules = Vec::new();
     for (index, rule_id) in req.rule_ids.iter().enumerate() {
         let key = format!("rule:{}", rule_id);
@@ -906,6 +1045,7 @@ async fn create_dhcp_pool(
     State(state): State<Arc<AppState>>,
     Json(mut pool): Json<DhcpPool>,
 ) -> Result<(StatusCode, Json<DhcpPool>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<DhcpPool>("dhcp_pool:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, p)| p.id).max().unwrap_or(0) + 1;
     pool.id = next_id;
@@ -916,6 +1056,7 @@ async fn create_dhcp_pool(
         .add_to_index("dhcp_pool:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "dhcp_pool:", &key, format!("Created DHCP pool #{}", pool.id)).await;
     broadcast(
         &state,
         WsEvent::DhcpPoolCreated(serde_json::to_value(&pool).unwrap()),
@@ -930,9 +1071,14 @@ async fn update_dhcp_pool(
     Path(id): Path<u32>,
     Json(mut pool): Json<DhcpPool>,
 ) -> AppResult<DhcpPool> {
+    require_no_pending(&state).await?;
     pool.id = id;
     let key = format!("dhcp_pool:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &pool).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated DHCP pool #{}", id)).await;
+    }
     state
         .db
         .add_to_index("dhcp_pool:", &key)
@@ -950,13 +1096,18 @@ async fn delete_dhcp_pool(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("dhcp_pool:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("dhcp_pool:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "dhcp_pool:", &key, old_val, format!("Deleted DHCP pool #{}", id)).await;
+    }
     broadcast(&state, WsEvent::DhcpPoolDeleted { id });
     let _ = state.dhcp_pool_notify.send(());
     Ok(StatusCode::NO_CONTENT)
@@ -966,7 +1117,9 @@ async fn toggle_dhcp_pool(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> AppResult<DhcpPool> {
+    require_no_pending(&state).await?;
     let key = format!("dhcp_pool:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     let mut pool: DhcpPool = state
         .db
         .get(&key)
@@ -975,6 +1128,9 @@ async fn toggle_dhcp_pool(
         .ok_or((StatusCode::NOT_FOUND, "DHCP pool not found".to_string()))?;
     pool.enabled = !pool.enabled;
     state.db.put(&key, &pool).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled DHCP pool #{}", id)).await;
+    }
     broadcast(
         &state,
         WsEvent::DhcpPoolUpdated(serde_json::to_value(&pool).unwrap()),
@@ -1086,6 +1242,7 @@ async fn create_dhcp_reservation(
     State(state): State<Arc<AppState>>,
     Json(mut reservation): Json<DhcpReservation>,
 ) -> Result<(StatusCode, Json<DhcpReservation>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<DhcpReservation>("dhcp_reservation:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
     reservation.id = next_id;
@@ -1100,6 +1257,7 @@ async fn create_dhcp_reservation(
         .add_to_index("dhcp_reservation:", &key)
         .await
         .map_err(internal_error)?;
+    changeset::record_create(&state.pending_changes, "dhcp_reservation:", &key, format!("Created DHCP reservation #{}", reservation.id)).await;
     broadcast(
         &state,
         WsEvent::DhcpReservationCreated(serde_json::to_value(&reservation).unwrap()),
@@ -1112,8 +1270,10 @@ async fn update_dhcp_reservation(
     Path(id): Path<u32>,
     Json(mut reservation): Json<DhcpReservation>,
 ) -> AppResult<DhcpReservation> {
+    require_no_pending(&state).await?;
     reservation.id = id;
     let key = format!("dhcp_reservation:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state
         .db
         .put(&key, &reservation)
@@ -1124,6 +1284,9 @@ async fn update_dhcp_reservation(
         .add_to_index("dhcp_reservation:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated DHCP reservation #{}", id)).await;
+    }
     Ok(Json(reservation))
 }
 
@@ -1131,13 +1294,18 @@ async fn delete_dhcp_reservation(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("dhcp_reservation:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("dhcp_reservation:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "dhcp_reservation:", &key, old_val, format!("Deleted DHCP reservation #{}", id)).await;
+    }
     broadcast(&state, WsEvent::DhcpReservationDeleted { id });
     Ok(StatusCode::NO_CONTENT)
 }
@@ -1157,6 +1325,7 @@ async fn create_dhcp_client(
     State(state): State<Arc<AppState>>,
     Json(mut config): Json<DhcpClientConfig>,
 ) -> Result<(StatusCode, Json<DhcpClientConfig>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let existing = state.db.scan_prefix::<DhcpClientConfig>("dhcp_client:").await.map_err(internal_error)?;
     let next_id = existing.iter().map(|(_, c)| c.id).max().unwrap_or(0) + 1;
     config.id = next_id;
@@ -1167,6 +1336,8 @@ async fn create_dhcp_client(
         .add_to_index("dhcp_client:", &key)
         .await
         .map_err(internal_error)?;
+
+    changeset::record_create(&state.pending_changes, "dhcp_client:", &key, format!("Created DHCP client #{}", config.id)).await;
 
     // If enabled, spawn a client task
     if config.enabled {
@@ -1185,9 +1356,14 @@ async fn update_dhcp_client(
     Path(id): Path<u32>,
     Json(mut config): Json<DhcpClientConfig>,
 ) -> AppResult<DhcpClientConfig> {
+    require_no_pending(&state).await?;
     config.id = id;
     let key = format!("dhcp_client:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.put(&key, &config).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Updated DHCP client #{}", id)).await;
+    }
     state
         .db
         .add_to_index("dhcp_client:", &key)
@@ -1200,13 +1376,18 @@ async fn delete_dhcp_client(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
     let key = format!("dhcp_client:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     state.db.delete(&key).await.map_err(internal_error)?;
     state
         .db
         .remove_from_index("dhcp_client:", &key)
         .await
         .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state.pending_changes, "dhcp_client:", &key, old_val, format!("Deleted DHCP client #{}", id)).await;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1214,7 +1395,9 @@ async fn toggle_dhcp_client(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u32>,
 ) -> AppResult<DhcpClientConfig> {
+    require_no_pending(&state).await?;
     let key = format!("dhcp_client:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
     let mut config: DhcpClientConfig =
         state.db.get(&key).await.map_err(internal_error)?.ok_or((
             StatusCode::NOT_FOUND,
@@ -1222,6 +1405,9 @@ async fn toggle_dhcp_client(
         ))?;
     config.enabled = !config.enabled;
     state.db.put(&key, &config).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state.pending_changes, &key, old_val, format!("Toggled DHCP client #{}", id)).await;
+    }
 
     // If enabling, spawn client task
     if config.enabled {

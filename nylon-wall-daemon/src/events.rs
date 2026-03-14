@@ -56,4 +56,8 @@ pub enum WsEvent {
     DhcpReservationDeleted { id: u32 },
     #[serde(rename = "dhcp_client_status_changed")]
     DhcpClientStatusChanged(serde_json::Value),
+
+    // Change management
+    #[serde(rename = "changes_reverted")]
+    ChangesReverted { count: usize },
 }

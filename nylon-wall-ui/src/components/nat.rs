@@ -1,4 +1,4 @@
-use super::ConfirmModal;
+use super::{ConfirmModal, use_change_guard, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -13,6 +13,7 @@ pub fn Nat() -> Element {
     let mut show_wizard = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
+    let mut guard = use_change_guard();
 
     rsx! {
         div {
@@ -71,6 +72,7 @@ pub fn Nat() -> Element {
                     on_saved: move |_| {
                         show_wizard.set(false);
                         entries.restart();
+                        notify_change(&mut guard);
                     }
                 }
             }
@@ -83,6 +85,7 @@ pub fn Nat() -> Element {
                     on_saved: move |_| {
                         editing.set(None);
                         entries.restart();
+                        notify_change(&mut guard);
                     }
                 }
             }
@@ -97,7 +100,10 @@ pub fn Nat() -> Element {
                         confirm_delete.set(None);
                         spawn(async move {
                             match api_client::delete(&format!("/nat/{}", del_id)).await {
-                                Ok(_) => entries.restart(),
+                                Ok(_) => {
+                                    entries.restart();
+                                    notify_change(&mut guard);
+                                }
                                 Err(e) => error_msg.set(Some(e)),
                             }
                         });

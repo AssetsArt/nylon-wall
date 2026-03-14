@@ -135,6 +135,24 @@ impl Database {
         Ok(())
     }
 
+    /// Get a value as raw JSON (for storing undo snapshots).
+    pub async fn get_raw(&self, key: &str) -> Result<Option<serde_json::Value>, DbError> {
+        match self.inner.get(key.as_bytes()).await? {
+            Some(value) => {
+                let item = serde_json::from_slice::<serde_json::Value>(&value)?;
+                Ok(Some(item))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Put a raw JSON value (for restoring undo snapshots).
+    pub async fn put_raw(&self, key: &str, value: &serde_json::Value) -> Result<(), DbError> {
+        let bytes = serde_json::to_vec(value)?;
+        let _ = self.inner.put(key.as_bytes(), bytes.as_slice()).await?;
+        Ok(())
+    }
+
     pub async fn close(&self) -> Result<(), DbError> {
         self.inner.close().await?;
         Ok(())

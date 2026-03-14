@@ -46,3 +46,4 @@ aya-log = "0.2"
 dioxus = "0.7"
 dioxus-free-icons = { version = "0.10", features = ["lucide"] }
 gloo-net = { version = "0.6", features = ["http"] }
+gloo-timers = { version = "0.3", features = ["futures"] }

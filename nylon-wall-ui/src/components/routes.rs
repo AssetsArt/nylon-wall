@@ -1,4 +1,4 @@
-use super::ConfirmModal;
+use super::{ConfirmModal, use_change_guard, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -10,6 +10,7 @@ pub fn Routes() -> Element {
     let mut editing = use_signal(|| None::<(bool, Route)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
+    let mut guard = use_change_guard();
 
     rsx! {
         div { class: "pb-6",
@@ -47,6 +48,7 @@ pub fn Routes() -> Element {
                     on_saved: move |_| {
                         editing.set(None);
                         routes.restart();
+                        notify_change(&mut guard);
                     }
                 }
             }
@@ -61,7 +63,10 @@ pub fn Routes() -> Element {
                         confirm_delete.set(None);
                         spawn(async move {
                             match api_client::delete(&format!("/routes/{}", del_id)).await {
-                                Ok(_) => routes.restart(),
+                                Ok(_) => {
+                                    routes.restart();
+                                    notify_change(&mut guard);
+                                }
                                 Err(e) => error_msg.set(Some(e)),
                             }
                         });
@@ -245,6 +250,7 @@ pub fn PolicyRoutes() -> Element {
     let mut editing = use_signal(|| None::<(bool, PolicyRoute)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
+    let mut guard = use_change_guard();
 
     rsx! {
         div { class: "mt-8",
@@ -282,6 +288,7 @@ pub fn PolicyRoutes() -> Element {
                     on_saved: move |_| {
                         editing.set(None);
                         policy_routes.restart();
+                        notify_change(&mut guard);
                     }
                 }
             }
@@ -296,7 +303,10 @@ pub fn PolicyRoutes() -> Element {
                         confirm_delete.set(None);
                         spawn(async move {
                             match api_client::delete(&format!("/routes/policy/{}", del_id)).await {
-                                Ok(_) => policy_routes.restart(),
+                                Ok(_) => {
+                                    policy_routes.restart();
+                                    notify_change(&mut guard);
+                                }
                                 Err(e) => error_msg.set(Some(e)),
                             }
                         });
