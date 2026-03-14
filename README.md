@@ -3,7 +3,7 @@
   <img src="https://img.shields.io/badge/eBPF-XDP%20%2B%20TC-blueviolet" alt="eBPF">
   <img src="https://img.shields.io/badge/UI-Dioxus%200.7-blue" alt="Dioxus">
   <img src="https://img.shields.io/badge/License-MIT-blue" alt="License">
-  <img src="https://img.shields.io/github/v/release/AssetsArt/nylon-wall" alt="Release">
+  <a href="https://github.com/AssetsArt/nylon-wall/releases/latest"><img src="https://img.shields.io/github/v/release/AssetsArt/nylon-wall?display_name=tag" alt="Release"></a>
 </p>
 
 # Nylon Wall
