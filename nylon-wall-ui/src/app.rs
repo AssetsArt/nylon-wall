@@ -69,7 +69,7 @@ fn Layout() -> Element {
                 div { class: "px-4 py-5 border-b border-slate-800/60",
                     div { class: "flex items-center gap-2.5",
                         div { class: "w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20",
-                            Icon { width: 16, height: 16, icon: LdShield, class: "nw-logo-icon" }
+                            Icon { width: 20, height: 20, icon: LdShield, class: "nw-logo-icon" }
                         }
                         div {
                             p { class: "text-sm font-bold text-white leading-tight", "Nylon Wall" }

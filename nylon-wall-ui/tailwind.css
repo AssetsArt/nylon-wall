@@ -10,3 +10,7 @@
 button {
   @apply cursor-pointer;
 }
+
+.nw-logo-icon {
+  color: #fff;
+}
