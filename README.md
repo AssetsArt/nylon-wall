@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/rust-2024_edition-orange?logo=rust" alt="Rust">
   <img src="https://img.shields.io/badge/eBPF-XDP%20%2B%20TC-blueviolet" alt="eBPF">
   <img src="https://img.shields.io/badge/UI-Dioxus%200.7-blue" alt="Dioxus">
-  <img src="https://img.shields.io/github/license/AssetsArt/nylon-wall" alt="License">
+  <img src="https://img.shields.io/badge/License-MIT-blue" alt="License">
   <img src="https://img.shields.io/github/v/release/AssetsArt/nylon-wall" alt="Release">
 </p>
 
