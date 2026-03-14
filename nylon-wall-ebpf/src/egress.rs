@@ -25,13 +25,19 @@ pub fn process_egress(ctx: &TcContext) -> Result<i32, ()> {
 
     let now = unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() };
 
-    // Apply NAT before firewall rules:
+    // Save original packet info for conntrack BEFORE NAT modifies the packet.
+    // This is critical: ingress stores conntrack with post-DNAT addresses
+    // (e.g. client:port → server:9450), so egress must look up conntrack
+    // with pre-reverse-NAT addresses (server:9450 → client:port) to match.
+    let orig_pkt = pkt;
+
+    // Apply NAT:
     // 1. Reverse DNAT for return traffic (undo inbound DNAT)
     // 2. SNAT/Masquerade for outbound traffic
     let _nat_applied = crate::nat::try_reverse_nat_egress(data, data_end, &pkt)
         || crate::nat::try_snat_egress(data, data_end, &pkt);
 
-    // Re-parse packet if NAT was applied (IP/port may have changed)
+    // Re-parse packet if NAT was applied (for firewall rules and wire output)
     let pkt = if _nat_applied {
         match parse_packet(data, data_end) {
             Some(p) => p,
@@ -49,15 +55,17 @@ pub fn process_egress(ctx: &TcContext) -> Result<i32, ()> {
         }
     }
 
+    // Use ORIGINAL (pre-reverse-NAT) addresses for conntrack keys so they
+    // match the ingress post-DNAT conntrack entries.
     let fwd_key = ConntrackKey {
-        src_ip: pkt.src_ip, dst_ip: pkt.dst_ip,
-        src_port: pkt.src_port, dst_port: pkt.dst_port,
-        protocol: pkt.protocol, _pad: [0; 3],
+        src_ip: orig_pkt.src_ip, dst_ip: orig_pkt.dst_ip,
+        src_port: orig_pkt.src_port, dst_port: orig_pkt.dst_port,
+        protocol: orig_pkt.protocol, _pad: [0; 3],
     };
     let rev_key = ConntrackKey {
-        src_ip: pkt.dst_ip, dst_ip: pkt.src_ip,
-        src_port: pkt.dst_port, dst_port: pkt.src_port,
-        protocol: pkt.protocol, _pad: [0; 3],
+        src_ip: orig_pkt.dst_ip, dst_ip: orig_pkt.src_ip,
+        src_port: orig_pkt.dst_port, dst_port: orig_pkt.src_port,
+        protocol: orig_pkt.protocol, _pad: [0; 3],
     };
 
     // Check conntrack: if reply to established inbound connection, pass
