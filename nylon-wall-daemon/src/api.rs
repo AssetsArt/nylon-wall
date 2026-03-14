@@ -17,6 +17,8 @@ use nylon_wall_common::dhcp::{
 };
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::nat::NatEntry;
+#[cfg(target_os = "linux")]
+use nylon_wall_common::nat::NatType;
 use nylon_wall_common::route::{PolicyRoute, Route};
 use nylon_wall_common::rule::FirewallRule;
 use nylon_wall_common::zone::{NetworkPolicy, Zone};
@@ -1574,9 +1576,13 @@ pub async fn sync_nat_to_ebpf(state: &AppState) {
 
     #[cfg(target_os = "linux")]
     {
-        let ebpf_entries: Vec<_> = entries
+        let enabled_entries: Vec<_> = entries
             .iter()
             .filter(|(_, e)| e.enabled)
+            .collect();
+
+        let ebpf_entries: Vec<_> = enabled_entries
+            .iter()
             .map(|(_, e)| crate::nat::nat_entry_to_ebpf(e))
             .collect();
 
@@ -1587,6 +1593,30 @@ pub async fn sync_nat_to_ebpf(state: &AppState) {
             }
         } else {
             tracing::debug!("NAT sync: eBPF not loaded ({} entries skipped)", ebpf_entries.len());
+        }
+
+        // Enable route_localnet on interfaces that have DNAT rules targeting
+        // loopback addresses (127.0.0.0/8), otherwise the kernel drops the
+        // rewritten packets as martians.
+        let default_iface = std::env::var("NYLON_WALL_IFACE").unwrap_or_else(|_| "eth0".to_string());
+        let localnet_ifaces: Vec<String> = enabled_entries
+            .iter()
+            .filter(|(_, e)| {
+                e.nat_type == NatType::DNAT
+                    && e.translate_ip
+                        .as_deref()
+                        .map(|ip| ip.starts_with("127."))
+                        .unwrap_or(false)
+            })
+            .map(|(_, e)| {
+                e.in_interface.clone().unwrap_or_else(|| default_iface.clone())
+            })
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if !localnet_ifaces.is_empty() {
+            crate::ebpf_loader::ensure_route_localnet(&localnet_ifaces);
         }
     }
 

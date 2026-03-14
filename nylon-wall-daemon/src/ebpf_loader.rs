@@ -237,6 +237,20 @@ mod linux {
         Ok(())
     }
 
+    /// Enable `route_localnet` on interfaces that have DNAT rules targeting
+    /// loopback addresses (127.0.0.0/8). Without this, the kernel drops packets
+    /// that arrive on non-loopback interfaces with a loopback destination after
+    /// XDP DNAT rewrite.
+    pub fn ensure_route_localnet(interfaces: &[String]) {
+        for iface in interfaces {
+            let path = format!("/proc/sys/net/ipv4/conf/{}/route_localnet", iface);
+            match std::fs::write(&path, "1") {
+                Ok(_) => info!("Enabled route_localnet on {} for loopback DNAT", iface),
+                Err(e) => tracing::warn!("Failed to enable route_localnet on {}: {}", iface, e),
+            }
+        }
+    }
+
     fn set_map_u32(bpf: &mut Ebpf, map_name: &str, index: u32, value: u32) -> anyhow::Result<()> {
         let map = bpf
             .map_mut(map_name)
