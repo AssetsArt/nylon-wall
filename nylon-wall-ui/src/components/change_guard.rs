@@ -61,11 +61,17 @@ pub fn ChangeTimerModal() -> Element {
     let mut reverting = use_signal(|| false);
     let mut reverted = use_signal(|| false);
     let mut was_active = use_signal(|| false);
+    let mut first_poll = use_signal(|| true);
 
     // Poll daemon every second for real pending state
     use_future(move || async move {
         loop {
-            gloo_timers::future::TimeoutFuture::new(1_000).await;
+            if first_poll() {
+                gloo_timers::future::TimeoutFuture::new(200).await;
+                first_poll.set(false);
+            } else {
+                gloo_timers::future::TimeoutFuture::new(3_000).await;
+            }
 
             // Don't poll while confirming/reverting or showing result
             if confirming() || reverting() || reverted() {
