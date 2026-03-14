@@ -242,19 +242,31 @@
 
 ---
 
-## Phase 8: VLAN Management
+## Phase 8: Virtual Networking (VLAN + Bridge)
 
-### nylon-wall-common - VLAN Types
-- [ ] `nylon-wall-common/src/vlan.rs` - `VlanInterface` struct (id, parent, vlan_id, name, ip_config)
-- [ ] `nylon-wall-common/src/lib.rs` - Add `pub mod vlan`
+### nylon-wall-common - Virtual Network Types
+- [ ] `nylon-wall-common/src/vnet.rs` - `VlanConfig`, `BridgeConfig` structs
+  - `VlanConfig`: id, parent_interface, vlan_id (1-4094), ip_address (optional CIDR), enabled
+  - `BridgeConfig`: id, name, ports (Vec<String> — interfaces/VLANs to attach), ip_address (optional CIDR), stp_enabled, enabled
+- [ ] `nylon-wall-common/src/lib.rs` - Add `pub mod vnet`
 
 ### nylon-wall-daemon - VLAN Module
-- [ ] `nylon-wall-daemon/src/vlan.rs` - Create/delete VLAN sub-interfaces via netlink/`ip link`
-- [ ] VLAN creation: `ip link add link {parent} name {parent}.{vlan_id} type vlan id {vlan_id}`
-- [ ] VLAN deletion: `ip link delete {parent}.{vlan_id}`
-- [ ] IP assignment: `ip addr add {cidr} dev {parent}.{vlan_id}`
-- [ ] Auto bring-up: `ip link set {parent}.{vlan_id} up`
-- [ ] Persist VLAN config in SlateDB (recreate on daemon restart)
+- [ ] `nylon-wall-daemon/src/vnet/mod.rs` - Module declarations
+- [ ] `nylon-wall-daemon/src/vnet/vlan.rs` - Create/delete VLAN sub-interfaces
+  - Create: `ip link add link {parent} name {parent}.{vlan_id} type vlan id {vlan_id}`
+  - Delete: `ip link delete {parent}.{vlan_id}`
+  - IP assign: `ip addr add {cidr} dev {parent}.{vlan_id}`
+  - Bring up: `ip link set {parent}.{vlan_id} up`
+- [ ] `nylon-wall-daemon/src/vnet/bridge.rs` - Create/delete Linux bridges
+  - Create: `ip link add name {name} type bridge`
+  - Add port: `ip link set {port} master {bridge}`
+  - Remove port: `ip link set {port} nomaster`
+  - Delete: `ip link delete {bridge}`
+  - STP: `ip link set {bridge} type bridge stp_state {0|1}`
+  - IP assign: `ip addr add {cidr} dev {bridge}`
+  - Bring up: `ip link set {bridge} up`
+- [ ] Persist configs in SlateDB (recreate VLANs + bridges on daemon restart)
+- [ ] Startup order: create VLANs first, then bridges (bridges may reference VLAN interfaces)
 
 ### Daemon - VLAN API
 - [ ] API: `GET /api/v1/vlans` - List VLAN interfaces
@@ -264,19 +276,35 @@
 - [ ] Validation: prevent duplicate VLAN ID on same parent interface
 - [ ] Validation: parent interface must exist
 
-### Dioxus UI - VLAN
-- [ ] `nylon-wall-ui/src/components/vlans.rs` - VLAN table + create/edit form
-- [ ] Form fields: Parent Interface (select), VLAN ID (1-4094), IP Address (CIDR, optional)
-- [ ] Show created VLANs in interface selects across all pages (rules, NAT, DHCP, routes)
-- [ ] `nylon-wall-ui/src/components/mod.rs` - Export `Vlans` component
-- [ ] `nylon-wall-ui/src/app.rs` - Add `/vlans` route + sidebar nav link
+### Daemon - Bridge API
+- [ ] API: `GET /api/v1/bridges` - List bridges
+- [ ] API: `POST /api/v1/bridges` - Create bridge
+- [ ] API: `PUT /api/v1/bridges/{id}` - Update bridge (ports, IP, STP)
+- [ ] API: `DELETE /api/v1/bridges/{id}` - Delete bridge
+- [ ] API: `POST /api/v1/bridges/{id}/ports` - Add port to bridge
+- [ ] API: `DELETE /api/v1/bridges/{id}/ports/{interface}` - Remove port from bridge
+- [ ] Validation: port interface must exist (physical, VLAN, or other virtual)
+- [ ] Validation: port not already in another bridge
+
+### Dioxus UI - Virtual Networking
+- [ ] `nylon-wall-ui/src/components/vnet.rs` - Virtual Networking page with 2-tab layout
+- [ ] Tab: VLANs - VLAN table + create/edit form
+  - Form fields: Parent Interface (select), VLAN ID (1-4094), IP Address (CIDR, optional)
+- [ ] Tab: Bridges - Bridge cards/table + create/edit form
+  - Form fields: Bridge Name, IP Address (CIDR, optional), STP toggle
+  - Port management: multi-select of available interfaces (physical + VLANs)
+  - Visual: show attached ports as tags/chips on bridge card
+- [ ] Show VLANs + bridges in interface selects across all pages (rules, NAT, DHCP, routes)
+- [ ] `nylon-wall-ui/src/components/mod.rs` - Export `Vnet` component
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/vnet` route + sidebar nav link (icon: LdNetwork)
 
 ### Integration
-- [ ] Backup/restore includes VLAN configs
-- [ ] Dashboard: VLAN count in system status
-- [ ] DHCP pool can use VLAN sub-interface (e.g. `eth0.10`)
-- [ ] Firewall rules can target VLAN sub-interface
-- [ ] ทดสอบ VLAN creation + DHCP pool on VLAN interface
+- [ ] Backup/restore includes VLAN + bridge configs
+- [ ] Dashboard: VLAN + bridge count in system status
+- [ ] DHCP pool can use VLAN/bridge interface (e.g. `eth0.10`, `br-lan`)
+- [ ] Firewall rules can target VLAN/bridge interface
+- [ ] Delete protection: warn if VLAN/bridge is used by rules, NAT, DHCP, routes
+- [ ] ทดสอบ VLAN creation + bridge + DHCP pool on bridge interface
 
 ---
 
