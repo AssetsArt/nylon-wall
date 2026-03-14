@@ -217,6 +217,7 @@ fn RuleForm(is_edit: bool, editing: FirewallRule, on_saved: EventHandler<()>) ->
         _ => "Allow".to_string(),
     });
     let mut priority = use_signal(|| editing.priority.to_string());
+    let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -230,7 +231,7 @@ fn RuleForm(is_edit: bool, editing: FirewallRule, on_saved: EventHandler<()>) ->
                 "Egress" => Direction::Egress,
                 _ => Direction::Ingress,
             },
-            enabled: true,
+            enabled: if is_edit { editing_enabled } else { true },
             src_ip: if src_ip().is_empty() {
                 None
             } else {

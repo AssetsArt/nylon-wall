@@ -404,6 +404,7 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
     let mut dst_network = use_signal(|| editing.dst_network.clone().unwrap_or_default());
     let mut translate_ip = use_signal(|| editing.translate_ip.clone().unwrap_or_default());
     let mut out_interface = use_signal(|| editing.out_interface.clone().unwrap_or_default());
+    let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -416,7 +417,7 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
                 "Masquerade" => NatType::Masquerade,
                 _ => NatType::SNAT,
             },
-            enabled: true,
+            enabled: if is_edit { editing_enabled } else { true },
             src_network: if src_network().is_empty() {
                 None
             } else {

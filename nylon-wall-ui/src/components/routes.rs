@@ -151,6 +151,7 @@ fn RouteForm(is_edit: bool, editing: Route, on_saved: EventHandler<()>) -> Eleme
     let mut gateway = use_signal(|| editing.gateway.clone().unwrap_or_default());
     let mut interface = use_signal(|| editing.interface.clone());
     let mut metric = use_signal(|| editing.metric.to_string());
+    let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -167,7 +168,7 @@ fn RouteForm(is_edit: bool, editing: Route, on_saved: EventHandler<()>) -> Eleme
             interface: interface(),
             metric: metric().parse().unwrap_or(100),
             table: 254,
-            enabled: true,
+            enabled: if is_edit { editing_enabled } else { true },
         };
         spawn(async move {
             let result = if is_edit {

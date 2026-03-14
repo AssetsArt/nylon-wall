@@ -461,6 +461,7 @@ fn PolicyForm(is_edit: bool, editing: NetworkPolicy, on_saved: EventHandler<()>)
     });
     let mut priority = use_signal(|| editing.priority.to_string());
     let mut log = use_signal(|| editing.log);
+    let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -511,7 +512,7 @@ fn PolicyForm(is_edit: bool, editing: NetworkPolicy, on_saved: EventHandler<()>)
         let policy = NetworkPolicy {
             id: edit_id,
             name: name(),
-            enabled: true,
+            enabled: if is_edit { editing_enabled } else { true },
             from_zone: from_zone(),
             to_zone: to_zone(),
             src_ip: None,

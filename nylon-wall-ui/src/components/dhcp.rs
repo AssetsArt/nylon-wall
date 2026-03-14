@@ -910,6 +910,7 @@ fn DhcpPoolForm(is_edit: bool, editing: DhcpPool, on_saved: EventHandler<()>) ->
     let mut dns_servers = use_signal(|| editing.dns_servers.join(", "));
     let mut domain_name = use_signal(|| editing.domain_name.clone().unwrap_or_default());
     let mut lease_time = use_signal(|| editing.lease_time.to_string());
+    let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -940,7 +941,7 @@ fn DhcpPoolForm(is_edit: bool, editing: DhcpPool, on_saved: EventHandler<()>) ->
         let pool = DhcpPool {
             id: edit_id,
             interface: interface(),
-            enabled: true,
+            enabled: if is_edit { editing_enabled } else { true },
             subnet: subnet(),
             range_start: range_start(),
             range_end: range_end(),
@@ -1175,6 +1176,7 @@ fn DhcpClientForm(is_edit: bool, editing: DhcpClientConfig, on_saved: EventHandl
     let edit_id = editing.id;
     let mut interface = use_signal(|| editing.interface.clone());
     let mut hostname = use_signal(|| editing.hostname.clone().unwrap_or_default());
+    let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
@@ -1189,7 +1191,7 @@ fn DhcpClientForm(is_edit: bool, editing: DhcpClientConfig, on_saved: EventHandl
         let config = DhcpClientConfig {
             id: edit_id,
             interface: interface(),
-            enabled: true,
+            enabled: if is_edit { editing_enabled } else { true },
             hostname: if hostname().is_empty() {
                 None
             } else {
