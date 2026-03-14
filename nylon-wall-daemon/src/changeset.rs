@@ -1,12 +1,26 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::Mutex;
 use tokio::time::{Duration, Instant};
 use tracing::{info, warn};
 
 use crate::AppState;
 
-/// How long to wait before auto-reverting (seconds).
-pub const REVERT_TIMEOUT_SECS: u64 = 15;
+/// Default revert timeout (seconds). Overridden by config.toml `[changes].revert_timeout_secs`.
+const DEFAULT_REVERT_TIMEOUT_SECS: u64 = 6;
+
+/// Runtime-configurable revert timeout, set once at startup.
+static REVERT_TIMEOUT: AtomicU64 = AtomicU64::new(DEFAULT_REVERT_TIMEOUT_SECS);
+
+/// Set the revert timeout (call once at startup from config).
+pub fn set_revert_timeout(secs: u64) {
+    REVERT_TIMEOUT.store(secs, Ordering::Relaxed);
+}
+
+/// Get the current revert timeout in seconds.
+pub fn revert_timeout_secs() -> u64 {
+    REVERT_TIMEOUT.load(Ordering::Relaxed)
+}
 
 /// Describes how to undo a single change.
 #[derive(Debug, Clone)]
@@ -40,7 +54,7 @@ impl PendingChange {
         Self {
             action,
             description,
-            deadline: Instant::now() + Duration::from_secs(REVERT_TIMEOUT_SECS),
+            deadline: Instant::now() + Duration::from_secs(revert_timeout_secs()),
         }
     }
 

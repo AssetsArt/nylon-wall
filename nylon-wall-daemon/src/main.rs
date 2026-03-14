@@ -17,6 +17,50 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
+/// Minimal config struct for values we read from config.toml.
+#[derive(serde::Deserialize, Default)]
+struct FileConfig {
+    #[serde(default)]
+    changes: ChangesConfig,
+}
+
+#[derive(serde::Deserialize)]
+struct ChangesConfig {
+    #[serde(default = "default_revert_timeout")]
+    revert_timeout_secs: u64,
+}
+
+impl Default for ChangesConfig {
+    fn default() -> Self {
+        Self { revert_timeout_secs: default_revert_timeout() }
+    }
+}
+
+fn default_revert_timeout() -> u64 { 6 }
+
+/// Try to load config from standard paths, fall back to defaults.
+fn load_config() -> FileConfig {
+    let paths = [
+        "config.toml",
+        "/etc/nylon-wall/config.toml",
+    ];
+    for path in &paths {
+        if let Ok(contents) = std::fs::read_to_string(path) {
+            match toml::from_str::<FileConfig>(&contents) {
+                Ok(cfg) => {
+                    info!("Loaded config from {}", path);
+                    return cfg;
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to parse {}: {}", path, e);
+                }
+            }
+        }
+    }
+    info!("No config file found, using defaults");
+    FileConfig::default()
+}
+
 pub struct AppState {
     pub db: db::Database,
     pub rule_engine: tokio::sync::RwLock<rule_engine::RuleEngine>,
@@ -39,6 +83,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     info!("Starting Nylon Wall daemon...");
+
+    // Load configuration
+    let config = load_config();
+    changeset::set_revert_timeout(config.changes.revert_timeout_secs);
 
     // Initialize database
     let db = db::Database::open("/tmp/nylon-wall/slatedb").await?;
@@ -152,7 +200,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Start auto-revert background task
     changeset::spawn_auto_revert_task(Arc::clone(&state));
-    info!("Change auto-revert task spawned ({}s timeout)", changeset::REVERT_TIMEOUT_SECS);
+    info!("Change auto-revert task spawned ({}s timeout)", changeset::revert_timeout_secs());
 
     // Start API server
     let listen_addr = "0.0.0.0:9450";

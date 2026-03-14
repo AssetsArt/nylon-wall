@@ -5,7 +5,8 @@ use serde::Deserialize;
 
 use crate::api_client;
 
-const COUNTDOWN_SECS: u32 = 15;
+/// Fallback timeout if the daemon hasn't responded yet.
+const DEFAULT_TOTAL_SECS: u32 = 6;
 
 #[derive(Deserialize)]
 struct PendingStatus {
@@ -13,13 +14,19 @@ struct PendingStatus {
     #[allow(dead_code)]
     description: String,
     remaining_secs: u64,
+    #[serde(default = "default_total")]
+    total_secs: u64,
 }
+
+fn default_total() -> u64 { DEFAULT_TOTAL_SECS as u64 }
 
 /// State for pending change tracking.
 #[derive(Clone, Copy, PartialEq)]
 pub struct ChangeGuardState {
     pub active: bool,
     pub remaining: u32,
+    /// Total countdown duration (from daemon config).
+    pub total: u32,
 }
 
 impl Default for ChangeGuardState {
@@ -27,6 +34,7 @@ impl Default for ChangeGuardState {
         Self {
             active: false,
             remaining: 0,
+            total: DEFAULT_TOTAL_SECS,
         }
     }
 }
@@ -45,14 +53,16 @@ pub fn use_change_guard() -> Signal<ChangeGuardState> {
 
 /// Notify that a change was made. Shows the countdown modal.
 pub fn notify_change(guard: &mut Signal<ChangeGuardState>) {
+    let current_total = guard().total;
     guard.set(ChangeGuardState {
         active: true,
-        remaining: COUNTDOWN_SECS,
+        remaining: current_total,
+        total: current_total,
     });
 }
 
 /// Centered confirmation modal with countdown timer.
-/// Polls daemon every second for real pending state.
+/// Polls daemon every 3 seconds for real pending state.
 /// Two actions: "Confirm Changes" and "Revert Now".
 #[component]
 pub fn ChangeTimerModal() -> Element {
@@ -63,7 +73,7 @@ pub fn ChangeTimerModal() -> Element {
     let mut was_active = use_signal(|| false);
     let mut first_poll = use_signal(|| true);
 
-    // Poll daemon every second for real pending state
+    // Poll daemon every 3 seconds for real pending state
     use_future(move || async move {
         loop {
             if first_poll() {
@@ -84,14 +94,23 @@ pub fn ChangeTimerModal() -> Element {
                     guard.set(ChangeGuardState {
                         active: true,
                         remaining: status.remaining_secs as u32,
+                        total: status.total_secs as u32,
                     });
                 } else if was_active() {
                     // Was active but daemon says not pending anymore = auto-reverted
                     was_active.set(false);
-                    guard.set(ChangeGuardState::default());
+                    guard.set(ChangeGuardState {
+                        active: false,
+                        remaining: 0,
+                        total: status.total_secs as u32,
+                    });
                     reverted.set(true);
                 } else {
-                    guard.set(ChangeGuardState::default());
+                    guard.set(ChangeGuardState {
+                        active: false,
+                        remaining: 0,
+                        total: status.total_secs as u32,
+                    });
                 }
             }
         }
@@ -137,7 +156,8 @@ pub fn ChangeTimerModal() -> Element {
         return rsx! {};
     }
 
-    let progress_pct = (ctx.remaining as f64 / COUNTDOWN_SECS as f64) * 100.0;
+    let total = if ctx.total > 0 { ctx.total } else { DEFAULT_TOTAL_SECS };
+    let progress_pct = (ctx.remaining as f64 / total as f64) * 100.0;
 
     let on_confirm = move |_| {
         confirming.set(true);

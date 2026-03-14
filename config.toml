@@ -27,6 +27,10 @@ max_log_entries = 100000
 # Auto-cleanup logs older than this many seconds (0 = no cleanup)
 log_ttl_seconds = 604800  # 7 days
 
+[changes]
+# Seconds before uncommitted changes are automatically reverted (0 = no auto-revert)
+revert_timeout_secs = 6
+
 [ui]
 # Address the UI is served on (via nginx or dx serve)
 bind_addr = "0.0.0.0:8080"

@@ -52,19 +52,23 @@ struct PendingChangeStatus {
     pending: bool,
     description: String,
     remaining_secs: u64,
+    total_secs: u64,
 }
 
 async fn changes_pending(State(state): State<Arc<AppState>>) -> Json<PendingChangeStatus> {
+    let total = changeset::revert_timeout_secs();
     match changeset::status(&state.pending_changes).await {
         Some((desc, remaining)) => Json(PendingChangeStatus {
             pending: true,
             description: desc,
             remaining_secs: remaining,
+            total_secs: total,
         }),
         None => Json(PendingChangeStatus {
             pending: false,
             description: String::new(),
             remaining_secs: 0,
+            total_secs: total,
         }),
     }
 }
