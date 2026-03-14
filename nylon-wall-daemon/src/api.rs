@@ -40,6 +40,11 @@ fn broadcast(state: &AppState, event: WsEvent) {
     let _ = state.event_tx.send(event);
 }
 
+/// Serialize a value to JSON, falling back to `null` instead of panicking.
+fn to_json_value(v: &impl serde::Serialize) -> serde_json::Value {
+    serde_json::to_value(v).unwrap_or(serde_json::Value::Null)
+}
+
 // === Change Management ===
 
 #[derive(Serialize)]
@@ -315,7 +320,7 @@ async fn create_rule(
     changeset::record_create(&state.pending_changes, "rule:", &key, format!("Created rule '{}'", rule.name)).await;
     broadcast(
         &state,
-        WsEvent::RuleCreated(serde_json::to_value(&rule).unwrap()),
+        WsEvent::RuleCreated(to_json_value(&rule)),
     );
     sync_rules_to_ebpf(&state).await;
     Ok((StatusCode::CREATED, Json(rule)))
@@ -357,7 +362,7 @@ async fn update_rule(
         .map_err(internal_error)?;
     broadcast(
         &state,
-        WsEvent::RuleUpdated(serde_json::to_value(&rule).unwrap()),
+        WsEvent::RuleUpdated(to_json_value(&rule)),
     );
     sync_rules_to_ebpf(&state).await;
     Ok(Json(rule))
@@ -404,7 +409,7 @@ async fn toggle_rule(
     }
     broadcast(
         &state,
-        WsEvent::RuleToggled(serde_json::to_value(&rule).unwrap()),
+        WsEvent::RuleToggled(to_json_value(&rule)),
     );
     sync_rules_to_ebpf(&state).await;
     Ok(Json(rule))
@@ -439,7 +444,7 @@ async fn create_nat(
     changeset::record_create(&state.pending_changes, "nat:", &key, format!("Created NAT entry #{}", entry.id)).await;
     broadcast(
         &state,
-        WsEvent::NatCreated(serde_json::to_value(&entry).unwrap()),
+        WsEvent::NatCreated(to_json_value(&entry)),
     );
     sync_nat_to_ebpf(&state).await;
     Ok((StatusCode::CREATED, Json(entry)))
@@ -465,7 +470,7 @@ async fn update_nat(
         .map_err(internal_error)?;
     broadcast(
         &state,
-        WsEvent::NatUpdated(serde_json::to_value(&entry).unwrap()),
+        WsEvent::NatUpdated(to_json_value(&entry)),
     );
     sync_nat_to_ebpf(&state).await;
     Ok(Json(entry))
@@ -512,7 +517,7 @@ async fn toggle_nat(
     }
     broadcast(
         &state,
-        WsEvent::NatToggled(serde_json::to_value(&entry).unwrap()),
+        WsEvent::NatToggled(to_json_value(&entry)),
     );
     sync_nat_to_ebpf(&state).await;
     Ok(Json(entry))
@@ -547,7 +552,7 @@ async fn create_route(
     changeset::record_create(&state.pending_changes, "route:", &key, format!("Created route #{}", route.id)).await;
     broadcast(
         &state,
-        WsEvent::RouteCreated(serde_json::to_value(&route).unwrap()),
+        WsEvent::RouteCreated(to_json_value(&route)),
     );
     Ok((StatusCode::CREATED, Json(route)))
 }
@@ -572,7 +577,7 @@ async fn update_route(
         .map_err(internal_error)?;
     broadcast(
         &state,
-        WsEvent::RouteUpdated(serde_json::to_value(&route).unwrap()),
+        WsEvent::RouteUpdated(to_json_value(&route)),
     );
     Ok(Json(route))
 }
@@ -696,7 +701,7 @@ async fn create_zone(
     changeset::record_create(&state.pending_changes, "zone:", &key, format!("Created zone '{}'", zone.name)).await;
     broadcast(
         &state,
-        WsEvent::ZoneCreated(serde_json::to_value(&zone).unwrap()),
+        WsEvent::ZoneCreated(to_json_value(&zone)),
     );
     Ok((StatusCode::CREATED, Json(zone)))
 }
@@ -721,7 +726,7 @@ async fn update_zone(
         .map_err(internal_error)?;
     broadcast(
         &state,
-        WsEvent::ZoneUpdated(serde_json::to_value(&zone).unwrap()),
+        WsEvent::ZoneUpdated(to_json_value(&zone)),
     );
     Ok(Json(zone))
 }
@@ -775,7 +780,7 @@ async fn create_policy(
     changeset::record_create(&state.pending_changes, "policy:", &key, format!("Created policy '{}'", policy.name)).await;
     broadcast(
         &state,
-        WsEvent::PolicyCreated(serde_json::to_value(&policy).unwrap()),
+        WsEvent::PolicyCreated(to_json_value(&policy)),
     );
     Ok((StatusCode::CREATED, Json(policy)))
 }
@@ -800,7 +805,7 @@ async fn update_policy(
         .map_err(internal_error)?;
     broadcast(
         &state,
-        WsEvent::PolicyUpdated(serde_json::to_value(&policy).unwrap()),
+        WsEvent::PolicyUpdated(to_json_value(&policy)),
     );
     Ok(Json(policy))
 }
@@ -1092,7 +1097,7 @@ async fn create_dhcp_pool(
     changeset::record_create(&state.pending_changes, "dhcp_pool:", &key, format!("Created DHCP pool #{}", pool.id)).await;
     broadcast(
         &state,
-        WsEvent::DhcpPoolCreated(serde_json::to_value(&pool).unwrap()),
+        WsEvent::DhcpPoolCreated(to_json_value(&pool)),
     );
     // Notify DHCP server to reload pools
     let _ = state.dhcp_pool_notify.send(());
@@ -1119,7 +1124,7 @@ async fn update_dhcp_pool(
         .map_err(internal_error)?;
     broadcast(
         &state,
-        WsEvent::DhcpPoolUpdated(serde_json::to_value(&pool).unwrap()),
+        WsEvent::DhcpPoolUpdated(to_json_value(&pool)),
     );
     let _ = state.dhcp_pool_notify.send(());
     Ok(Json(pool))
@@ -1166,7 +1171,7 @@ async fn toggle_dhcp_pool(
     }
     broadcast(
         &state,
-        WsEvent::DhcpPoolUpdated(serde_json::to_value(&pool).unwrap()),
+        WsEvent::DhcpPoolUpdated(to_json_value(&pool)),
     );
     let _ = state.dhcp_pool_notify.send(());
     Ok(Json(pool))
@@ -1253,7 +1258,7 @@ async fn reserve_dhcp_lease(
 
     broadcast(
         &state,
-        WsEvent::DhcpReservationCreated(serde_json::to_value(&reservation).unwrap()),
+        WsEvent::DhcpReservationCreated(to_json_value(&reservation)),
     );
     Ok((StatusCode::CREATED, Json(reservation)))
 }
@@ -1293,7 +1298,7 @@ async fn create_dhcp_reservation(
     changeset::record_create(&state.pending_changes, "dhcp_reservation:", &key, format!("Created DHCP reservation #{}", reservation.id)).await;
     broadcast(
         &state,
-        WsEvent::DhcpReservationCreated(serde_json::to_value(&reservation).unwrap()),
+        WsEvent::DhcpReservationCreated(to_json_value(&reservation)),
     );
     Ok((StatusCode::CREATED, Json(reservation)))
 }
@@ -1489,7 +1494,7 @@ async fn release_dhcp_client(
             .map_err(internal_error)?;
         broadcast(
             &state,
-            WsEvent::DhcpClientStatusChanged(serde_json::to_value(&status).unwrap()),
+            WsEvent::DhcpClientStatusChanged(to_json_value(&status)),
         );
     }
     Ok(Json(

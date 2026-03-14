@@ -392,14 +392,15 @@ fn DhcpLeasesTab() -> Element {
                     confirm_label: "Release".to_string(),
                     danger: true,
                     on_confirm: move |_| {
-                        let mac_val = confirm_release().unwrap();
-                        confirm_release.set(None);
-                        spawn(async move {
-                            match api_client::delete(&format!("/dhcp/leases/{}", mac_val)).await {
-                                Ok(_) => { leases.restart(); notify_change(&mut guard); },
-                                Err(e) => error_msg.set(Some(e)),
-                            }
-                        });
+                        if let Some(mac_val) = confirm_release() {
+                            confirm_release.set(None);
+                            spawn(async move {
+                                match api_client::delete(&format!("/dhcp/leases/{}", mac_val)).await {
+                                    Ok(_) => { leases.restart(); notify_change(&mut guard); },
+                                    Err(e) => error_msg.set(Some(e)),
+                                }
+                            });
+                        }
                     },
                     on_cancel: move |_| { confirm_release.set(None); },
                 }
