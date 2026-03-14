@@ -1,0 +1,162 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-daemon:
+    name: Build Daemon (Linux ${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-gnu
+            use-cross: false
+          - arch: aarch64
+            target: aarch64-unknown-linux-gnu
+            use-cross: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Rust (nightly, for eBPF)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - name: Install bpf-linker
+        run: cargo +nightly install bpf-linker
+
+      - name: Install cross
+        if: matrix.use-cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build eBPF programs
+        run: |
+          cargo +nightly build \
+            -p nylon-wall-ebpf \
+            --target bpfel-unknown-none \
+            -Z build-std=core \
+            --release
+
+      - name: Build daemon
+        run: |
+          if [ "${{ matrix.use-cross }}" == "true" ]; then
+            cross build --release --target ${{ matrix.target }} -p nylon-wall-daemon
+          else
+            cargo build --release --target ${{ matrix.target }} -p nylon-wall-daemon
+          fi
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p dist
+          TARGET_DIR="target/${{ matrix.target }}/release"
+
+          if [ -f "$TARGET_DIR/nylon-wall-daemon" ]; then
+            cp "$TARGET_DIR/nylon-wall-daemon" "dist/nylon-wall-daemon"
+            strip "dist/nylon-wall-daemon" 2>/dev/null || true
+          fi
+
+          # Include eBPF binary if built
+          EBPF_BIN="target/bpfel-unknown-none/release/nylon-wall-ebpf"
+          if [ -f "$EBPF_BIN" ]; then
+            cp "$EBPF_BIN" "dist/nylon-wall-ebpf"
+          fi
+
+          # Include default config
+          if [ -f "config.toml" ]; then
+            cp config.toml dist/config.toml
+          fi
+
+          cd dist && sha256sum * > checksums.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nylon-wall-linux-${{ matrix.arch }}
+          path: dist/
+
+  build-ui:
+    name: Build UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install dioxus-cli
+        run: cargo install dioxus-cli
+
+      - name: Build UI
+        working-directory: nylon-wall-ui
+        run: dx build --release
+
+      - name: Package UI
+        run: |
+          UI_DIR="nylon-wall-ui/target/dx/nylon-wall-ui/release/web/public"
+          if [ -d "$UI_DIR" ]; then
+            tar -czf nylon-wall-ui.tar.gz -C "$UI_DIR" .
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nylon-wall-ui
+          path: nylon-wall-ui.tar.gz
+
+  release:
+    name: Create Release
+    needs: [build-daemon, build-ui]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+
+          for dir in artifacts/nylon-wall-linux-*/; do
+            [ -d "$dir" ] || continue
+            platform=$(basename "$dir")
+            for file in "$dir"*; do
+              [ -f "$file" ] || continue
+              name=$(basename "$file")
+              [ "$name" = "checksums.sha256" ] && continue
+              mv "$file" "release-assets/${platform}-${name}"
+            done
+          done
+
+          # Move UI artifact
+          if [ -f "artifacts/nylon-wall-ui/nylon-wall-ui.tar.gz" ]; then
+            mv "artifacts/nylon-wall-ui/nylon-wall-ui.tar.gz" "release-assets/nylon-wall-ui.tar.gz"
+          fi
+
+          cd release-assets && sha256sum * > checksums.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
