@@ -58,23 +58,15 @@ pub fn process_egress(ctx: &TcContext) -> Result<i32, ()> {
     // SNI filtering: check TLS ClientHello for blocked domains
     let sni_enabled = unsafe { crate::SNI_ENABLED.get(0).copied().unwrap_or(0) };
     if sni_enabled == 1 && pkt.protocol == IPPROTO_TCP && pkt.dst_port == 443 {
-        // Calculate transport base for SNI parser
         let ip_base = data + ETH_HDR_LEN;
         let ihl = unsafe { (*((ip_base) as *const u8) & 0x0F) as usize * 4 };
         let transport_base = ip_base + ihl;
 
-        if let Some(result) = crate::tls::check_sni(data, data_end, &pkt, transport_base) {
-            if result.action == 1 {
-                // Block: emit event and drop
-                crate::tls::emit_sni_event(ctx, &pkt, &result, data_end);
-                if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
-                    unsafe { (*m).packets_dropped += 1 };
-                }
-                return Ok(TC_ACT_SHOT);
-            } else if result.action == 2 {
-                // Log only
-                crate::tls::emit_sni_event(ctx, &pkt, &result, data_end);
+        if crate::tls::check_sni_block(data, data_end, transport_base) {
+            if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
+                unsafe { (*m).packets_dropped += 1 };
             }
+            return Ok(TC_ACT_SHOT);
         }
     }
 

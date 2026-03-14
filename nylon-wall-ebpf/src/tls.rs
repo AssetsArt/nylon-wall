@@ -1,5 +1,3 @@
-use nylon_wall_common::tls::{EbpfSniEvent, SNI_MAX_DOMAIN_LEN};
-
 use crate::common::*;
 
 // TLS constants
@@ -8,14 +6,34 @@ const TLS_CLIENT_HELLO: u8 = 0x01;
 const SNI_EXTENSION_TYPE: u16 = 0x0000;
 const SNI_HOST_NAME_TYPE: u8 = 0x00;
 
-// Max iterations for eBPF verifier bounded loops
-const MAX_EXTENSIONS: u32 = 64;
-const MAX_DOMAIN_SCAN: u32 = SNI_MAX_DOMAIN_LEN as u32;
+// Bounded loop limits for the eBPF verifier
+const MAX_EXTENSIONS: u32 = 16; // SNI is typically the first extension
+const MAX_DOMAIN_SCAN: u32 = 64;
 
-/// FNV-1a hash for domain name lookup.
+// Bitmasks for variable-length TLS fields.
+// The eBPF verifier tracks `var_off` (tnum) for each register. Comparisons
+// like `> MAX` narrow smin/smax but do NOT narrow var_off. Only bitwise AND
+// narrows var_off. Without AND-masking, accumulated variable offsets from
+// read_be16() create packet pointers with huge var_off, causing `r=0`
+// (no validated range) on subsequent packet accesses.
+const SESSION_ID_MASK: usize = 0xFF;       // max 255 bytes (spec: max 32, but be safe)
+const CIPHER_SUITES_MASK: usize = 0x1FF;   // max 511 bytes (plenty for real-world)
+const COMPRESS_MASK: usize = 0xFF;          // max 255 bytes
+const EXT_LEN_MASK: usize = 0x7FF;         // max 2047 bytes per extension
+
+/// Read a big-endian u16 from two consecutive bytes in packet memory.
+/// Avoids the BPF `be16` instruction which destroys verifier range tracking.
+#[inline(always)]
+fn read_be16(ptr: usize) -> usize {
+    let hi = unsafe { *(ptr as *const u8) } as usize;
+    let lo = unsafe { *((ptr + 1) as *const u8) } as usize;
+    (hi << 8) | lo
+}
+
+/// FNV-1a hash from packet memory with per-byte bounds checks.
 /// Must match the hash used by daemon when populating the map.
 #[inline(always)]
-fn fnv1a_hash_bytes(data: usize, len: usize, data_end: usize) -> u32 {
+fn fnv1a_hash_pkt(data: usize, len: usize, data_end: usize) -> u32 {
     let mut hash: u32 = 2166136261;
     for i in 0..MAX_DOMAIN_SCAN {
         if i as usize >= len {
@@ -26,7 +44,6 @@ fn fnv1a_hash_bytes(data: usize, len: usize, data_end: usize) -> u32 {
             break;
         }
         let mut byte = unsafe { *(ptr as *const u8) };
-        // Lowercase for case-insensitive matching
         if byte >= b'A' && byte <= b'Z' {
             byte += 32;
         }
@@ -36,272 +53,121 @@ fn fnv1a_hash_bytes(data: usize, len: usize, data_end: usize) -> u32 {
     hash
 }
 
-/// Check if a TCP packet to port 443 contains a TLS ClientHello with SNI,
-/// and apply SNI policy. Returns Some(action) if SNI was matched, None otherwise.
+/// Check if a TCP packet contains a TLS ClientHello with a blocked SNI domain.
+/// Returns true if the packet should be dropped.
 ///
-/// `transport_base` is the start of the TCP header.
-/// `pkt` contains parsed IP/port info.
+/// This is the minimal eBPF-side implementation: parse TLS → hash domain →
+/// single map lookup. No domain copying, no wildcard matching, no event
+/// emission. The daemon handles wildcard rules by pre-populating parent
+/// domain hashes in the SNI_POLICY map.
 #[inline(always)]
-pub fn check_sni(
+pub fn check_sni_block(
     data: usize,
     data_end: usize,
-    pkt: &PacketInfo,
     transport_base: usize,
-) -> Option<SniResult> {
-    // Only check TCP to port 443
-    if pkt.protocol != IPPROTO_TCP || pkt.dst_port != 443 {
-        return None;
-    }
-
-    // TCP header length (data offset field: upper 4 bits of byte 12, in 32-bit words)
+) -> bool {
+    // TCP header length (data offset field)
     if transport_base + 13 > data_end {
-        return None;
+        return false;
     }
-    let tcp_data_offset = unsafe {
+    // TCP data offset is top 4 bits × 4, max 60 bytes. AND-mask to 0x3F
+    // to keep var_off bounded for the verifier.
+    let tcp_data_offset = (unsafe {
         ((*((transport_base + 12) as *const u8)) >> 4) as usize * 4
-    };
+    }) & 0x3F;
     if tcp_data_offset < TCP_HDR_LEN {
-        return None;
+        return false;
     }
 
     let tls_base = transport_base + tcp_data_offset;
 
-    // Need at least TLS record header (5 bytes) + handshake header (4 bytes)
+    // TLS record header (5 bytes) + handshake header (4 bytes)
     if tls_base + 9 > data_end {
-        return None;
+        return false;
     }
 
-    // Check TLS record type = Handshake (0x16)
-    let content_type = unsafe { *(tls_base as *const u8) };
-    if content_type != TLS_HANDSHAKE {
-        return None;
+    if unsafe { *(tls_base as *const u8) } != TLS_HANDSHAKE {
+        return false;
     }
-
-    // TLS record length
-    let tls_record_len = unsafe {
-        u16::from_be_bytes(*((tls_base + 3) as *const [u8; 2])) as usize
-    };
 
     let handshake_base = tls_base + 5;
-
-    // Check handshake type = ClientHello (0x01)
-    let handshake_type = unsafe { *(handshake_base as *const u8) };
-    if handshake_type != TLS_CLIENT_HELLO {
-        return None;
+    if unsafe { *(handshake_base as *const u8) } != TLS_CLIENT_HELLO {
+        return false;
     }
 
-    // ClientHello starts at handshake_base + 4 (skip type + 3-byte length)
-    let ch_base = handshake_base + 4;
-
-    // Skip: client_version (2) + random (32) = 34 bytes
-    let mut pos = ch_base + 34;
+    // ClientHello: skip type(1) + length(3) + version(2) + random(32) = 38
+    let mut pos = handshake_base + 38;
     if pos + 1 > data_end {
-        return None;
+        return false;
     }
 
-    // Skip session_id (variable: 1-byte length + data)
-    let session_id_len = unsafe { *(pos as *const u8) } as usize;
+    // Skip session_id (AND-mask to keep var_off small for verifier)
+    let session_id_len = (unsafe { *(pos as *const u8) } as usize) & SESSION_ID_MASK;
     pos += 1 + session_id_len;
     if pos + 2 > data_end {
-        return None;
+        return false;
     }
 
-    // Skip cipher_suites (variable: 2-byte length + data)
-    let cipher_suites_len = unsafe {
-        u16::from_be_bytes(*((pos) as *const [u8; 2])) as usize
-    };
+    // Skip cipher_suites (AND-mask narrows var_off from 0xffff to 0x1ff)
+    let cipher_suites_len = read_be16(pos) & CIPHER_SUITES_MASK;
     pos += 2 + cipher_suites_len;
     if pos + 1 > data_end {
-        return None;
+        return false;
     }
 
-    // Skip compression_methods (variable: 1-byte length + data)
-    let compression_len = unsafe { *(pos as *const u8) } as usize;
+    // Skip compression_methods (AND-mask to keep var_off small)
+    let compression_len = (unsafe { *(pos as *const u8) } as usize) & COMPRESS_MASK;
     pos += 1 + compression_len;
     if pos + 2 > data_end {
-        return None;
+        return false;
     }
 
-    // Extensions length
-    let extensions_len = unsafe {
-        u16::from_be_bytes(*((pos) as *const [u8; 2])) as usize
-    };
+    // Extensions
+    // NOTE: All bounds checks use `data_end` directly, NOT a derived variable
+    // like `extensions_end`. The eBPF verifier only recognises comparisons
+    // against the original data_end register (PKT_END) as valid packet
+    // bounds checks. Comparisons against any other register — even one
+    // logically equal to or smaller than data_end — produce r=0 (no
+    // validated range), causing "invalid access to packet" rejections.
+    let _extensions_len = read_be16(pos);
     pos += 2;
 
-    let extensions_end = pos + extensions_len;
-    // Bound to data_end and TLS record boundary
-    let bound = if extensions_end < data_end { extensions_end } else { data_end };
-
-    // Walk extensions to find SNI
     for _ in 0..MAX_EXTENSIONS {
-        if pos + 4 > bound {
+        if pos + 4 > data_end {
             break;
         }
 
-        let ext_type = unsafe {
-            u16::from_be_bytes(*((pos) as *const [u8; 2]))
-        };
-        let ext_len = unsafe {
-            u16::from_be_bytes(*((pos + 2) as *const [u8; 2])) as usize
-        };
+        let ext_type = read_be16(pos) as u16;
+        let ext_len = read_be16(pos + 2) & EXT_LEN_MASK;
 
         if ext_type == SNI_EXTENSION_TYPE {
-            // Found SNI extension
-            // SNI list: 2-byte list_length, then entries
             let sni_data = pos + 4;
-            if sni_data + 5 > bound {
-                return None;
+            if sni_data + 5 > data_end {
+                return false;
             }
 
-            // Skip list length (2 bytes), read name_type (1 byte)
             let name_type = unsafe { *((sni_data + 2) as *const u8) };
             if name_type != SNI_HOST_NAME_TYPE {
-                return None;
+                return false;
             }
 
-            // Name length (2 bytes)
-            let name_len = unsafe {
-                u16::from_be_bytes(*((sni_data + 3) as *const [u8; 2])) as usize
-            };
+            // AND-mask name_len to 0x3F (max 63) — keeps var_off tiny
+            let name_len = read_be16(sni_data + 3) & 0x3F;
             let name_start = sni_data + 5;
 
-            if name_start + name_len > data_end || name_len == 0 {
-                return None;
+            if name_len == 0 {
+                return false;
             }
 
-            // Hash the domain name
-            let domain_hash = fnv1a_hash_bytes(name_start, name_len, data_end);
-
-            // Check SNI policy map
-            let action = match unsafe { crate::SNI_POLICY.get(&domain_hash) } {
-                Some(a) => *a,
-                None => {
-                    // Check wildcard: hash parent domains
-                    // e.g. "www.facebook.com" → also check "facebook.com" and "com"
-                    match check_wildcard(name_start, name_len, data_end) {
-                        Some(a) => a,
-                        None => return Some(SniResult {
-                            action: 0, // default allow
-                            domain_hash,
-                            domain_start: name_start,
-                            domain_len: name_len,
-                        }),
-                    }
-                }
-            };
-
-            return Some(SniResult {
-                action,
-                domain_hash,
-                domain_start: name_start,
-                domain_len: name_len,
-            });
+            // Hash domain directly from packet memory and lookup
+            let hash = fnv1a_hash_pkt(name_start, name_len, data_end);
+            return unsafe { crate::SNI_POLICY.get(&hash) }
+                .map(|a| *a == 1) // 1 = block
+                .unwrap_or(false);
         }
 
         pos += 4 + ext_len;
     }
 
-    None // No SNI extension found
-}
-
-/// Check wildcard domain matches by hashing parent domains.
-/// e.g. for "www.facebook.com", also check "facebook.com" and "com"
-#[inline(always)]
-fn check_wildcard(name_start: usize, name_len: usize, data_end: usize) -> Option<u8> {
-    let mut offset: usize = 0;
-
-    for _ in 0..MAX_DOMAIN_SCAN {
-        if offset >= name_len {
-            break;
-        }
-        let ptr = name_start + offset;
-        if ptr + 1 > data_end {
-            break;
-        }
-        let byte = unsafe { *(ptr as *const u8) };
-        if byte == b'.' {
-            // Hash the remaining part after this dot
-            let parent_start = name_start + offset + 1;
-            let parent_len = name_len - offset - 1;
-            if parent_len > 0 {
-                let parent_hash = fnv1a_hash_bytes(parent_start, parent_len, data_end);
-                if let Some(a) = unsafe { crate::SNI_POLICY.get(&parent_hash) } {
-                    return Some(*a);
-                }
-            }
-        }
-        offset += 1;
-    }
-
-    None
-}
-
-/// Result of SNI inspection
-pub struct SniResult {
-    pub action: u8, // 0=allow, 1=block, 2=log
-    pub domain_hash: u32,
-    pub domain_start: usize,
-    pub domain_len: usize,
-}
-
-/// Build and emit an SNI perf event
-#[inline(always)]
-pub fn emit_sni_event(
-    ctx: &impl SniEventContext,
-    pkt: &PacketInfo,
-    result: &SniResult,
-    data_end: usize,
-) {
-    let now = unsafe { aya_ebpf::helpers::bpf_ktime_get_ns() };
-
-    let mut event = EbpfSniEvent {
-        timestamp: now,
-        src_ip: pkt.src_ip,
-        dst_ip: pkt.dst_ip,
-        src_port: pkt.src_port,
-        dst_port: pkt.dst_port,
-        domain_hash: result.domain_hash,
-        action: result.action,
-        domain_len: 0,
-        _pad: [0; 2],
-        domain: [0u8; SNI_MAX_DOMAIN_LEN],
-    };
-
-    // Copy domain name (up to SNI_MAX_DOMAIN_LEN bytes)
-    let copy_len = if result.domain_len < SNI_MAX_DOMAIN_LEN {
-        result.domain_len
-    } else {
-        SNI_MAX_DOMAIN_LEN
-    };
-    event.domain_len = copy_len as u8;
-
-    for i in 0..MAX_DOMAIN_SCAN {
-        if i as usize >= copy_len {
-            break;
-        }
-        let ptr = result.domain_start + i as usize;
-        if ptr + 1 > data_end {
-            break;
-        }
-        event.domain[i as usize] = unsafe { *(ptr as *const u8) };
-    }
-
-    ctx.output_sni_event(&event);
-}
-
-/// Trait to abstract over XdpContext and TcContext for perf event output
-pub trait SniEventContext {
-    fn output_sni_event(&self, event: &EbpfSniEvent);
-}
-
-impl SniEventContext for aya_ebpf::programs::XdpContext {
-    fn output_sni_event(&self, event: &EbpfSniEvent) {
-        unsafe { crate::SNI_EVENTS.output(self, event, 0); }
-    }
-}
-
-impl SniEventContext for aya_ebpf::programs::TcContext {
-    fn output_sni_event(&self, event: &EbpfSniEvent) {
-        let _ = unsafe { crate::SNI_EVENTS.output(self, event, 0) };
-    }
+    false
 }
