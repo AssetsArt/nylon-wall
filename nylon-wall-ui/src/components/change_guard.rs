@@ -18,7 +18,9 @@ struct PendingStatus {
     total_secs: u64,
 }
 
-fn default_total() -> u64 { DEFAULT_TOTAL_SECS as u64 }
+fn default_total() -> u64 {
+    DEFAULT_TOTAL_SECS as u64
+}
 
 /// State for pending change tracking.
 #[derive(Clone, Copy, PartialEq)]
@@ -77,7 +79,6 @@ pub fn ChangeTimerModal() -> Element {
     use_future(move || async move {
         loop {
             if first_poll() {
-                gloo_timers::future::TimeoutFuture::new(200).await;
                 first_poll.set(false);
             } else {
                 gloo_timers::future::TimeoutFuture::new(3_000).await;
@@ -156,7 +157,11 @@ pub fn ChangeTimerModal() -> Element {
         return rsx! {};
     }
 
-    let total = if ctx.total > 0 { ctx.total } else { DEFAULT_TOTAL_SECS };
+    let total = if ctx.total > 0 {
+        ctx.total
+    } else {
+        DEFAULT_TOTAL_SECS
+    };
     let progress_pct = (ctx.remaining as f64 / total as f64) * 100.0;
 
     let on_confirm = move |_| {
