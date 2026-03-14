@@ -64,7 +64,7 @@ pub fn notify_change(guard: &mut Signal<ChangeGuardState>) {
 }
 
 /// Centered confirmation modal with countdown timer.
-/// Polls daemon every 3 seconds for real pending state.
+/// Local 1-second ticker for smooth countdown, API poll every 3s to sync state.
 /// Two actions: "Confirm Changes" and "Revert Now".
 #[component]
 pub fn ChangeTimerModal() -> Element {
@@ -73,18 +73,45 @@ pub fn ChangeTimerModal() -> Element {
     let mut reverting = use_signal(|| false);
     let mut reverted = use_signal(|| false);
     let mut was_active = use_signal(|| false);
-    let mut first_poll = use_signal(|| true);
 
-    // Poll daemon every 3 seconds for real pending state
+    // Local 1-second countdown ticker
     use_future(move || async move {
         loop {
-            if first_poll() {
-                first_poll.set(false);
-            } else {
-                gloo_timers::future::TimeoutFuture::new(3_000).await;
+            gloo_timers::future::TimeoutFuture::new(1_000).await;
+
+            let ctx = guard();
+            if !ctx.active || confirming() || reverting() || reverted() {
+                continue;
             }
 
-            // Don't poll while confirming/reverting or showing result
+            if ctx.remaining > 0 {
+                guard.set(ChangeGuardState {
+                    remaining: ctx.remaining - 1,
+                    ..ctx
+                });
+            } else {
+                // Local countdown hit 0 — check daemon immediately
+                gloo_timers::future::TimeoutFuture::new(200).await;
+                if let Ok(status) = api_client::get::<PendingStatus>("/changes/pending").await {
+                    if !status.pending {
+                        was_active.set(false);
+                        guard.set(ChangeGuardState {
+                            active: false,
+                            remaining: 0,
+                            total: status.total_secs as u32,
+                        });
+                        reverted.set(true);
+                    }
+                }
+            }
+        }
+    });
+
+    // API poll every 3 seconds — sync with daemon and detect auto-revert
+    use_future(move || async move {
+        loop {
+            gloo_timers::future::TimeoutFuture::new(3_000).await;
+
             if confirming() || reverting() || reverted() {
                 continue;
             }
@@ -92,13 +119,14 @@ pub fn ChangeTimerModal() -> Element {
             if let Ok(status) = api_client::get::<PendingStatus>("/changes/pending").await {
                 if status.pending {
                     was_active.set(true);
+                    // Sync remaining from daemon (corrects any local drift)
                     guard.set(ChangeGuardState {
                         active: true,
                         remaining: status.remaining_secs as u32,
                         total: status.total_secs as u32,
                     });
                 } else if was_active() {
-                    // Was active but daemon says not pending anymore = auto-reverted
+                    // Was active but daemon says not pending = auto-reverted
                     was_active.set(false);
                     guard.set(ChangeGuardState {
                         active: false,
@@ -107,11 +135,14 @@ pub fn ChangeTimerModal() -> Element {
                     });
                     reverted.set(true);
                 } else {
-                    guard.set(ChangeGuardState {
-                        active: false,
-                        remaining: 0,
-                        total: status.total_secs as u32,
-                    });
+                    // Not active — just keep total_secs in sync
+                    let ctx = guard();
+                    if !ctx.active {
+                        guard.set(ChangeGuardState {
+                            total: status.total_secs as u32,
+                            ..ctx
+                        });
+                    }
                 }
             }
         }
