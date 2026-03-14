@@ -66,14 +66,14 @@ pub fn process_egress(ctx: &TcContext) -> Result<i32, ()> {
         if let Some(result) = crate::tls::check_sni(data, data_end, &pkt, transport_base) {
             if result.action == 1 {
                 // Block: emit event and drop
-                crate::tls::emit_sni_event(&ctx, &pkt, &result, data_end);
+                crate::tls::emit_sni_event(ctx, &pkt, &result, data_end);
                 if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
                     unsafe { (*m).packets_dropped += 1 };
                 }
                 return Ok(TC_ACT_SHOT);
             } else if result.action == 2 {
                 // Log only
-                crate::tls::emit_sni_event(&ctx, &pkt, &result, data_end);
+                crate::tls::emit_sni_event(ctx, &pkt, &result, data_end);
             }
         }
     }
