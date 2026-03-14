@@ -88,7 +88,18 @@ pub fn try_dnat_ingress(data: usize, data_end: usize, pkt: &PacketInfo) -> bool 
         // Apply DNAT: rewrite destination IP and port
         let new_dst_ip = entry.translate_ip;
         let new_dst_port = if entry.translate_port_start != 0 {
-            entry.translate_port_start
+            // Calculate offset within source port range and apply to translate range
+            if entry.dst_port_start != 0 && entry.translate_port_end > entry.translate_port_start && pkt.dst_port >= entry.dst_port_start {
+                let offset = pkt.dst_port - entry.dst_port_start;
+                let range_size = entry.translate_port_end - entry.translate_port_start;
+                if offset <= range_size {
+                    entry.translate_port_start + offset
+                } else {
+                    entry.translate_port_start
+                }
+            } else {
+                entry.translate_port_start
+            }
         } else {
             pkt.dst_port
         };
@@ -229,7 +240,18 @@ pub fn try_snat_egress(data: usize, data_end: usize, pkt: &PacketInfo) -> bool {
         }
 
         let new_src_port = if entry.translate_port_start != 0 {
-            entry.translate_port_start
+            // Calculate offset within source port range and apply to translate range
+            if entry.dst_port_start != 0 && entry.translate_port_end > entry.translate_port_start && pkt.src_port >= entry.dst_port_start {
+                let offset = pkt.src_port - entry.dst_port_start;
+                let range_size = entry.translate_port_end - entry.translate_port_start;
+                if offset <= range_size {
+                    entry.translate_port_start + offset
+                } else {
+                    entry.translate_port_start
+                }
+            } else {
+                entry.translate_port_start
+            }
         } else {
             pkt.src_port
         };

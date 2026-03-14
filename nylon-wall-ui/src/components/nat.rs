@@ -197,6 +197,21 @@ pub fn Nat() -> Element {
     }
 }
 
+fn parse_port_range(s: &str) -> Option<PortRange> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Some((start_s, end_s)) = s.split_once('-') {
+        let start: u16 = start_s.trim().parse().ok()?;
+        let end: u16 = end_s.trim().parse().ok()?;
+        Some(PortRange { start, end })
+    } else {
+        let port: u16 = s.parse().ok()?;
+        Some(PortRange::single(port))
+    }
+}
+
 fn format_destination(entry: &NatEntry) -> String {
     let net = entry.dst_network.clone().unwrap_or("*".to_string());
     match &entry.dst_port {
@@ -406,13 +421,33 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
     });
     let mut src_network = use_signal(|| editing.src_network.clone().unwrap_or_default());
     let mut dst_network = use_signal(|| editing.dst_network.clone().unwrap_or_default());
+    let mut protocol = use_signal(|| match editing.protocol {
+        Some(Protocol::TCP) => "TCP".to_string(),
+        Some(Protocol::UDP) => "UDP".to_string(),
+        Some(Protocol::ICMP) => "ICMP".to_string(),
+        _ => "Any".to_string(),
+    });
+    let mut dst_port = use_signal(|| match &editing.dst_port {
+        Some(pr) if pr.start == pr.end => format!("{}", pr.start),
+        Some(pr) => format!("{}-{}", pr.start, pr.end),
+        None => String::new(),
+    });
     let mut translate_ip = use_signal(|| editing.translate_ip.clone().unwrap_or_default());
+    let mut translate_port = use_signal(|| match &editing.translate_port {
+        Some(pr) if pr.start == pr.end => format!("{}", pr.start),
+        Some(pr) => format!("{}-{}", pr.start, pr.end),
+        None => String::new(),
+    });
+    let mut in_interface = use_signal(|| editing.in_interface.clone().unwrap_or_default());
     let mut out_interface = use_signal(|| editing.out_interface.clone().unwrap_or_default());
     let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
 
     let on_submit = move |_| {
+        let parsed_dst_port = parse_port_range(&dst_port());
+        let parsed_translate_port = parse_port_range(&translate_port());
+
         submitting.set(true);
         let entry = NatEntry {
             id: edit_id,
@@ -432,9 +467,18 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
             } else {
                 Some(dst_network())
             },
-            protocol: None,
-            dst_port: None,
-            in_interface: None,
+            protocol: match protocol().as_str() {
+                "TCP" => Some(Protocol::TCP),
+                "UDP" => Some(Protocol::UDP),
+                "ICMP" => Some(Protocol::ICMP),
+                _ => None,
+            },
+            dst_port: parsed_dst_port,
+            in_interface: if in_interface().is_empty() {
+                None
+            } else {
+                Some(in_interface())
+            },
             out_interface: if out_interface().is_empty() {
                 None
             } else {
@@ -445,7 +489,7 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
             } else {
                 Some(translate_ip())
             },
-            translate_port: None,
+            translate_port: parsed_translate_port,
         };
         spawn(async move {
             let result = if is_edit {
@@ -482,6 +526,16 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
                         option { value: "Masquerade", "Masquerade" }
                     }
                 }
+                FormField { label: "Protocol".to_string(),
+                    select {
+                        class: SELECT_CLASS,
+                        value: "{protocol}", onchange: move |e| protocol.set(e.value()),
+                        option { value: "Any", "Any" }
+                        option { value: "TCP", "TCP" }
+                        option { value: "UDP", "UDP" }
+                        option { value: "ICMP", "ICMP" }
+                    }
+                }
                 FormField { label: "Source Network".to_string(),
                     input {
                         class: INPUT_CLASS,
@@ -496,12 +550,32 @@ fn NatForm(is_edit: bool, editing: NatEntry, on_saved: EventHandler<()>) -> Elem
                         oninput: move |e| dst_network.set(e.value()),
                     }
                 }
+                FormField { label: "Destination Port".to_string(),
+                    input {
+                        class: INPUT_CLASS,
+                        r#type: "text", placeholder: "e.g. 8080 or 8000-8100", value: "{dst_port}",
+                        oninput: move |e| dst_port.set(e.value()),
+                    }
+                }
                 FormField { label: "Translate IP".to_string(),
                     input {
                         class: INPUT_CLASS,
                         r#type: "text", placeholder: "203.0.113.1", value: "{translate_ip}",
                         oninput: move |e| translate_ip.set(e.value()),
                     }
+                }
+                FormField { label: "Translate Port".to_string(),
+                    input {
+                        class: INPUT_CLASS,
+                        r#type: "text", placeholder: "e.g. 9450 or 5000-5100", value: "{translate_port}",
+                        oninput: move |e| translate_port.set(e.value()),
+                    }
+                }
+                InterfaceSelect {
+                    value: in_interface(),
+                    onchange: move |v| in_interface.set(v),
+                    label: "In Interface",
+                    allow_empty: true,
                 }
                 InterfaceSelect {
                     value: out_interface(),
