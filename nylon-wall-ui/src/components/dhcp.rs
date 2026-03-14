@@ -153,6 +153,7 @@ fn DhcpPoolsTab() -> Element {
     let mut editing = use_signal(|| None::<(bool, DhcpPool)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
+    let mut confirm_toggle = use_signal(|| None::<(u32, String, bool)>);
     let mut guard = use_change_guard();
 
     let refresh = use_refresh_trigger();
@@ -231,12 +232,36 @@ fn DhcpPoolsTab() -> Element {
                 }
             }
 
+            if let Some((tog_id, ref tog_iface, tog_enabled)) = confirm_toggle() {
+                ConfirmModal {
+                    title: if tog_enabled { "Disable DHCP Pool".to_string() } else { "Enable DHCP Pool".to_string() },
+                    message: format!(
+                        "Are you sure you want to {} DHCP pool on interface \"{}\"?",
+                        if tog_enabled { "disable" } else { "enable" },
+                        tog_iface
+                    ),
+                    confirm_label: if tog_enabled { "Disable".to_string() } else { "Enable".to_string() },
+                    danger: tog_enabled,
+                    on_confirm: move |_| {
+                        confirm_toggle.set(None);
+                        spawn(async move {
+                            match api_client::post::<(), serde_json::Value>(&format!("/dhcp/pools/{}/toggle", tog_id), &()).await {
+                                Ok(_) => { pools.restart(); notify_change(&mut guard); },
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_toggle.set(None); },
+                }
+            }
+
             match &*pools.read() {
                 Some(Ok(list)) if !list.is_empty() => rsx! {
                     div { class: "grid grid-cols-1 lg:grid-cols-2 gap-4",
                         for pool in list.iter() {
                             {
                                 let pool_id = pool.id;
+                                let pool_iface = pool.interface.clone();
                                 let is_enabled = pool.enabled;
                                 let pool_clone = pool.clone();
                                 rsx! {
@@ -261,12 +286,7 @@ fn DhcpPoolsTab() -> Element {
                                                         "px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-400 border border-slate-500/20 cursor-pointer hover:bg-slate-500/20 transition-colors"
                                                     },
                                                     onclick: move |_| {
-                                                        spawn(async move {
-                                                            match api_client::post::<(), serde_json::Value>(&format!("/dhcp/pools/{}/toggle", pool_id), &()).await {
-                                                                Ok(_) => { pools.restart(); notify_change(&mut guard); },
-                                                                Err(e) => error_msg.set(Some(e)),
-                                                            }
-                                                        });
+                                                        confirm_toggle.set(Some((pool_id, pool_iface.clone(), is_enabled)));
                                                     },
                                                     if is_enabled { "Enabled" } else { "Disabled" }
                                                 }
@@ -695,6 +715,7 @@ fn DhcpClientTab() -> Element {
     });
     let mut editing = use_signal(|| None::<(bool, DhcpClientConfig)>);
     let mut error_msg = use_signal(|| None::<String>);
+    let mut confirm_toggle = use_signal(|| None::<(u32, String, bool)>);
     let mut guard = use_change_guard();
 
     let refresh = use_refresh_trigger();
@@ -753,6 +774,29 @@ fn DhcpClientTab() -> Element {
                 }
             }
 
+            if let Some((tog_id, ref tog_iface, tog_enabled)) = confirm_toggle() {
+                ConfirmModal {
+                    title: if tog_enabled { "Disable DHCP Client".to_string() } else { "Enable DHCP Client".to_string() },
+                    message: format!(
+                        "Are you sure you want to {} DHCP client on interface \"{}\"?",
+                        if tog_enabled { "disable" } else { "enable" },
+                        tog_iface
+                    ),
+                    confirm_label: if tog_enabled { "Disable".to_string() } else { "Enable".to_string() },
+                    danger: tog_enabled,
+                    on_confirm: move |_| {
+                        confirm_toggle.set(None);
+                        spawn(async move {
+                            match api_client::post::<(), serde_json::Value>(&format!("/dhcp/clients/{}/toggle", tog_id), &()).await {
+                                Ok(_) => { clients.restart(); statuses.restart(); notify_change(&mut guard); },
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_toggle.set(None); },
+                }
+            }
+
             // Client cards
             match &*clients.read() {
                 Some(Ok(client_list)) if !client_list.is_empty() => {
@@ -767,6 +811,7 @@ fn DhcpClientTab() -> Element {
                                     let status = status_list.iter().find(|s| s.interface == config.interface).cloned();
                                     let iface = config.interface.clone();
                                     let iface2 = config.interface.clone();
+                                    let iface_for_toggle = config.interface.clone();
                                     let config_id = config.id;
                                     let is_enabled = config.enabled;
                                     let config_clone = config.clone();
@@ -841,12 +886,7 @@ fn DhcpClientTab() -> Element {
                                                     color: if is_enabled { Color::Emerald } else { Color::Slate },
                                                     label: if is_enabled { "Disable".to_string() } else { "Enable".to_string() },
                                                     onclick: move |_| {
-                                                        spawn(async move {
-                                                            match api_client::post::<(), serde_json::Value>(&format!("/dhcp/clients/{}/toggle", config_id), &()).await {
-                                                                Ok(_) => { clients.restart(); statuses.restart(); notify_change(&mut guard); },
-                                                                Err(e) => error_msg.set(Some(e)),
-                                                            }
-                                                        });
+                                                        confirm_toggle.set(Some((config_id, iface_for_toggle.clone(), is_enabled)));
                                                     },
                                                 }
                                                 Btn {

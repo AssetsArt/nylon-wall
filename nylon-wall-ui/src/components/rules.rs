@@ -10,6 +10,7 @@ pub fn Rules() -> Element {
     let mut editing = use_signal(|| None::<(bool, FirewallRule)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
+    let mut confirm_toggle = use_signal(|| None::<(u32, String, bool)>);
     let mut guard = use_change_guard();
 
     let refresh = use_refresh_trigger();
@@ -85,6 +86,29 @@ pub fn Rules() -> Element {
                 }
             }
 
+            if let Some((tog_id, tog_name, tog_enabled)) = confirm_toggle() {
+                ConfirmModal {
+                    title: if tog_enabled { "Disable Rule".to_string() } else { "Enable Rule".to_string() },
+                    message: format!(
+                        "Are you sure you want to {} rule \"{}\"?",
+                        if tog_enabled { "disable" } else { "enable" },
+                        tog_name
+                    ),
+                    confirm_label: if tog_enabled { "Disable".to_string() } else { "Enable".to_string() },
+                    danger: tog_enabled,
+                    on_confirm: move |_| {
+                        confirm_toggle.set(None);
+                        spawn(async move {
+                            match api_client::post::<(), FirewallRule>(&format!("/rules/{}/toggle", tog_id), &()).await {
+                                Ok(_) => { rules.restart(); notify_change(&mut guard); },
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_toggle.set(None); },
+                }
+            }
+
             DataTable {
                 thead { class: "bg-slate-900/80",
                     tr {
@@ -141,6 +165,7 @@ pub fn Rules() -> Element {
                                     td { class: TD_CLASS,
                                         {
                                             let id = rule.id;
+                                            let name = rule.name.clone();
                                             let enabled = rule.enabled;
                                             rsx! {
                                                 button {
@@ -150,12 +175,7 @@ pub fn Rules() -> Element {
                                                         "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-500 border border-slate-500/20 hover:bg-slate-500/20 transition-colors cursor-pointer"
                                                     },
                                                     onclick: move |_| {
-                                                        spawn(async move {
-                                                            match api_client::post::<(), FirewallRule>(&format!("/rules/{}/toggle", id), &()).await {
-                                                                Ok(_) => { rules.restart(); notify_change(&mut guard); },
-                                                                Err(e) => error_msg.set(Some(e)),
-                                                            }
-                                                        });
+                                                        confirm_toggle.set(Some((id, name.clone(), enabled)));
                                                     },
                                                     if enabled { "Enabled" } else { "Disabled" }
                                                 }

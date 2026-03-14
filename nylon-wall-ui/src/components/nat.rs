@@ -13,6 +13,7 @@ pub fn Nat() -> Element {
     let mut show_wizard = use_signal(|| false);
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
+    let mut confirm_toggle = use_signal(|| None::<(u32, bool)>);
     let mut guard = use_change_guard();
 
     let refresh = use_refresh_trigger();
@@ -122,6 +123,29 @@ pub fn Nat() -> Element {
                 }
             }
 
+            if let Some((tog_id, tog_enabled)) = confirm_toggle() {
+                ConfirmModal {
+                    title: if tog_enabled { "Disable NAT Entry".to_string() } else { "Enable NAT Entry".to_string() },
+                    message: format!(
+                        "Are you sure you want to {} NAT entry #{}?",
+                        if tog_enabled { "disable" } else { "enable" },
+                        tog_id
+                    ),
+                    confirm_label: if tog_enabled { "Disable".to_string() } else { "Enable".to_string() },
+                    danger: tog_enabled,
+                    on_confirm: move |_| {
+                        confirm_toggle.set(None);
+                        spawn(async move {
+                            match api_client::post::<(), NatEntry>(&format!("/nat/{}/toggle", tog_id), &()).await {
+                                Ok(_) => { entries.restart(); notify_change(&mut guard); },
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                        });
+                    },
+                    on_cancel: move |_| { confirm_toggle.set(None); },
+                }
+            }
+
             DataTable {
                 thead { class: "bg-slate-900/80",
                     tr {
@@ -174,12 +198,7 @@ pub fn Nat() -> Element {
                                                         "px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-500/10 text-slate-500 border border-slate-500/20 hover:bg-slate-500/20 transition-colors cursor-pointer"
                                                     },
                                                     onclick: move |_| {
-                                                        spawn(async move {
-                                                            match api_client::post::<(), NatEntry>(&format!("/nat/{}/toggle", id), &()).await {
-                                                                Ok(_) => { entries.restart(); notify_change(&mut guard); },
-                                                                Err(e) => error_msg.set(Some(e)),
-                                                            }
-                                                        });
+                                                        confirm_toggle.set(Some((id, enabled)));
                                                     },
                                                     if enabled { "Enabled" } else { "Disabled" }
                                                 }
