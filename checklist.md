@@ -298,13 +298,30 @@
 - [ ] `nylon-wall-ui/src/components/mod.rs` - Export `Vnet` component
 - [ ] `nylon-wall-ui/src/app.rs` - Add `/vnet` route + sidebar nav link (icon: LdNetwork)
 
+### eBPF - VLAN-aware packet parsing
+- [ ] `nylon-wall-ebpf/src/common.rs` - Add `ETH_P_8021Q` constant (`0x8100`)
+- [ ] `nylon-wall-ebpf/src/common.rs` - Add `ETH_P_8021AD` constant (`0x88A8`, QinQ double VLAN)
+- [ ] `nylon-wall-ebpf/src/common.rs` - Update `parse_packet()` to handle VLAN tags:
+  - If EtherType == `0x8100` or `0x88A8`: skip 4-byte VLAN tag, read real EtherType
+  - Support stacked VLANs (QinQ): skip up to 2 VLAN tags
+  - Shift `ip_base` offset accordingly (+4 per VLAN tag)
+  - Extract VLAN ID from tag for `PacketInfo`
+- [ ] `nylon-wall-ebpf/src/common.rs` - Add `vlan_id: u16` field to `PacketInfo` struct
+- [ ] `nylon-wall-ebpf/src/ingress.rs` - VLAN ID available for zone/rule matching
+- [ ] `nylon-wall-ebpf/src/egress.rs` - Same VLAN-aware parsing
+- [ ] `nylon-wall-ebpf/src/nat.rs` - Same VLAN-aware parsing (NAT header rewrite at correct offset)
+- [ ] Optional: eBPF rule matching by VLAN ID (add `vlan_id` field to `EbpfRule`)
+
 ### Integration
 - [ ] Backup/restore includes VLAN + bridge configs
 - [ ] Dashboard: VLAN + bridge count in system status
 - [ ] DHCP pool can use VLAN/bridge interface (e.g. `eth0.10`, `br-lan`)
 - [ ] Firewall rules can target VLAN/bridge interface
+- [ ] Firewall rules can filter by VLAN ID (optional)
 - [ ] Delete protection: warn if VLAN/bridge is used by rules, NAT, DHCP, routes
 - [ ] ทดสอบ VLAN creation + bridge + DHCP pool on bridge interface
+- [ ] ทดสอบ eBPF parse VLAN-tagged packets ถูกต้อง
+- [ ] ทดสอบ eBPF filter by VLAN ID
 
 ---
 
