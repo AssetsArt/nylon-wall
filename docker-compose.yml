@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile.daemon
     ports:
       - "9450:9450"
+      - "8888:8888" # For testing Port Forward Wizard
     volumes:
       - slatedb-data:/tmp/nylon-wall/slatedb
     environment:
