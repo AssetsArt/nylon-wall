@@ -1,4 +1,4 @@
-use super::{ConfirmModal, use_change_guard, notify_change};
+use super::{ConfirmModal, use_change_guard, use_refresh_trigger, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -61,6 +61,17 @@ pub fn Policies() -> Element {
     let mut confirm_delete_zone = use_signal(|| None::<(u32, String)>);
     let mut confirm_delete_policy = use_signal(|| None::<(u32, String)>);
     let mut guard = use_change_guard();
+
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            zones.restart();
+            policies.restart();
+        }
+    });
 
     rsx! {
         div {

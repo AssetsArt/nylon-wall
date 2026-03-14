@@ -45,7 +45,15 @@ impl Default for ChangeGuardState {
 pub fn use_change_guard_provider() -> Signal<ChangeGuardState> {
     let sig = use_signal(ChangeGuardState::default);
     use_context_provider(|| sig);
+    // Provide a refresh-generation counter so the Layout can re-key its Outlet
+    use_context_provider(|| Signal::new(0u64));
     sig
+}
+
+/// Get the refresh trigger signal.  Incrementing it causes the Layout's
+/// content area to remount, which re-fetches every `use_resource`.
+pub fn use_refresh_trigger() -> Signal<u64> {
+    use_context::<Signal<u64>>()
 }
 
 /// Get the change guard signal from context.
@@ -69,6 +77,7 @@ pub fn notify_change(guard: &mut Signal<ChangeGuardState>) {
 #[component]
 pub fn ChangeTimerModal() -> Element {
     let mut guard = use_change_guard();
+    let mut refresh = use_refresh_trigger();
     let mut confirming = use_signal(|| false);
     let mut reverting = use_signal(|| false);
     let mut reverted = use_signal(|| false);
@@ -113,6 +122,7 @@ pub fn ChangeTimerModal() -> Element {
                             remaining: 0,
                             total: status.total_secs as u32,
                         });
+                        refresh.set(refresh() + 1);
                         reverted.set(true);
                     }
                 }
@@ -146,6 +156,7 @@ pub fn ChangeTimerModal() -> Element {
                         remaining: 0,
                         total: status.total_secs as u32,
                     });
+                    refresh.set(refresh() + 1);
                     reverted.set(true);
                 } else {
                     // Not active — just keep total_secs in sync
@@ -186,7 +197,6 @@ pub fn ChangeTimerModal() -> Element {
                                 class: "px-4 py-2 rounded-lg text-sm font-medium bg-slate-800/50 text-slate-300 border border-slate-700/40 hover:bg-slate-700/50 transition-colors",
                                 onclick: move |_| {
                                     reverted.set(false);
-                                    let _ = document::eval("window.location.reload()");
                                 },
                                 "OK"
                             }
@@ -225,6 +235,7 @@ pub fn ChangeTimerModal() -> Element {
             was_active.set(false);
             guard.set(ChangeGuardState::default());
             reverting.set(false);
+            refresh.set(refresh() + 1);
             reverted.set(true);
         });
     };

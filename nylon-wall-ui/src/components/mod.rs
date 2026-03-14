@@ -11,7 +11,7 @@ mod routes;
 mod rules;
 mod settings;
 
-pub use change_guard::{ChangeTimerModal, use_change_guard, notify_change};
+pub use change_guard::{ChangeTimerModal, use_change_guard, use_refresh_trigger, notify_change};
 pub use confirm::ConfirmModal;
 pub use connections::Connections;
 pub use dashboard::Dashboard;

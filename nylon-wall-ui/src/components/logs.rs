@@ -1,4 +1,5 @@
 use super::ui::*;
+use super::use_refresh_trigger;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
@@ -47,6 +48,9 @@ pub fn Logs() -> Element {
     let proto = filter_proto();
     let action = filter_action();
 
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+
     let mut logs = use_resource(use_reactive!(
         |(page, src, dst, proto, action)| async move {
             let offset = page * PAGE_SIZE;
@@ -67,6 +71,14 @@ pub fn Logs() -> Element {
             api_client::get::<PaginatedLogs>(&format!("/logs?{}", query)).await
         }
     ));
+
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            logs.restart();
+        }
+    });
 
     let (entries, total) = match &*logs.read() {
         Some(Ok(data)) => (data.entries.clone(), data.total),

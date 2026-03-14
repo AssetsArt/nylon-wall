@@ -4,6 +4,7 @@ use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
 use super::ui::*;
+use super::use_refresh_trigger;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[allow(dead_code)]
@@ -20,17 +21,33 @@ struct PaginatedConntrack {
 
 #[component]
 pub fn Dashboard() -> Element {
-    let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
-    let rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
-    let nat_entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
-    let conns =
+    let mut status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
+    let mut rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
+    let mut nat_entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
+    let mut conns =
         use_resource(|| async { api_client::get::<PaginatedConntrack>("/conntrack").await });
-    let recent_logs =
+    let mut recent_logs =
         use_resource(|| async { api_client::get::<PaginatedLogs>("/logs?limit=5").await });
-    let dhcp_leases =
+    let mut dhcp_leases =
         use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
-    let dhcp_pools =
+    let mut dhcp_pools =
         use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
+
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            status.restart();
+            rules.restart();
+            nat_entries.restart();
+            conns.restart();
+            recent_logs.restart();
+            dhcp_leases.restart();
+            dhcp_pools.restart();
+        }
+    });
 
     let rule_count = match &*rules.read() {
         Some(Ok(r)) => r.len(),

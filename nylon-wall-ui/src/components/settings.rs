@@ -1,4 +1,4 @@
-use super::{ConfirmModal, use_change_guard, notify_change};
+use super::{ConfirmModal, use_change_guard, use_refresh_trigger, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -18,14 +18,25 @@ struct NetworkInterface {
 
 #[component]
 pub fn Settings() -> Element {
-    let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
-    let interfaces = use_resource(|| async {
+    let mut status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
+    let mut interfaces = use_resource(|| async {
         api_client::get::<Vec<NetworkInterface>>("/system/interfaces").await
     });
     let mut guard = use_change_guard();
     let mut backup_msg = use_signal(|| None::<(bool, String)>);
     let mut importing = use_signal(|| false);
     let mut confirm_import = use_signal(|| None::<String>);
+
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            status.restart();
+            interfaces.restart();
+        }
+    });
 
     rsx! {
         div {

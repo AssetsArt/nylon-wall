@@ -3,6 +3,7 @@ use crate::models::*;
 use dioxus::prelude::*;
 use nylon_wall_common::conntrack::ConnState;
 use super::ui::*;
+use super::use_refresh_trigger;
 
 const PAGE_SIZE: usize = 25;
 
@@ -21,6 +22,9 @@ pub fn Connections() -> Element {
     let mut filter_state = use_signal(|| "all".to_string());
     let mut filter_protocol = use_signal(|| "all".to_string());
 
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+
     let mut conns = use_resource(move || {
         let page = current_page();
         let offset = page * PAGE_SIZE;
@@ -35,6 +39,14 @@ pub fn Connections() -> Element {
                 url.push_str(&format!("&protocol={}", proto_val));
             }
             api_client::get::<PaginatedConntrack>(&url).await
+        }
+    });
+
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            conns.restart();
         }
     });
 

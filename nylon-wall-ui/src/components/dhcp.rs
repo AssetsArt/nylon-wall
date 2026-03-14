@@ -1,4 +1,4 @@
-use super::{ConfirmModal, use_change_guard, notify_change};
+use super::{ConfirmModal, use_change_guard, use_refresh_trigger, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
@@ -10,13 +10,26 @@ use dioxus_free_icons::icons::ld_icons::*;
 pub fn Dhcp() -> Element {
     let mut active_tab = use_signal(|| 0u8); // 0=Pools, 1=Leases, 2=Client
 
-    let pools = use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
-    let leases = use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
-    let reservations = use_resource(|| async {
+    let mut pools = use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
+    let mut leases = use_resource(|| async { api_client::get::<Vec<DhcpLease>>("/dhcp/leases").await });
+    let mut reservations = use_resource(|| async {
         api_client::get::<Vec<DhcpReservation>>("/dhcp/reservations").await
     });
-    let clients =
+    let mut clients =
         use_resource(|| async { api_client::get::<Vec<DhcpClientConfig>>("/dhcp/clients").await });
+
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            pools.restart();
+            leases.restart();
+            reservations.restart();
+            clients.restart();
+        }
+    });
 
     // Summary counts
     let pool_count = match &*pools.read() {
@@ -141,6 +154,16 @@ fn DhcpPoolsTab() -> Element {
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_delete = use_signal(|| None::<u32>);
     let mut guard = use_change_guard();
+
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            pools.restart();
+        }
+    });
 
     rsx! {
         div {
@@ -368,6 +391,17 @@ fn DhcpLeasesTab() -> Element {
     let mut error_msg = use_signal(|| None::<String>);
     let mut confirm_release = use_signal(|| None::<String>); // MAC to release
     let mut guard = use_change_guard();
+
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            leases.restart();
+            reservations.restart();
+        }
+    });
 
     rsx! {
         div {
@@ -662,6 +696,17 @@ fn DhcpClientTab() -> Element {
     let mut editing = use_signal(|| None::<(bool, DhcpClientConfig)>);
     let mut error_msg = use_signal(|| None::<String>);
     let mut guard = use_change_guard();
+
+    let refresh = use_refresh_trigger();
+    let mut prev_refresh = use_signal(|| refresh());
+    use_effect(move || {
+        let r = refresh();
+        if r != prev_refresh() {
+            prev_refresh.set(r);
+            clients.restart();
+            statuses.restart();
+        }
+    });
 
     rsx! {
         div {
