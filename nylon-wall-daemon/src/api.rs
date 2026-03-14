@@ -21,6 +21,7 @@ use nylon_wall_common::nat::NatEntry;
 use nylon_wall_common::nat::NatType;
 use nylon_wall_common::route::{PolicyRoute, Route};
 use nylon_wall_common::rule::FirewallRule;
+use nylon_wall_common::tls::{SniRule, SniStats};
 use nylon_wall_common::zone::{NetworkPolicy, Zone};
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
@@ -90,6 +91,7 @@ async fn changes_revert(
     sync_rules_to_ebpf(&state).await;
     sync_nat_to_ebpf(&state).await;
     sync_zones_to_ebpf(&state).await;
+    sync_sni_to_ebpf(&state).await;
     broadcast(&state, WsEvent::ChangesReverted { count: if reverted { 1 } else { 0 } });
     Ok(Json(serde_json::json!({ "reverted": reverted })))
 }
@@ -246,6 +248,18 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
             "/api/v1/dhcp/clients/{interface}/renew",
             post(renew_dhcp_client),
         )
+        // SNI Filtering
+        .route(
+            "/api/v1/tls/sni/rules",
+            get(list_sni_rules).post(create_sni_rule),
+        )
+        .route(
+            "/api/v1/tls/sni/rules/{id}",
+            put(update_sni_rule).delete(delete_sni_rule),
+        )
+        .route("/api/v1/tls/sni/rules/{id}/toggle", post(toggle_sni_rule))
+        .route("/api/v1/tls/sni/stats", get(sni_stats))
+        .route("/api/v1/tls/sni/toggle", post(toggle_sni_filtering))
         // Change management (auto-revert)
         .route("/api/v1/changes/pending", get(changes_pending))
         .route("/api/v1/changes/confirm", post(changes_confirm))
@@ -2048,4 +2062,303 @@ async fn restore_data(
             "dhcp_clients": backup.dhcp_clients.len(),
         })),
     ))
+}
+
+// === SNI Filtering ===
+
+/// FNV-1a hash matching the eBPF kernel-side implementation.
+/// Used to compute the hash key for the SNI_POLICY eBPF map.
+fn fnv1a_hash(domain: &str) -> u32 {
+    let mut hash: u32 = 2166136261;
+    for byte in domain.to_lowercase().bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16777619);
+    }
+    hash
+}
+
+async fn list_sni_rules(State(state): State<Arc<AppState>>) -> AppResult<Vec<SniRule>> {
+    let results = state
+        .db
+        .scan_prefix::<SniRule>("sni_rule:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, r)| r).collect()))
+}
+
+async fn create_sni_rule(
+    State(state): State<Arc<AppState>>,
+    Json(mut rule): Json<SniRule>,
+) -> Result<(StatusCode, Json<SniRule>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
+    let existing = state
+        .db
+        .scan_prefix::<SniRule>("sni_rule:")
+        .await
+        .map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
+    rule.id = next_id;
+    rule.hit_count = 0;
+    let key = format!("sni_rule:{}", rule.id);
+    state.db.put(&key, &rule).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("sni_rule:", &key)
+        .await
+        .map_err(internal_error)?;
+    changeset::record_create(
+        &state,
+        "sni_rule:",
+        &key,
+        format!("Created SNI rule '{}' for {}", rule.id, rule.domain),
+    )
+    .await;
+    broadcast(&state, WsEvent::SniRuleCreated(to_json_value(&rule)));
+    sync_sni_to_ebpf(&state).await;
+    Ok((StatusCode::CREATED, Json(rule)))
+}
+
+async fn update_sni_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut rule): Json<SniRule>,
+) -> AppResult<SniRule> {
+    require_no_pending(&state).await?;
+    rule.id = id;
+    let key = format!("sni_rule:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
+    if old.is_none() {
+        return Err((StatusCode::NOT_FOUND, "SNI rule not found".to_string()));
+    }
+    state.db.put(&key, &rule).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(
+            &state,
+            &key,
+            old_val,
+            format!("Updated SNI rule #{}", id),
+        )
+        .await;
+    }
+    state
+        .db
+        .add_to_index("sni_rule:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(&state, WsEvent::SniRuleUpdated(to_json_value(&rule)));
+    sync_sni_to_ebpf(&state).await;
+    Ok(Json(rule))
+}
+
+async fn delete_sni_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
+    let key = format!("sni_rule:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("sni_rule:", &key)
+        .await
+        .map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(
+            &state,
+            "sni_rule:",
+            &key,
+            old_val,
+            format!("Deleted SNI rule #{}", id),
+        )
+        .await;
+    }
+    broadcast(&state, WsEvent::SniRuleDeleted { id });
+    sync_sni_to_ebpf(&state).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_sni_rule(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<SniRule> {
+    require_no_pending(&state).await?;
+    let key = format!("sni_rule:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
+    let mut rule: SniRule = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "SNI rule not found".to_string()))?;
+    rule.enabled = !rule.enabled;
+    state.db.put(&key, &rule).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(
+            &state,
+            &key,
+            old_val,
+            format!("Toggled SNI rule #{}", id),
+        )
+        .await;
+    }
+    broadcast(&state, WsEvent::SniRuleUpdated(to_json_value(&rule)));
+    sync_sni_to_ebpf(&state).await;
+    Ok(Json(rule))
+}
+
+async fn sni_stats(State(state): State<Arc<AppState>>) -> AppResult<SniStats> {
+    let rules = state
+        .db
+        .scan_prefix::<SniRule>("sni_rule:")
+        .await
+        .map_err(internal_error)?;
+
+    let mut total_blocked: u64 = 0;
+    let mut total_allowed: u64 = 0;
+    let mut total_logged: u64 = 0;
+
+    for (_, rule) in &rules {
+        match rule.action {
+            nylon_wall_common::tls::SniAction::Block => total_blocked += rule.hit_count,
+            nylon_wall_common::tls::SniAction::Allow => total_allowed += rule.hit_count,
+            nylon_wall_common::tls::SniAction::Log => total_logged += rule.hit_count,
+        }
+    }
+
+    // Check global SNI enabled state from DB
+    let enabled = state
+        .db
+        .get::<bool>("sni_filtering_enabled")
+        .await
+        .map_err(internal_error)?
+        .unwrap_or(false);
+
+    Ok(Json(SniStats {
+        total_inspected: total_blocked + total_allowed + total_logged,
+        total_blocked,
+        total_allowed,
+        total_logged,
+        enabled,
+    }))
+}
+
+#[derive(Deserialize)]
+struct SniToggleRequest {
+    enabled: Option<bool>,
+}
+
+async fn toggle_sni_filtering(
+    State(state): State<Arc<AppState>>,
+    body: Option<Json<SniToggleRequest>>,
+) -> AppResult<serde_json::Value> {
+    let current = state
+        .db
+        .get::<bool>("sni_filtering_enabled")
+        .await
+        .map_err(internal_error)?
+        .unwrap_or(false);
+
+    let new_state = match body {
+        Some(Json(req)) => req.enabled.unwrap_or(!current),
+        None => !current,
+    };
+
+    state
+        .db
+        .put("sni_filtering_enabled", &new_state)
+        .await
+        .map_err(internal_error)?;
+
+    // Update eBPF SNI_ENABLED map
+    #[cfg(target_os = "linux")]
+    {
+        let mut ebpf_guard = state.ebpf.lock().await;
+        if let Some(ref mut bpf) = *ebpf_guard {
+            let map = bpf.map_mut("SNI_ENABLED");
+            if let Some(map) = map {
+                if let Ok(mut array) = aya::maps::Array::<_, u32>::try_from(map) {
+                    let val: u32 = if new_state { 1 } else { 0 };
+                    let _ = array.set(0, val, 0);
+                }
+            }
+        }
+    }
+
+    tracing::info!("SNI filtering {}", if new_state { "enabled" } else { "disabled" });
+
+    Ok(Json(serde_json::json!({
+        "enabled": new_state
+    })))
+}
+
+// === SNI eBPF Sync ===
+
+/// Sync all enabled SNI rules to the eBPF SNI_POLICY hash map.
+/// Each domain (and its wildcard variant without leading "*.")  is hashed
+/// with FNV-1a and inserted with the action byte (0=allow, 1=block, 2=log).
+pub async fn sync_sni_to_ebpf(state: &AppState) {
+    let rules = match state.db.scan_prefix::<SniRule>("sni_rule:").await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to read SNI rules for eBPF sync: {}", e);
+            return;
+        }
+    };
+
+    // Build hash→action map from enabled rules
+    let mut policy_entries: Vec<(u32, u8)> = Vec::new();
+    for (_, rule) in &rules {
+        if !rule.enabled {
+            continue;
+        }
+        let action: u8 = match rule.action {
+            nylon_wall_common::tls::SniAction::Allow => 0,
+            nylon_wall_common::tls::SniAction::Block => 1,
+            nylon_wall_common::tls::SniAction::Log => 2,
+        };
+
+        // Strip leading "*." for wildcard rules — eBPF checks parent domains
+        let domain = if rule.domain.starts_with("*.") {
+            &rule.domain[2..]
+        } else {
+            &rule.domain
+        };
+
+        let hash = fnv1a_hash(domain);
+        policy_entries.push((hash, action));
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let mut ebpf_guard = state.ebpf.lock().await;
+        if let Some(ref mut bpf) = *ebpf_guard {
+            if let Err(e) = crate::ebpf_loader::sync_sni_to_maps(bpf, &policy_entries) {
+                tracing::error!("Failed to sync SNI policies to eBPF: {}", e);
+            }
+
+            // Also sync the global enabled state
+            let enabled = state
+                .db
+                .get::<bool>("sni_filtering_enabled")
+                .await
+                .unwrap_or(None)
+                .unwrap_or(false);
+            let map = bpf.map_mut("SNI_ENABLED");
+            if let Some(map) = map {
+                if let Ok(mut array) = aya::maps::Array::<_, u32>::try_from(map) {
+                    let val: u32 = if enabled { 1 } else { 0 };
+                    let _ = array.set(0, val, 0);
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        tracing::debug!(
+            "SNI eBPF sync skipped (not Linux): {} policy entries",
+            policy_entries.len()
+        );
+    }
 }

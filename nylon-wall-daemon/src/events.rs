@@ -59,6 +59,14 @@ pub enum WsEvent {
     #[serde(rename = "dhcp_client_status_changed")]
     DhcpClientStatusChanged(serde_json::Value),
 
+    // SNI filtering
+    #[serde(rename = "sni_rule_created")]
+    SniRuleCreated(serde_json::Value),
+    #[serde(rename = "sni_rule_updated")]
+    SniRuleUpdated(serde_json::Value),
+    #[serde(rename = "sni_rule_deleted")]
+    SniRuleDeleted { id: u32 },
+
     // Change management
     #[serde(rename = "changes_reverted")]
     ChangesReverted { count: usize },

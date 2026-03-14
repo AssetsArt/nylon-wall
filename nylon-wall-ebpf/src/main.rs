@@ -5,6 +5,7 @@ mod common;
 mod egress;
 mod ingress;
 mod nat;
+mod tls;
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -17,6 +18,7 @@ use nylon_wall_common::conntrack::{ConntrackEntry, ConntrackKey};
 use nylon_wall_common::log::{EbpfMetrics, EbpfPacketEvent, EbpfRateState};
 use nylon_wall_common::nat::{EbpfNatEntry, EbpfNatState};
 use nylon_wall_common::rule::EbpfRule;
+use nylon_wall_common::tls::EbpfSniEvent;
 use nylon_wall_common::zone::EbpfPolicyValue;
 
 // === Firewall Rule Maps ===
@@ -69,6 +71,17 @@ static NAT_CONNTRACK: LruHashMap<ConntrackKey, EbpfNatState> =
 
 #[map]
 static MASQUERADE_IP: Array<u32> = Array::with_max_entries(1, 0);
+
+// === SNI Filtering ===
+
+#[map]
+static SNI_POLICY: HashMap<u32, u8> = HashMap::with_max_entries(16384, 0);
+
+#[map]
+static SNI_EVENTS: PerfEventArray<EbpfSniEvent> = PerfEventArray::new(0);
+
+#[map]
+static SNI_ENABLED: Array<u32> = Array::with_max_entries(1, 0);
 
 // === Metrics & Rate Limiting ===
 

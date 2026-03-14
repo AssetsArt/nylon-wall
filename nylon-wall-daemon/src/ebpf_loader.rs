@@ -251,6 +251,35 @@ mod linux {
         }
     }
 
+    /// Sync SNI policy entries (hash → action) to the eBPF SNI_POLICY hash map.
+    pub fn sync_sni_to_maps(
+        bpf: &mut Ebpf,
+        entries: &[(u32, u8)], // (domain_hash, action)
+    ) -> anyhow::Result<()> {
+        let map = bpf
+            .map_mut("SNI_POLICY")
+            .ok_or_else(|| anyhow::anyhow!("SNI_POLICY map not found"))?;
+        let mut hashmap: aya::maps::HashMap<_, u32, u8> =
+            aya::maps::HashMap::try_from(map)?;
+
+        // Clear existing entries
+        let existing_keys: Vec<u32> = hashmap
+            .keys()
+            .filter_map(|k| k.ok())
+            .collect();
+        for key in existing_keys {
+            let _ = hashmap.remove(&key);
+        }
+
+        // Insert new entries
+        for (hash, action) in entries {
+            hashmap.insert(hash, action, 0)?;
+        }
+
+        info!("Synced {} SNI policy entries to eBPF maps", entries.len());
+        Ok(())
+    }
+
     fn set_map_u32(bpf: &mut Ebpf, map_name: &str, index: u32, value: u32) -> anyhow::Result<()> {
         let map = bpf
             .map_mut(map_name)

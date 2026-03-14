@@ -25,6 +25,8 @@ pub enum Route {
         Dhcp,
         #[route("/policies")]
         Policies,
+        #[route("/tls")]
+        Tls,
         #[route("/connections")]
         Connections,
         #[route("/logs")]
@@ -100,6 +102,10 @@ fn Layout() -> Element {
                     Link { class: sub_cls(&Route::Nat), to: Route::Nat,
                         Icon { width: 13, height: 13, icon: LdArrowLeftRight }
                         "NAT"
+                    }
+                    Link { class: sub_cls(&Route::Tls), to: Route::Tls,
+                        Icon { width: 13, height: 13, icon: LdLock }
+                        "TLS / SNI"
                     }
 
                     p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",

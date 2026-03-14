@@ -9,6 +9,7 @@ pub use nylon_wall_common::nat::{NatEntry, NatType};
 pub use nylon_wall_common::protocol::{PortRange, Protocol};
 pub use nylon_wall_common::route::{PolicyRoute, Route};
 pub use nylon_wall_common::rule::{Direction, FirewallRule, RuleAction};
+pub use nylon_wall_common::tls::{SniAction, SniRule, SniStats};
 pub use nylon_wall_common::zone::{NetworkPolicy, Schedule, Zone};
 
 /// System status response from the daemon

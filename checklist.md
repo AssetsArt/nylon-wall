@@ -325,5 +325,311 @@
 
 ---
 
-### Extras (Optional)
-- [ ] DNS filtering (blocklist + custom responses + query logging)
+## Phase 9: UI Authentication
+
+### Daemon - Auth
+- [ ] `nylon-wall-daemon/src/auth.rs` - Session management (bcrypt password hash, JWT tokens)
+- [ ] SlateDB: store admin password hash (`auth:admin_password`)
+- [ ] API: `POST /api/v1/auth/login` - Login (returns JWT)
+- [ ] API: `POST /api/v1/auth/logout` - Invalidate session
+- [ ] API: `PUT /api/v1/auth/password` - Change password
+- [ ] API: `GET /api/v1/auth/check` - Verify token validity
+- [ ] axum middleware: JWT validation on all `/api/v1/*` routes (except login)
+- [ ] First-run setup: if no password set, force setup on first access
+
+### Dioxus UI - Auth
+- [ ] `nylon-wall-ui/src/components/login.rs` - Login page (username + password)
+- [ ] `nylon-wall-ui/src/components/setup.rs` - First-run password setup page
+- [ ] JWT token storage in localStorage
+- [ ] `api_client.rs` - Attach `Authorization: Bearer` header to all requests
+- [ ] Auto-redirect to login on 401 response
+- [ ] Session timeout handling (auto-logout)
+- [ ] Settings page: change password form
+
+---
+
+## Phase 10: Traffic Monitoring & Graphs
+
+### eBPF - Per-interface traffic counters
+- [ ] eBPF map: `iface_stats` (HashMap - ifindex → {rx_bytes, tx_bytes, rx_packets, tx_packets})
+- [ ] `ingress.rs` - Increment per-interface rx counters
+- [ ] `egress.rs` - Increment per-interface tx counters
+- [ ] eBPF map: `ip_stats` (LRU HashMap - src_ip → {bytes_in, bytes_out, packets})
+- [ ] Per-IP bandwidth tracking in XDP/TC
+
+### Daemon - Traffic API
+- [ ] `nylon-wall-daemon/src/traffic.rs` - Periodic read from eBPF maps → store time-series in SlateDB
+- [ ] Background task: sample counters every 10 seconds, store 5-min/1-hour/1-day aggregates
+- [ ] API: `GET /api/v1/traffic/interfaces` - Per-interface bandwidth (current + history)
+- [ ] API: `GET /api/v1/traffic/top` - Top talkers (IPs by bandwidth)
+- [ ] API: `GET /api/v1/traffic/history?interface={iface}&period={5m|1h|1d}` - Time-series data
+- [ ] Auto-cleanup: keep 5-min data for 24h, 1-hour data for 30 days, 1-day data for 1 year
+
+### Dioxus UI - Traffic
+- [ ] `nylon-wall-ui/src/components/traffic.rs` - Traffic monitoring page
+- [ ] Real-time bandwidth chart per interface (sparkline or area chart)
+- [ ] Top talkers table (IP, total bytes, current rate)
+- [ ] Period selector (live, 1h, 24h, 7d, 30d)
+- [ ] Dashboard: mini bandwidth chart per interface card
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/traffic` route + sidebar nav link (icon: LdBarChart3)
+
+---
+
+## Phase 11: DNS Filtering
+
+### eBPF - DNS interception
+- [ ] eBPF map: `dns_blocklist` (HashMap - domain_hash → action)
+- [ ] `ingress.rs` - Detect DNS queries (UDP port 53), extract domain name
+- [ ] eBPF: compute domain hash, lookup in blocklist map
+- [ ] eBPF: for blocked domains → rewrite DNS response with NXDOMAIN or custom IP (redirect)
+- [ ] eBPF map: `dns_query_log` (PerfEventArray - domain, src_ip, action, timestamp)
+
+### Daemon - DNS Module
+- [ ] `nylon-wall-daemon/src/dns/mod.rs` - Module declarations
+- [ ] `nylon-wall-daemon/src/dns/blocklist.rs` - Load blocklists (AdGuard, Steven Black, custom)
+- [ ] Blocklist sources: download URL → parse domains → hash → push to eBPF map
+- [ ] Background task: auto-update blocklists (configurable interval, default 24h)
+- [ ] `nylon-wall-daemon/src/dns/logger.rs` - Read DNS query perf events → store in SlateDB
+- [ ] API: `GET /api/v1/dns/blocklists` - List configured blocklists
+- [ ] API: `POST /api/v1/dns/blocklists` - Add blocklist source (URL or custom)
+- [ ] API: `DELETE /api/v1/dns/blocklists/{id}` - Remove blocklist
+- [ ] API: `POST /api/v1/dns/blocklists/update` - Force re-download all blocklists
+- [ ] API: `GET /api/v1/dns/whitelist` - Custom whitelist (always allow)
+- [ ] API: `POST /api/v1/dns/whitelist` - Add domain to whitelist
+- [ ] API: `DELETE /api/v1/dns/whitelist/{id}` - Remove from whitelist
+- [ ] API: `GET /api/v1/dns/queries` - Query log (with filters: domain, src_ip, blocked/allowed)
+- [ ] API: `GET /api/v1/dns/stats` - Block stats (total queries, blocked count, top blocked domains)
+
+### Dioxus UI - DNS
+- [ ] `nylon-wall-ui/src/components/dns.rs` - DNS filtering page with tabs
+- [ ] Tab: Dashboard - block rate %, top blocked domains, queries over time chart
+- [ ] Tab: Blocklists - list of sources + toggle enable/disable + add custom
+- [ ] Tab: Whitelist - custom allow list management
+- [ ] Tab: Query Log - searchable DNS query table (domain, client IP, blocked/allowed, timestamp)
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/dns` route + sidebar nav link (icon: LdShield)
+
+---
+
+## Phase 12: Dynamic DNS (DDNS)
+
+### Daemon - DDNS
+- [ ] `nylon-wall-daemon/src/ddns.rs` - DDNS updater
+- [ ] Support providers: Cloudflare, No-IP, DuckDNS, Dynu, custom URL
+- [ ] Background task: detect WAN IP change → update DNS record
+- [ ] SlateDB: store DDNS configs (`ddns:{id}`)
+- [ ] API: `GET /api/v1/ddns` - List DDNS configs
+- [ ] API: `POST /api/v1/ddns` - Create DDNS config
+- [ ] API: `PUT /api/v1/ddns/{id}` - Update DDNS config
+- [ ] API: `DELETE /api/v1/ddns/{id}` - Delete DDNS config
+- [ ] API: `POST /api/v1/ddns/{id}/update` - Force update now
+- [ ] API: `GET /api/v1/ddns/{id}/status` - Last update status + current WAN IP
+
+### Dioxus UI - DDNS
+- [ ] `nylon-wall-ui/src/components/ddns.rs` - DDNS config page
+- [ ] Provider selector + credentials form (per provider)
+- [ ] Status display: current WAN IP, last update time, success/error
+- [ ] Force update button
+- [ ] Settings page integration or standalone `/ddns` route
+
+---
+
+## Phase 13: Multi-WAN Failover
+
+### eBPF - Multi-WAN
+- [ ] eBPF map: `wan_state` (Array - ifindex → {active, weight, health})
+- [ ] eBPF: policy-based WAN selection (fwmark per WAN)
+- [ ] eBPF: load balancing support (weighted round-robin via packet hash)
+
+### Daemon - Multi-WAN
+- [ ] `nylon-wall-daemon/src/multiwan.rs` - WAN health check + failover logic
+- [ ] Health check methods: ping (ICMP), HTTP probe, DNS resolve
+- [ ] Configurable check interval, fail threshold, recovery threshold
+- [ ] On failover: update default route, update masquerade IP, notify eBPF
+- [ ] Failover modes: active-passive, active-active (load balance)
+- [ ] API: `GET /api/v1/wan/status` - WAN health status per interface
+- [ ] API: `POST /api/v1/wan` - Configure WAN interfaces + failover policy
+- [ ] API: `PUT /api/v1/wan/{id}` - Update WAN config
+- [ ] API: `DELETE /api/v1/wan/{id}` - Remove WAN interface
+
+### Dioxus UI - Multi-WAN
+- [ ] `nylon-wall-ui/src/components/wan.rs` - Multi-WAN config page
+- [ ] WAN interface cards with live health status (latency, packet loss)
+- [ ] Failover mode selector (active-passive / load balance)
+- [ ] Health check config form (method, interval, thresholds)
+- [ ] Dashboard: WAN health indicator per interface
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/wan` route + sidebar nav link
+
+---
+
+## Phase 14: WireGuard VPN
+
+### Daemon - WireGuard
+- [ ] `nylon-wall-daemon/src/wireguard.rs` - WireGuard management via `wg` CLI / netlink
+- [ ] Create WireGuard interface: `ip link add wg0 type wireguard`
+- [ ] Key generation: `wg genkey`, `wg pubkey`
+- [ ] Apply config: `wg set wg0 listen-port {port} private-key {key}`
+- [ ] Peer management: `wg set wg0 peer {pubkey} allowed-ips {cidr} endpoint {addr}`
+- [ ] API: `GET /api/v1/vpn/wireguard` - Get WireGuard server config
+- [ ] API: `PUT /api/v1/vpn/wireguard` - Update server config (port, address, DNS)
+- [ ] API: `GET /api/v1/vpn/wireguard/peers` - List peers
+- [ ] API: `POST /api/v1/vpn/wireguard/peers` - Add peer (auto-generate keys)
+- [ ] API: `DELETE /api/v1/vpn/wireguard/peers/{id}` - Remove peer
+- [ ] API: `GET /api/v1/vpn/wireguard/peers/{id}/config` - Download peer config file
+- [ ] Auto-create firewall rules for VPN traffic (UDP listen port + wg0 interface)
+- [ ] Auto-create NAT masquerade for VPN → LAN access
+
+### Dioxus UI - WireGuard
+- [ ] `nylon-wall-ui/src/components/wireguard.rs` - WireGuard VPN page
+- [ ] Server config form (listen port, address range, DNS)
+- [ ] Peer table with QR code generation (for mobile clients)
+- [ ] Peer config download button (.conf file)
+- [ ] Live peer status: last handshake, transfer, endpoint
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/vpn` route + sidebar nav link (icon: LdShieldCheck)
+
+---
+
+## Phase 15: IDS/IPS (Intrusion Detection & Prevention)
+
+### eBPF - Threat detection
+- [ ] eBPF map: `threat_tracker` (LRU HashMap - src_ip → {syn_count, port_scan_count, timestamps})
+- [ ] eBPF map: `ip_blacklist` (HashMap - ip → expiry_time) — auto-block list
+- [ ] `ingress.rs` - Port scan detection: track unique dst_ports per src_ip within time window
+- [ ] `ingress.rs` - SYN flood detection: track SYN rate per src_ip
+- [ ] `ingress.rs` - Brute force detection: track connection attempts per src_ip to specific ports (22, 3389)
+- [ ] `ingress.rs` - Check `ip_blacklist` before rule evaluation → instant drop
+- [ ] eBPF map: `ids_events` (PerfEventArray - threat type, src_ip, details)
+
+### Daemon - IDS/IPS
+- [ ] `nylon-wall-daemon/src/ids/mod.rs` - IDS engine
+- [ ] `nylon-wall-daemon/src/ids/detector.rs` - Read threat events → evaluate → auto-block
+- [ ] Configurable thresholds: port scan (N ports in M seconds), SYN flood (N SYN/sec), brute force (N attempts)
+- [ ] Auto-block: add to `ip_blacklist` eBPF map with TTL (configurable, default 1 hour)
+- [ ] Manual block/unblock via API
+- [ ] API: `GET /api/v1/ids/threats` - List detected threats
+- [ ] API: `GET /api/v1/ids/blocked` - List currently blocked IPs
+- [ ] API: `POST /api/v1/ids/blocked` - Manually block IP
+- [ ] API: `DELETE /api/v1/ids/blocked/{ip}` - Unblock IP
+- [ ] API: `GET /api/v1/ids/config` - Get IDS thresholds
+- [ ] API: `PUT /api/v1/ids/config` - Update IDS thresholds
+- [ ] API: `POST /api/v1/ids/toggle` - Enable/disable IDS
+
+### Dioxus UI - IDS/IPS
+- [ ] `nylon-wall-ui/src/components/ids.rs` - IDS/IPS page
+- [ ] Threat dashboard: recent threats, blocked IPs count, attack types breakdown
+- [ ] Blocked IP table with unblock button + TTL countdown
+- [ ] Threshold config form (port scan, SYN flood, brute force)
+- [ ] Enable/disable toggle
+- [ ] Dashboard: threat count + blocked IPs indicator
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/ids` route + sidebar nav link (icon: LdRadar)
+
+---
+
+## Phase 16: GeoIP Blocking
+
+### eBPF - GeoIP
+- [ ] eBPF map: `geoip_db` (LPM Trie - IP prefix → country_code)
+- [ ] eBPF map: `country_policy` (Array - country_code → action: allow/block)
+- [ ] `ingress.rs` - Lookup src_ip in GeoIP LPM trie → check country policy
+- [ ] `egress.rs` - Lookup dst_ip in GeoIP LPM trie → check country policy
+
+### Daemon - GeoIP
+- [ ] `nylon-wall-daemon/src/geoip.rs` - MaxMind GeoLite2 DB loader
+- [ ] Download + parse GeoLite2-Country CSV/MMDB → populate eBPF LPM trie
+- [ ] Background task: auto-update DB (monthly)
+- [ ] API: `GET /api/v1/geoip/countries` - List all countries with block/allow status
+- [ ] API: `PUT /api/v1/geoip/countries` - Set blocked countries list
+- [ ] API: `POST /api/v1/geoip/update` - Force re-download GeoIP DB
+- [ ] API: `GET /api/v1/geoip/lookup/{ip}` - Lookup country for an IP
+
+### Dioxus UI - GeoIP
+- [ ] `nylon-wall-ui/src/components/geoip.rs` - GeoIP page
+- [ ] World map or country list with toggle block/allow per country
+- [ ] Search/filter countries
+- [ ] IP lookup tool
+- [ ] Dashboard: blocked countries count
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/geoip` route + sidebar nav link (icon: LdGlobe)
+
+---
+
+## Phase 17: Utility Tools
+
+### Wake-on-LAN
+- [ ] API: `POST /api/v1/tools/wol` - Send magic packet (MAC + broadcast address)
+- [ ] API: `GET /api/v1/tools/wol/devices` - Saved WOL devices list
+- [ ] API: `POST /api/v1/tools/wol/devices` - Save device (name, MAC, interface)
+- [ ] API: `DELETE /api/v1/tools/wol/devices/{id}` - Remove saved device
+- [ ] Daemon: construct and send magic packet (6x `0xFF` + 16x MAC) via UDP broadcast
+
+### mDNS Reflector
+- [ ] `nylon-wall-daemon/src/mdns.rs` - mDNS reflector (forward mDNS between interfaces/VLANs)
+- [ ] Listen on `224.0.0.251:5353` on configured interfaces
+- [ ] Re-broadcast received mDNS packets to other configured interfaces
+- [ ] API: `GET /api/v1/tools/mdns` - Get mDNS reflector config
+- [ ] API: `PUT /api/v1/tools/mdns` - Set interfaces to reflect between
+- [ ] API: `POST /api/v1/tools/mdns/toggle` - Enable/disable reflector
+
+### UPnP/NAT-PMP
+- [ ] `nylon-wall-daemon/src/upnp.rs` - UPnP IGD + NAT-PMP server
+- [ ] Auto-create temporary NAT port forward rules on client request
+- [ ] Configurable: enable/disable, allowed port ranges, max lease time
+- [ ] API: `GET /api/v1/tools/upnp` - UPnP config + active mappings
+- [ ] API: `PUT /api/v1/tools/upnp` - Update UPnP config
+- [ ] API: `DELETE /api/v1/tools/upnp/mappings/{id}` - Force remove mapping
+
+### Captive Portal
+- [ ] `nylon-wall-daemon/src/captive.rs` - Captive portal redirect
+- [ ] eBPF: redirect HTTP (port 80) from unauthenticated clients to portal page
+- [ ] eBPF map: `portal_whitelist` (HashMap - src_ip → authenticated)
+- [ ] Daemon serves portal HTML page
+- [ ] On accept: add client IP to whitelist map (with TTL)
+- [ ] API: `GET /api/v1/tools/captive` - Captive portal config
+- [ ] API: `PUT /api/v1/tools/captive` - Update config (interface, message, terms)
+- [ ] API: `POST /api/v1/tools/captive/toggle` - Enable/disable
+
+### Dioxus UI - Tools
+- [ ] `nylon-wall-ui/src/components/tools.rs` - Tools page with sections
+- [ ] Wake-on-LAN: device cards with wake button
+- [ ] mDNS reflector: interface multi-select + enable toggle
+- [ ] UPnP: config + active port mappings table
+- [ ] Captive portal: config form + connected clients list
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/tools` route + sidebar nav link (icon: LdWrench)
+
+---
+
+## Phase 18: TLS Inspection
+
+### Level 1: SNI Filtering (eBPF — no decryption)
+TLS ClientHello contains the domain name (SNI) in plaintext before encryption starts.
+eBPF can parse this to block/allow HTTPS by domain without breaking encryption.
+
+#### eBPF - SNI extraction
+- [ ] `nylon-wall-ebpf/src/tls.rs` - TLS ClientHello parser
+  - Detect TCP port 443 + TLS record type `0x16` (Handshake) + HandshakeType `0x01` (ClientHello)
+  - Walk TLS extensions to find SNI extension (type `0x0000`)
+  - Extract server_name from SNI extension
+  - Hash domain name for eBPF map lookup
+- [ ] eBPF map: `tls_sni_policy` (HashMap - domain_hash → action: allow/block/log)
+- [ ] eBPF map: `tls_events` (PerfEventArray - SNI domain, src_ip, dst_ip, action)
+- [ ] `egress.rs` - On TCP port 443: parse ClientHello → lookup SNI policy → drop/pass
+- [ ] `ingress.rs` - Same for inbound TLS connections
+- [ ] Handle fragmented ClientHello (SNI may span multiple TCP segments — best-effort)
+
+#### Daemon - SNI Filter
+- [ ] `nylon-wall-daemon/src/tls/mod.rs` - Module declarations
+- [ ] `nylon-wall-daemon/src/tls/sni.rs` - SNI policy management
+  - Domain list → compute hashes → push to eBPF map
+  - Support wildcards: `*.example.com` → hash subdomains
+- [ ] Read `tls_events` perf buffer → log blocked/allowed TLS connections
+- [ ] API: `GET /api/v1/tls/sni/rules` - List SNI filter rules
+- [ ] API: `POST /api/v1/tls/sni/rules` - Add SNI rule (domain, action: allow/block/log)
+- [ ] API: `DELETE /api/v1/tls/sni/rules/{id}` - Remove SNI rule
+- [ ] API: `GET /api/v1/tls/sni/logs` - TLS connection log (domain, client, action)
+- [ ] Category-based blocking: import domain lists (ads, social media, adult, malware)
+
+#### Dioxus UI - SNI Filtering
+- [ ] Tab: SNI Filtering - domain block/allow rules + connection log
+  - Add rule form: domain pattern, action (block/allow/log)
+  - Category import (ads, social, malware blocklists)
+  - SNI connection log table (domain, client IP, action, timestamp)
+- [ ] Tab: Statistics - TLS version distribution, top domains, blocked count
+- [ ] `nylon-wall-ui/src/app.rs` - Add `/tls` route + sidebar nav link (icon: LdLock)

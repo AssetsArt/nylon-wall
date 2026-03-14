@@ -10,6 +10,7 @@ mod policies;
 mod routes;
 mod rules;
 mod settings;
+mod tls;
 
 pub use change_guard::{ChangeTimerModal, use_change_guard, use_refresh_trigger, notify_change};
 pub use confirm::ConfirmModal;
@@ -22,3 +23,4 @@ pub use policies::Policies;
 pub use routes::Routes;
 pub use rules::Rules;
 pub use settings::Settings;
+pub use tls::Tls;

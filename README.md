@@ -146,68 +146,6 @@ bind_addr = "0.0.0.0:8080"
 ./scripts/build-release.sh --output dist
 ```
 
-## Roadmap
-
-### Phase 1: Foundation
-- [x] Workspace & config
-- [x] Shared types (nylon-wall-common)
-- [x] eBPF programs (XDP ingress, TC egress)
-- [x] Daemon (axum API + SlateDB)
-- [x] Docker dev environment
-
-### Phase 2: Core Firewall
-- [x] eBPF maps (ingress/egress rules, conntrack, events)
-- [x] Connection tracking (NEW/ESTABLISHED/RELATED/INVALID)
-- [x] Firewall rules CRUD + toggle/reorder
-- [x] Web UI (Dioxus 0.7 dark theme + rule management)
-- [ ] eBPF packet filtering ทดสอบบน Linux
-
-### Phase 3: NAT & Routing
-- [x] NAT API (SNAT/DNAT/Masquerade)
-- [x] Static & policy-based routing API
-- [x] NAT UI + port forward wizard
-- [x] Route & policy route UI
-- [x] NAT eBPF processing (SNAT/DNAT/Masquerade with checksum update)
-- [x] Kernel route integration (ip route/rule)
-
-### Phase 4: Network Policy & Zones
-- [x] Zone & policy CRUD API
-- [x] Schedule-based policy evaluation
-- [x] Zone & policy UI + schedule editor
-- [x] Zone eBPF maps (ifindex → zone_id, zone pair → policy)
-
-### Phase 5: Monitoring
-- [x] Prometheus metrics endpoint
-- [x] Packet log reader + API
-- [x] WebSocket real-time events
-- [x] Dashboard, conntrack table, log viewer UI
-- [x] eBPF metrics & rate limit maps
-- [x] Log TTL auto-cleanup (7-day TTL)
-
-### Phase 6: System & Hardening
-- [x] System API (interfaces, status, apply, backup/restore)
-- [x] Settings UI + interface config
-- [x] CI/CD & installer
-- [x] Rate limiting / QoS (token bucket ใน eBPF)
-- [ ] IPv6 full support
-- [ ] Performance tuning & benchmarking
-
-### Phase 7: DHCP
-- [x] DHCP server (pools, leases, reservations)
-- [x] DHCP client (WAN interface)
-- [x] DHCP UI (3-tab layout)
-- [x] Dashboard DHCP summary
-- [ ] ทดสอบ DHCP server/client บน Linux
-
-### Future
-- [ ] DNS filtering (blocklist + query logging)
-- [ ] VPN (WireGuard / IPsec)
-- [ ] IDS/IPS integration
-- [ ] Traffic shaping (QoS)
-- [ ] High availability (HA)
-- [ ] Multi-WAN failover
-- [ ] SSL/TLS inspection
-
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.

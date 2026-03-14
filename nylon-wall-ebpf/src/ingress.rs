@@ -60,6 +60,26 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
         }
     }
 
+    // SNI filtering: check inbound TLS ClientHello for blocked domains
+    let sni_enabled = unsafe { crate::SNI_ENABLED.get(0).copied().unwrap_or(0) };
+    if sni_enabled == 1 && pkt.protocol == IPPROTO_TCP && pkt.dst_port == 443 {
+        let ip_base = data + ETH_HDR_LEN;
+        let ihl = unsafe { (*((ip_base) as *const u8) & 0x0F) as usize * 4 };
+        let transport_base = ip_base + ihl;
+
+        if let Some(result) = crate::tls::check_sni(data, data_end, &pkt, transport_base) {
+            if result.action == 1 {
+                crate::tls::emit_sni_event(ctx, &pkt, &result, data_end);
+                if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
+                    unsafe { (*m).packets_dropped += 1 };
+                }
+                return Ok(XDP_DROP);
+            } else if result.action == 2 {
+                crate::tls::emit_sni_event(ctx, &pkt, &result, data_end);
+            }
+        }
+    }
+
     // Zone-based policy check
     let ifindex = unsafe { (*ctx.ctx).ingress_ifindex };
     if let Some(src_zone) = unsafe { crate::ZONE_MAP.get(&ifindex) } {
