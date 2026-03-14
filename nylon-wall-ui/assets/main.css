@@ -1,2 +1,36 @@
-/* k3rs UI — minimal overrides (Tailwind handles most styling) */
+/* Nylon Wall UI — minimal overrides (Tailwind handles most styling) */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* Light theme: remap color palette so dark-themed classes become light */
+[data-theme="light"] {
+  /* Invert slate scale */
+  --color-slate-950: oklch(98.5% 0.005 265);    /* near white */
+  --color-slate-900: oklch(96.5% 0.008 265);    /* gray-50 */
+  --color-slate-800: oklch(93% 0.013 256);       /* gray-200 */
+  --color-slate-700: oklch(87% 0.022 253);       /* gray-300 */
+  --color-slate-600: oklch(70% 0.04 257);        /* gray-400 */
+  --color-slate-500: oklch(55% 0.046 257);       /* stays neutral */
+  --color-slate-400: oklch(45% 0.043 257);       /* darker text */
+  --color-slate-300: oklch(37% 0.044 257);       /* dark text */
+  --color-slate-200: oklch(27% 0.041 260);       /* very dark text */
+  --color-slate-100: oklch(21% 0.042 266);       /* near black */
+
+  /* Remap white to dark (used for headings/bold text in dark theme) */
+  --color-white: oklch(15% 0.02 260);
+
+  /* Remap other colors for better contrast on light backgrounds */
+  --color-emerald-400: oklch(55% 0.17 162);
+  --color-emerald-500: oklch(50% 0.15 162);
+  --color-red-400: oklch(55% 0.191 22);
+  --color-red-500: oklch(50% 0.2 25);
+  --color-amber-400: oklch(60% 0.16 84);
+  --color-amber-500: oklch(55% 0.16 70);
+  --color-blue-400: oklch(55% 0.165 255);
+  --color-blue-500: oklch(50% 0.2 260);
+  --color-cyan-400: oklch(55% 0.12 212);
+  --color-cyan-500: oklch(50% 0.12 215);
+  --color-violet-400: oklch(55% 0.183 294);
+  --color-violet-500: oklch(50% 0.2 293);
+  --color-purple-400: oklch(55% 0.18 306);
+  --color-purple-500: oklch(50% 0.2 304);
+}
