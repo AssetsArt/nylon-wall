@@ -210,6 +210,7 @@ pub fn spawn_auto_revert_task(state: Arc<AppState>) {
 
                         // Re-sync eBPF maps after revert
                         crate::api::sync_rules_to_ebpf(&state).await;
+                        crate::api::sync_nat_to_ebpf(&state).await;
                         crate::api::sync_zones_to_ebpf(&state).await;
 
                         // Broadcast revert event so UI can refresh

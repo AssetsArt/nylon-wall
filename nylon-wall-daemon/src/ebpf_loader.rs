@@ -5,6 +5,7 @@ mod linux {
     use aya::Ebpf;
     use aya::maps::Array;
     use aya::programs::{SchedClassifier, Xdp, XdpFlags};
+    use nylon_wall_common::nat::EbpfNatEntry;
     use nylon_wall_common::rule::EbpfRule;
     use nylon_wall_common::zone::EbpfPolicyValue;
     use tracing::info;
@@ -56,9 +57,10 @@ mod linux {
         tc_prog.attach(&iface, aya::programs::TcAttachType::Egress)?;
         info!("TC egress attached to {}", iface);
 
-        // Set initial rule counts to 0
+        // Set initial rule/NAT counts to 0
         set_map_u32(&mut bpf, "INGRESS_RULE_COUNT", 0, 0)?;
         set_map_u32(&mut bpf, "EGRESS_RULE_COUNT", 0, 0)?;
+        set_map_u32(&mut bpf, "NAT_ENTRY_COUNT", 0, 0)?;
 
         info!("eBPF programs loaded and attached successfully");
         Ok(bpf)
@@ -142,6 +144,26 @@ mod linux {
             });
         }
         entries
+    }
+
+    /// Push NAT entries into eBPF maps.
+    pub fn sync_nat_to_maps(
+        bpf: &mut Ebpf,
+        entries: &[EbpfNatEntry],
+    ) -> anyhow::Result<()> {
+        let map = bpf
+            .map_mut("NAT_TABLE")
+            .ok_or_else(|| anyhow::anyhow!("NAT_TABLE map not found"))?;
+        let mut array: Array<_, EbpfNatEntry> = Array::try_from(map)?;
+
+        for (i, entry) in entries.iter().enumerate() {
+            array.set(i as u32, *entry, 0)?;
+        }
+
+        set_map_u32(bpf, "NAT_ENTRY_COUNT", 0, entries.len() as u32)?;
+
+        info!("Synced {} NAT entries to eBPF maps", entries.len());
+        Ok(())
     }
 
     fn write_rules_to_map(

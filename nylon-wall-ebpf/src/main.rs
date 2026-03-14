@@ -4,6 +4,7 @@
 mod common;
 mod egress;
 mod ingress;
+mod nat;
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -14,6 +15,7 @@ use aya_ebpf::{
 
 use nylon_wall_common::conntrack::{ConntrackEntry, ConntrackKey};
 use nylon_wall_common::log::{EbpfMetrics, EbpfPacketEvent, EbpfRateState};
+use nylon_wall_common::nat::{EbpfNatEntry, EbpfNatState};
 use nylon_wall_common::rule::EbpfRule;
 use nylon_wall_common::zone::EbpfPolicyValue;
 
@@ -52,6 +54,21 @@ static ZONE_MAP: HashMap<u32, u32> = HashMap::with_max_entries(64, 0);
 
 #[map]
 static POLICY_MAP: HashMap<u32, EbpfPolicyValue> = HashMap::with_max_entries(256, 0);
+
+// === NAT Maps ===
+
+#[map]
+static NAT_TABLE: Array<EbpfNatEntry> = Array::with_max_entries(64, 0);
+
+#[map]
+static NAT_ENTRY_COUNT: Array<u32> = Array::with_max_entries(1, 0);
+
+#[map]
+static NAT_CONNTRACK: LruHashMap<ConntrackKey, EbpfNatState> =
+    LruHashMap::with_max_entries(16384, 0);
+
+#[map]
+static MASQUERADE_IP: Array<u32> = Array::with_max_entries(1, 0);
 
 // === Metrics & Rate Limiting ===
 

@@ -77,6 +77,7 @@ async fn changes_revert(
     tracing::warn!("Manually reverted pending change");
     // Re-sync eBPF after revert
     sync_rules_to_ebpf(&state).await;
+    sync_nat_to_ebpf(&state).await;
     sync_zones_to_ebpf(&state).await;
     broadcast(&state, WsEvent::ChangesReverted { count: if reverted { 1 } else { 0 } });
     Ok(Json(serde_json::json!({ "reverted": reverted })))
@@ -437,6 +438,7 @@ async fn create_nat(
         &state,
         WsEvent::NatCreated(serde_json::to_value(&entry).unwrap()),
     );
+    sync_nat_to_ebpf(&state).await;
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
@@ -462,6 +464,7 @@ async fn update_nat(
         &state,
         WsEvent::NatUpdated(serde_json::to_value(&entry).unwrap()),
     );
+    sync_nat_to_ebpf(&state).await;
     Ok(Json(entry))
 }
 
@@ -482,6 +485,7 @@ async fn delete_nat(
         changeset::record_delete(&state.pending_changes, "nat:", &key, old_val, format!("Deleted NAT entry #{}", id)).await;
     }
     broadcast(&state, WsEvent::NatDeleted { id });
+    sync_nat_to_ebpf(&state).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1559,8 +1563,6 @@ pub async fn sync_rules_to_ebpf(state: &AppState) {
 }
 
 /// Sync NAT entries from DB to eBPF maps.
-/// Note: NAT eBPF maps are not yet integrated into the main ingress/egress programs.
-/// NAT will be handled via separate BPF program chaining in a future update.
 pub async fn sync_nat_to_ebpf(state: &AppState) {
     let entries = match state.db.scan_prefix::<NatEntry>("nat:").await {
         Ok(e) => e,
@@ -1569,7 +1571,29 @@ pub async fn sync_nat_to_ebpf(state: &AppState) {
             return;
         }
     };
-    tracing::debug!("NAT sync: {} entries (eBPF NAT maps pending integration)", entries.len());
+
+    #[cfg(target_os = "linux")]
+    {
+        let ebpf_entries: Vec<_> = entries
+            .iter()
+            .filter(|(_, e)| e.enabled)
+            .map(|(_, e)| crate::nat::nat_entry_to_ebpf(e))
+            .collect();
+
+        let mut ebpf_guard = state.ebpf.lock().await;
+        if let Some(ref mut bpf) = *ebpf_guard {
+            if let Err(e) = crate::ebpf_loader::sync_nat_to_maps(bpf, &ebpf_entries) {
+                tracing::error!("Failed to sync NAT to eBPF: {}", e);
+            }
+        } else {
+            tracing::debug!("NAT sync: eBPF not loaded ({} entries skipped)", ebpf_entries.len());
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        tracing::debug!("NAT sync: {} entries (eBPF not available on this platform)", entries.len());
+    }
 }
 
 /// Sync zone/policy mappings from DB to eBPF maps.

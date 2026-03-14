@@ -88,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
     if _ebpf_loaded {
         info!("Syncing existing rules from DB to eBPF maps...");
         api::sync_rules_to_ebpf(&state).await;
+        api::sync_nat_to_ebpf(&state).await;
         api::sync_zones_to_ebpf(&state).await;
     }
 

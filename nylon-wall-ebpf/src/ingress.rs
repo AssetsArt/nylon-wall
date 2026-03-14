@@ -36,6 +36,22 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
 
     let now = unsafe { bpf_ktime_get_ns() };
 
+    // Apply NAT before firewall rules:
+    // 1. Reverse SNAT for return traffic (undo outbound SNAT)
+    // 2. DNAT for inbound port forwarding
+    let _nat_applied = crate::nat::try_reverse_nat_ingress(data, data_end, &pkt)
+        || crate::nat::try_dnat_ingress(data, data_end, &pkt);
+
+    // Re-parse packet if NAT was applied (IP/port may have changed)
+    let pkt = if _nat_applied {
+        match parse_packet(data, data_end) {
+            Some(p) => p,
+            None => return Ok(XDP_PASS),
+        }
+    } else {
+        pkt
+    };
+
     // Update global metrics
     if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
         unsafe {

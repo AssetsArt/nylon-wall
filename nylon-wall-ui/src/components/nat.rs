@@ -146,12 +146,12 @@ pub fn Nat() -> Element {
                                         }
                                     }
                                     td { class: "{TD_CLASS} text-slate-400 font-mono", {entry.src_network.clone().unwrap_or("*".to_string())} }
-                                    td { class: "{TD_CLASS} text-slate-400 font-mono", {entry.dst_network.clone().unwrap_or("*".to_string())} }
+                                    td { class: "{TD_CLASS} text-slate-400 font-mono", {format_destination(entry)} }
                                     td { class: "{TD_CLASS} text-slate-400", {entry.protocol.map(|p| format!("{:?}", p)).unwrap_or("Any".to_string())} }
                                     td { class: "{TD_CLASS} text-slate-300 font-mono",
                                         {format_translate(entry)}
                                     }
-                                    td { class: "{TD_CLASS} text-slate-400", {entry.out_interface.clone().unwrap_or("\u{2014}".to_string())} }
+                                    td { class: "{TD_CLASS} text-slate-400", {format_interface(entry)} }
                                     td { class: TD_CLASS,
                                         Badge {
                                             color: if entry.enabled { Color::Emerald } else { Color::Slate },
@@ -194,6 +194,23 @@ pub fn Nat() -> Element {
                 }
             }
         }
+    }
+}
+
+fn format_destination(entry: &NatEntry) -> String {
+    let net = entry.dst_network.clone().unwrap_or("*".to_string());
+    match &entry.dst_port {
+        Some(pr) if pr.start == pr.end => format!("{}:{}", net, pr.start),
+        Some(pr) => format!("{}:{}-{}", net, pr.start, pr.end),
+        None => net,
+    }
+}
+
+fn format_interface(entry: &NatEntry) -> String {
+    // Show in_interface for DNAT, out_interface for SNAT/Masquerade
+    match entry.nat_type {
+        NatType::DNAT => entry.in_interface.clone().unwrap_or("\u{2014}".to_string()),
+        _ => entry.out_interface.clone().unwrap_or("\u{2014}".to_string()),
     }
 }
 
@@ -253,9 +270,9 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
             src_network: None,
             dst_network: None,
             protocol: match protocol().as_str() {
+                "TCP" => Some(Protocol::TCP),
                 "UDP" => Some(Protocol::UDP),
-                "Both" => None,
-                _ => Some(Protocol::TCP),
+                _ => None, // "TCP + UDP" → None = Any protocol
             },
             dst_port: Some(PortRange::single(ext)),
             in_interface: Some(in_interface()),
@@ -266,26 +283,7 @@ fn PortForwardWizard(on_saved: EventHandler<()>) -> Element {
 
         spawn(async move {
             match api_client::post::<NatEntry, NatEntry>("/nat", &entry).await {
-                Ok(_) => {
-                    // If "Both" protocol, create a second entry for UDP
-                    if protocol() == "Both" {
-                        let udp_entry = NatEntry {
-                            id: 0,
-                            nat_type: NatType::DNAT,
-                            enabled: true,
-                            src_network: None,
-                            dst_network: None,
-                            protocol: Some(Protocol::UDP),
-                            dst_port: Some(PortRange::single(ext)),
-                            in_interface: Some(in_interface()),
-                            out_interface: None,
-                            translate_ip: Some(int_ip()),
-                            translate_port: Some(PortRange::single(internal)),
-                        };
-                        let _ = api_client::post::<NatEntry, NatEntry>("/nat", &udp_entry).await;
-                    }
-                    on_saved.call(());
-                }
+                Ok(_) => on_saved.call(()),
                 Err(e) => error.set(Some(e)),
             }
             submitting.set(false);
