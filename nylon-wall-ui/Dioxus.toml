@@ -11,5 +11,5 @@ title = "Nylon Wall - Network Firewall"
 reload_html = true
 watch_path = ["src", "assets"]
 
-[[web.proxy]]
-backend = "http://localhost:9450/api"
+# API proxy no longer needed — UI calls daemon directly via window.__NYLON_API_URL__
+# Set the API URL in index.html or config.toml [ui].api_url

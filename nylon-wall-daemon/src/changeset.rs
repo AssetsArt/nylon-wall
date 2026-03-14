@@ -25,9 +25,7 @@ pub enum UndoAction {
         old_value: serde_json::Value,
     },
     /// Undo a full restore: wipe current data and re-import old snapshot.
-    FullRestore {
-        old_snapshot: serde_json::Value,
-    },
+    FullRestore { old_snapshot: serde_json::Value },
 }
 
 /// A single pending (unconfirmed) change.
@@ -214,9 +212,9 @@ pub fn spawn_auto_revert_task(state: Arc<AppState>) {
                         crate::api::sync_zones_to_ebpf(&state).await;
 
                         // Broadcast revert event so UI can refresh
-                        let _ = state.event_tx.send(crate::events::WsEvent::ChangesReverted {
-                            count: 1,
-                        });
+                        let _ = state
+                            .event_tx
+                            .send(crate::events::WsEvent::ChangesReverted { count: 1 });
 
                         info!("Post-revert sync completed");
                     }

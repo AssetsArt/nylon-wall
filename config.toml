@@ -31,6 +31,10 @@ log_ttl_seconds = 604800  # 7 days
 # Address the UI is served on (via nginx or dx serve)
 bind_addr = "0.0.0.0:8080"
 
+# Daemon API URL that the UI connects to (set in index.html's window.__NYLON_API_URL__)
+# Leave empty to use relative path (requires reverse proxy)
+api_url = "http://localhost:9450"
+
 [security]
 # Enable API authentication (future)
 # auth_enabled = false
