@@ -166,6 +166,7 @@ fn RouteForm(is_edit: bool, editing: Route, on_saved: EventHandler<()>) -> Eleme
     let mut gateway = use_signal(|| editing.gateway.clone().unwrap_or_default());
     let mut interface = use_signal(|| editing.interface.clone());
     let mut metric = use_signal(|| editing.metric.to_string());
+    let mut table = use_signal(|| editing.table.to_string());
     let editing_enabled = editing.enabled;
     let mut error = use_signal(|| None::<String>);
     let mut submitting = use_signal(|| false);
@@ -182,7 +183,7 @@ fn RouteForm(is_edit: bool, editing: Route, on_saved: EventHandler<()>) -> Eleme
             },
             interface: interface(),
             metric: metric().parse().unwrap_or(100),
-            table: 254,
+            table: table().parse().unwrap_or(254),
             enabled: if is_edit { editing_enabled } else { true },
         };
         spawn(async move {
@@ -210,7 +211,7 @@ fn RouteForm(is_edit: bool, editing: Route, on_saved: EventHandler<()>) -> Eleme
                     on_dismiss: move |_| error.set(None),
                 }
             }
-            div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4",
+            div { class: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-4",
                 FormField { label: "Destination (CIDR)".to_string(),
                     input {
                         class: INPUT_CLASS,
@@ -234,6 +235,13 @@ fn RouteForm(is_edit: bool, editing: Route, on_saved: EventHandler<()>) -> Eleme
                         class: INPUT_CLASS,
                         r#type: "number", value: "{metric}",
                         oninput: move |e| metric.set(e.value()),
+                    }
+                }
+                FormField { label: "Table".to_string(),
+                    input {
+                        class: INPUT_CLASS,
+                        r#type: "number", placeholder: "254", value: "{table}",
+                        oninput: move |e| table.set(e.value()),
                     }
                 }
             }
