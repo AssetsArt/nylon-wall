@@ -19,10 +19,14 @@
 
 ### nylon-wall-ebpf
 - [x] `nylon-wall-ebpf/Cargo.toml`
-- [x] `nylon-wall-ebpf/src/main.rs` - eBPF entrypoint (XDP pass-all)
-- [x] `nylon-wall-ebpf/src/common.rs` - Shared eBPF constants
-- [x] `nylon-wall-ebpf/src/ingress.rs` - XDP ingress placeholder
-- [x] `nylon-wall-ebpf/src/egress.rs` - TC egress placeholder
+- [x] `nylon-wall-ebpf/src/main.rs` - eBPF entrypoint + tail call dispatch (XDP + TC)
+- [x] `nylon-wall-ebpf/src/common.rs` - Shared eBPF constants + packet parser
+- [x] `nylon-wall-ebpf/src/scratchpad.rs` - PerCpuArray ScratchPad helpers (write/read)
+- [x] `nylon-wall-ebpf/src/stages/` - Tail call stages (NAT → SNI → Rules per direction)
+  - `ingress_nat.rs`, `ingress_sni.rs`, `ingress_rules.rs` (XDP)
+  - `egress_nat.rs`, `egress_sni.rs`, `egress_rules.rs` (TC)
+- [x] `nylon-wall-common/src/scratchpad.rs` - ScratchPad `#[repr(C)]` struct + stage constants
+- [x] `nylon-wall-daemon/src/ebpf_loader.rs` - Load entry + tail programs, register ProgramArray
 - [ ] ทดสอบ load/attach บน test interface
 
 ### nylon-wall-daemon
@@ -603,33 +607,38 @@ TLS ClientHello contains the domain name (SNI) in plaintext before encryption st
 eBPF can parse this to block/allow HTTPS by domain without breaking encryption.
 
 #### eBPF - SNI extraction
-- [ ] `nylon-wall-ebpf/src/tls.rs` - TLS ClientHello parser
+- [x] `nylon-wall-ebpf/src/tls.rs` - TLS ClientHello parser
   - Detect TCP port 443 + TLS record type `0x16` (Handshake) + HandshakeType `0x01` (ClientHello)
   - Walk TLS extensions to find SNI extension (type `0x0000`)
   - Extract server_name from SNI extension
-  - Hash domain name for eBPF map lookup
-- [ ] eBPF map: `tls_sni_policy` (HashMap - domain_hash → action: allow/block/log)
-- [ ] eBPF map: `tls_events` (PerfEventArray - SNI domain, src_ip, dst_ip, action)
-- [ ] `egress.rs` - On TCP port 443: parse ClientHello → lookup SNI policy → drop/pass
-- [ ] `ingress.rs` - Same for inbound TLS connections
-- [ ] Handle fragmented ClientHello (SNI may span multiple TCP segments — best-effort)
+  - FNV-1a hash domain name for eBPF map lookup (exact + wildcard parent domain)
+- [x] eBPF map: `SNI_POLICY` (HashMap<u32,u8> - domain_hash → action: allow/block/log, 16384 entries)
+- [x] eBPF map: `SNI_EVENTS` (PerfEventArray<EbpfSniEvent>)
+- [x] eBPF map: `SNI_ENABLED` (Array<u32> - global feature flag)
+- [x] `stages/egress_sni.rs` - TC tail-call stage: parse ClientHello → lookup SNI → drop/pass (with `pull_data(512)`)
+- [x] `stages/ingress_sni.rs` - XDP tail-call stage: same for inbound TLS connections
+- [x] Handle fragmented ClientHello (best-effort: AND-masked bounds, MAX_EXTENSIONS=16, MAX_DOMAIN_SCAN=64)
+- [x] Tail call dispatch: entry → NAT (stage 0) → SNI (stage 1) → Rules (stage 2)
 
 #### Daemon - SNI Filter
-- [ ] `nylon-wall-daemon/src/tls/mod.rs` - Module declarations
-- [ ] `nylon-wall-daemon/src/tls/sni.rs` - SNI policy management
-  - Domain list → compute hashes → push to eBPF map
-  - Support wildcards: `*.example.com` → hash subdomains
-- [ ] Read `tls_events` perf buffer → log blocked/allowed TLS connections
-- [ ] API: `GET /api/v1/tls/sni/rules` - List SNI filter rules
-- [ ] API: `POST /api/v1/tls/sni/rules` - Add SNI rule (domain, action: allow/block/log)
-- [ ] API: `DELETE /api/v1/tls/sni/rules/{id}` - Remove SNI rule
-- [ ] API: `GET /api/v1/tls/sni/logs` - TLS connection log (domain, client, action)
-- [ ] Category-based blocking: import domain lists (ads, social media, adult, malware)
+- [x] SNI policy management in `api.rs` (FNV-1a hash matching eBPF, wildcard `*.domain` support)
+- [x] `sync_sni_to_ebpf()` - Domain list → compute hashes → push to eBPF `SNI_POLICY` map
+- [x] `sync_sni_to_maps()` in `ebpf_loader.rs` - Clear and re-populate eBPF map on rule changes
+- [x] API: `GET /api/v1/tls/sni/rules` - List SNI filter rules
+- [x] API: `POST /api/v1/tls/sni/rules` - Add SNI rule (domain, action: allow/block/log, category)
+- [x] API: `PUT /api/v1/tls/sni/rules/{id}` - Update SNI rule
+- [x] API: `DELETE /api/v1/tls/sni/rules/{id}` - Remove SNI rule
+- [x] API: `POST /api/v1/tls/sni/rules/{id}/toggle` - Enable/disable individual rule
+- [x] API: `GET /api/v1/tls/sni/stats` - SNI statistics (inspected, blocked, allowed, logged)
+- [x] API: `POST /api/v1/tls/sni/toggle` - Global enable/disable SNI filtering
+- [x] API: `GET /api/v1/tls/sni/debug` - Debug map contents
+- [ ] Category-based blocking: bulk import domain lists (ads, social media, adult, malware)
 
 #### Dioxus UI - SNI Filtering
-- [ ] Tab: SNI Filtering - domain block/allow rules + connection log
-  - Add rule form: domain pattern, action (block/allow/log)
-  - Category import (ads, social, malware blocklists)
-  - SNI connection log table (domain, client IP, action, timestamp)
-- [ ] Tab: Statistics - TLS version distribution, top domains, blocked count
-- [ ] `nylon-wall-ui/src/app.rs` - Add `/tls` route + sidebar nav link (icon: LdLock)
+- [x] `nylon-wall-ui/src/components/tls.rs` - SNI Filtering page
+  - Statistics cards (status, inspected, blocked, allowed, logged)
+  - Global toggle button with confirmation modal
+  - SNI rules table (domain, action, category, hits, status, actions)
+  - Add/edit rule form (domain pattern, action block/allow/log, category, enabled)
+  - Per-rule toggle and delete with confirmation modals
+- [x] `nylon-wall-ui/src/app.rs` - `/tls` route + sidebar nav link (icon: LdLock, label: "TLS / SNI")
