@@ -4,7 +4,9 @@ use dioxus_free_icons::icons::ld_icons::*;
 
 use crate::components::*;
 use crate::components::change_guard;
+use crate::models::SystemStatus;
 use crate::theme::{self, Theme};
+use crate::api_client;
 
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -49,6 +51,7 @@ fn Layout() -> Element {
     let route: Route = use_route();
     let theme = theme::use_theme_init();
     let _change_guard = change_guard::use_change_guard_provider();
+    let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
 
     let nav_cls = |target: &Route| {
         if *target == route {
@@ -147,7 +150,12 @@ fn Layout() -> Element {
 
                 // Footer
                 div { class: "px-4 py-3 border-t border-slate-800/60 flex items-center justify-between",
-                    p { class: "text-[10px] text-slate-700 font-mono", "v0.1.0" }
+                    p { class: "text-[10px] text-slate-700 font-mono",
+                        {match &*status.read() {
+                            Some(Ok(s)) => format!("v{}", s.version),
+                            _ => "v...".to_string(),
+                        }}
+                    }
                     button {
                         class: "w-7 h-7 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 flex items-center justify-center transition-colors",
                         title: if *theme.read() == Theme::Dark { "Switch to light mode" } else { "Switch to dark mode" },

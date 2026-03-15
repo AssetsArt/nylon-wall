@@ -137,6 +137,65 @@ pub fn Settings() -> Element {
                 }
             }
 
+            // eBPF Programs
+            match &*status.read() {
+                Some(Ok(s)) if s.ebpf_loaded && !s.ebpf_programs.is_empty() => rsx! {
+                    div { class: "mb-6",
+                        SectionHeader {
+                            icon: rsx! { Icon { width: 15, height: 15, icon: LdCpu, class: "text-slate-500" } },
+                            title: "eBPF Programs".to_string(),
+                        }
+                        DataTable {
+                            thead { class: "bg-slate-900/80",
+                                tr {
+                                    th { class: TH_CLASS, "Program" }
+                                    th { class: TH_CLASS, "Type" }
+                                    th { class: TH_CLASS, "Role" }
+                                    th { class: TH_CLASS, "Stage" }
+                                    th { class: TH_CLASS, "Status" }
+                                }
+                            }
+                            tbody {
+                                for prog in s.ebpf_programs.iter() {
+                                    tr { class: TR_CLASS,
+                                        key: "{prog.name}",
+                                        td { class: "{TD_CLASS} text-slate-300 font-mono text-xs", "{prog.name}" }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: if prog.prog_type == "XDP" { Color::Cyan } else { Color::Violet },
+                                                label: prog.prog_type.clone(),
+                                            }
+                                        }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: if prog.role == "entry" { Color::Blue } else { Color::Slate },
+                                                label: prog.role.clone(),
+                                            }
+                                        }
+                                        td { class: "{TD_CLASS} text-slate-500 font-mono text-xs",
+                                            match prog.stage {
+                                                Some(0) => rsx! { "NAT" },
+                                                Some(1) => rsx! { "SNI" },
+                                                Some(2) => rsx! { "Rules" },
+                                                Some(n) => rsx! { "{n}" },
+                                                None => rsx! { span { class: "text-slate-700", "\u{2014}" } },
+                                            }
+                                        }
+                                        td { class: TD_CLASS,
+                                            Badge {
+                                                color: Color::Emerald,
+                                                label: "Loaded".to_string(),
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => rsx! {},
+            }
+
             // Network Interfaces (only those with a non-empty status)
             div { class: "mb-6",
                 SectionHeader {

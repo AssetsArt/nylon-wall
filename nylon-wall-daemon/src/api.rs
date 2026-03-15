@@ -856,13 +856,80 @@ struct SystemStatus {
     version: String,
     ebpf_loaded: bool,
     uptime_seconds: u64,
+    ebpf_programs: Vec<EbpfProgramStatus>,
+}
+
+#[derive(serde::Serialize, Clone)]
+struct EbpfProgramStatus {
+    name: String,
+    prog_type: String,
+    role: String,
+    stage: Option<u32>,
 }
 
 async fn system_status(State(state): State<Arc<AppState>>) -> Json<SystemStatus> {
+    let ebpf_loaded = state.ebpf_loaded.load(std::sync::atomic::Ordering::Relaxed);
+
+    let ebpf_programs = if ebpf_loaded {
+        vec![
+            EbpfProgramStatus {
+                name: "nylon_wall_ingress".to_string(),
+                prog_type: "XDP".to_string(),
+                role: "entry".to_string(),
+                stage: None,
+            },
+            EbpfProgramStatus {
+                name: "nylon_wall_egress".to_string(),
+                prog_type: "TC".to_string(),
+                role: "entry".to_string(),
+                stage: None,
+            },
+            EbpfProgramStatus {
+                name: "ingress_nat".to_string(),
+                prog_type: "XDP".to_string(),
+                role: "tail".to_string(),
+                stage: Some(0),
+            },
+            EbpfProgramStatus {
+                name: "ingress_sni".to_string(),
+                prog_type: "XDP".to_string(),
+                role: "tail".to_string(),
+                stage: Some(1),
+            },
+            EbpfProgramStatus {
+                name: "ingress_rules".to_string(),
+                prog_type: "XDP".to_string(),
+                role: "tail".to_string(),
+                stage: Some(2),
+            },
+            EbpfProgramStatus {
+                name: "egress_nat".to_string(),
+                prog_type: "TC".to_string(),
+                role: "tail".to_string(),
+                stage: Some(0),
+            },
+            EbpfProgramStatus {
+                name: "egress_sni".to_string(),
+                prog_type: "TC".to_string(),
+                role: "tail".to_string(),
+                stage: Some(1),
+            },
+            EbpfProgramStatus {
+                name: "egress_rules".to_string(),
+                prog_type: "TC".to_string(),
+                role: "tail".to_string(),
+                stage: Some(2),
+            },
+        ]
+    } else {
+        vec![]
+    };
+
     Json(SystemStatus {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        ebpf_loaded: state.ebpf_loaded.load(std::sync::atomic::Ordering::Relaxed),
+        ebpf_loaded,
         uptime_seconds: state.started_at.elapsed().as_secs(),
+        ebpf_programs,
     })
 }
 
@@ -2411,6 +2478,11 @@ pub async fn sync_sni_to_ebpf(state: &AppState) {
                 if let Ok(mut array) = aya::maps::Array::<_, u32>::try_from(map) {
                     let val: u32 = if enabled { 1 } else { 0 };
                     let _ = array.set(0, val, 0);
+                    tracing::info!(
+                        "SNI filtering eBPF flag set to {} ({})",
+                        val,
+                        if enabled { "enabled" } else { "disabled" }
+                    );
                 }
             }
         }

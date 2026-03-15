@@ -1,10 +1,10 @@
+use super::ui::*;
+use super::use_refresh_trigger;
 use crate::api_client;
 use crate::models::*;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
-use super::ui::*;
-use super::use_refresh_trigger;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[allow(dead_code)]
@@ -21,7 +21,8 @@ struct PaginatedConntrack {
 
 #[component]
 pub fn Dashboard() -> Element {
-    let mut status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
+    let mut status =
+        use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
     let mut rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
     let mut nat_entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
     let mut conns =

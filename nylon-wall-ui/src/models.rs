@@ -18,4 +18,15 @@ pub struct SystemStatus {
     pub version: String,
     pub ebpf_loaded: bool,
     pub uptime_seconds: u64,
+    #[serde(default)]
+    pub ebpf_programs: Vec<EbpfProgramStatus>,
+}
+
+/// Individual eBPF program status
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EbpfProgramStatus {
+    pub name: String,
+    pub prog_type: String,
+    pub role: String,
+    pub stage: Option<u32>,
 }
