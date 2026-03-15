@@ -1,0 +1,8 @@
+services:
+  integration-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - RUST_LOG=nylon_wall_daemon=warn
+      - RUST_BACKTRACE=1

@@ -1,21 +1,10 @@
-mod api;
-mod changeset;
-mod db;
-#[allow(dead_code)] // DHCP internals used only on Linux
-mod dhcp;
-mod ebpf_loader;
-mod events;
-mod metrics;
-mod nat;
-mod route;
-mod rule_engine;
-#[allow(dead_code)] // schedule functions used at runtime via policy engine
-mod schedule;
-mod state;
-
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
+
+use nylon_wall_daemon::{api, changeset, db, dhcp, events, rule_engine, AppState};
+#[cfg(target_os = "linux")]
+use nylon_wall_daemon::{route, state};
 
 /// Minimal config struct for values we read from config.toml.
 #[derive(serde::Deserialize, Default)]
@@ -61,18 +50,6 @@ fn load_config() -> FileConfig {
     FileConfig::default()
 }
 
-pub struct AppState {
-    pub db: db::Database,
-    pub rule_engine: tokio::sync::RwLock<rule_engine::RuleEngine>,
-    pub event_tx: tokio::sync::broadcast::Sender<events::WsEvent>,
-    pub started_at: Instant,
-    #[cfg(target_os = "linux")]
-    pub ebpf: tokio::sync::Mutex<Option<aya::Ebpf>>,
-    pub ebpf_loaded: std::sync::atomic::AtomicBool,
-    pub dhcp_pool_notify: tokio::sync::watch::Sender<()>,
-    pub pending_changes: tokio::sync::Mutex<Option<changeset::PendingChange>>,
-}
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -102,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
 
     #[cfg(target_os = "linux")]
     let ebpf_handle = {
+        use nylon_wall_daemon::ebpf_loader;
         info!("Loading eBPF programs...");
         match ebpf_loader::load_and_attach().await {
             Ok(bpf) => {

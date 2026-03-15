@@ -1,0 +1,40 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+
+jobs:
+  test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      - name: Run unit tests
+        run: cargo test -p nylon-wall-common -p nylon-wall-daemon --lib
+
+      - name: Run integration tests
+        run: cargo test -p nylon-wall-daemon --test '*'
+        env:
+          RUST_LOG: nylon_wall_daemon=warn
+          RUST_BACKTRACE: 1

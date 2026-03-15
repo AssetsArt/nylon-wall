@@ -1,0 +1,24 @@
+# Dockerfile for running integration tests (no eBPF needed)
+FROM rust:1.93-bookworm
+
+WORKDIR /app
+
+# Copy workspace files
+COPY Cargo.toml Cargo.lock ./
+
+# Copy crates needed for tests
+COPY nylon-wall-common/ nylon-wall-common/
+COPY nylon-wall-daemon/ nylon-wall-daemon/
+
+# Stub out UI crate (not needed for daemon tests, but required by workspace)
+COPY nylon-wall-ui/Cargo.toml nylon-wall-ui/Cargo.toml
+RUN mkdir -p nylon-wall-ui/src && echo "fn main() {}" > nylon-wall-ui/src/main.rs
+RUN mkdir -p nylon-wall-ui/assets
+
+# Build tests (separate layer for caching)
+RUN cargo test -p nylon-wall-daemon --test '*' --no-run 2>&1 || true
+
+# Run tests
+ENV RUST_LOG=nylon_wall_daemon=warn
+ENV RUST_BACKTRACE=1
+CMD ["cargo", "test", "-p", "nylon-wall-daemon", "--test", "*"]

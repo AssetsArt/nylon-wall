@@ -149,8 +149,9 @@ struct BackupData {
     dhcp_clients: Vec<serde_json::Value>,
 }
 
-pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
-    let app = Router::new()
+/// Build the axum Router with all API routes. Separated from `serve` for testability.
+pub fn build_router(state: Arc<AppState>) -> Router {
+    Router::new()
         // WebSocket
         .route("/api/v1/ws/events", get(ws_handler))
         // Rules (reorder must be before {id} to avoid matching "reorder" as an id)
@@ -268,8 +269,11 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
         // Prometheus metrics
         .route("/metrics", get(prometheus_metrics))
         .layer(CorsLayer::permissive())
-        .with_state(state);
+        .with_state(state)
+}
 
+pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
+    let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("API server listening on {}", addr);
     axum::serve(listener, app).await?;
