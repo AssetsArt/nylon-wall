@@ -15,6 +15,10 @@ const MAIN_CSS: Asset = asset!("/assets/main.css");
 #[derive(Clone, Debug, PartialEq, Routable)]
 #[rustfmt::skip]
 pub enum Route {
+    #[route("/login")]
+    Login,
+    #[route("/setup")]
+    Setup,
     #[layout(Layout)]
         #[route("/")]
         Dashboard,
@@ -50,9 +54,39 @@ pub fn App() -> Element {
 #[component]
 fn Layout() -> Element {
     let route: Route = use_route();
+    let nav = use_navigator();
     let theme = theme::use_theme_init();
     let _change_guard = change_guard::use_change_guard_provider();
     ws_client::use_ws_provider();
+
+    // Auth guard — check token + setup status on mount
+    let mut auth_checked = use_signal(|| false);
+    use_future(move || async move {
+        // Check if setup is required first
+        if let Ok(resp) = api_client::get::<serde_json::Value>("/auth/setup-check").await {
+            if resp.get("setup_required").and_then(|v| v.as_bool()).unwrap_or(false) {
+                nav.push(Route::Setup);
+                return;
+            }
+        }
+        // Check if we have a valid token
+        if !api_client::has_token() {
+            nav.push(Route::Login);
+            return;
+        }
+        // Validate token with server
+        match api_client::get::<serde_json::Value>("/auth/check").await {
+            Ok(_) => { auth_checked.set(true); }
+            Err(e) => {
+                if e == api_client::UNAUTHORIZED {
+                    nav.push(Route::Login);
+                } else {
+                    // Server unreachable — allow through (offline mode)
+                    auth_checked.set(true);
+                }
+            }
+        }
+    });
 
     // Provide SystemStatus as context — shared by Dashboard, Settings, and sidebar
     let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
@@ -71,6 +105,14 @@ fn Layout() -> Element {
         } else {
             "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-[13px] font-medium text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-all"
         }
+    };
+
+    let on_logout = move |_| {
+        spawn(async move {
+            let _ = api_client::post::<(), serde_json::Value>("/auth/logout", &()).await;
+            api_client::clear_token();
+            nav.push(Route::Login);
+        });
     };
 
     rsx! {
@@ -161,14 +203,22 @@ fn Layout() -> Element {
                             _ => "v...".to_string(),
                         }}
                     }
-                    button {
-                        class: "w-7 h-7 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 flex items-center justify-center transition-colors",
-                        title: if *theme.read() == Theme::Dark { "Switch to light mode" } else { "Switch to dark mode" },
-                        onclick: move |_| { theme::toggle_theme(theme); },
-                        if *theme.read() == Theme::Dark {
-                            Icon { width: 14, height: 14, icon: LdSun, class: "text-slate-400" }
-                        } else {
-                            Icon { width: 14, height: 14, icon: LdMoon, class: "text-slate-400" }
+                    div { class: "flex items-center gap-1",
+                        button {
+                            class: "w-7 h-7 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 flex items-center justify-center transition-colors",
+                            title: "Logout",
+                            onclick: on_logout,
+                            Icon { width: 14, height: 14, icon: LdLogOut, class: "text-slate-400" }
+                        }
+                        button {
+                            class: "w-7 h-7 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 flex items-center justify-center transition-colors",
+                            title: if *theme.read() == Theme::Dark { "Switch to light mode" } else { "Switch to dark mode" },
+                            onclick: move |_| { theme::toggle_theme(theme); },
+                            if *theme.read() == Theme::Dark {
+                                Icon { width: 14, height: 14, icon: LdSun, class: "text-slate-400" }
+                            } else {
+                                Icon { width: 14, height: 14, icon: LdMoon, class: "text-slate-400" }
+                            }
                         }
                     }
                 }

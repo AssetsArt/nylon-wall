@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
-use nylon_wall_daemon::{api, changeset, db, dhcp, events, rule_engine, AppState};
+use nylon_wall_daemon::{api, auth, changeset, db, dhcp, events, rule_engine, AppState};
 #[cfg(target_os = "linux")]
 use nylon_wall_daemon::{route, state};
 
@@ -94,6 +94,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    // Initialize Ed25519 JWT keys for auth
+    let jwt_keys = auth::load_or_create_jwt_keys(&db).await;
+    info!("Auth initialized (Ed25519)");
+
     // Create DHCP pool notification channel
     let (dhcp_pool_tx, _dhcp_pool_rx) = tokio::sync::watch::channel(());
 
@@ -107,6 +111,8 @@ async fn main() -> anyhow::Result<()> {
         ebpf_loaded: std::sync::atomic::AtomicBool::new(_ebpf_loaded),
         dhcp_pool_notify: dhcp_pool_tx,
         pending_changes: tokio::sync::Mutex::new(None),
+        jwt_keys,
+        revoked_tokens: tokio::sync::RwLock::new(std::collections::HashSet::new()),
     });
 
     // Recover any un-confirmed change from a previous crash

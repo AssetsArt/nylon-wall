@@ -387,6 +387,114 @@ pub fn Settings() -> Element {
                     }
                 }
             }
+            // Change Password
+            FormCard {
+                h3 { class: "text-sm font-semibold text-white mb-4",
+                    div { class: "flex items-center gap-2",
+                        Icon { width: 14, height: 14, icon: LdLock, class: "text-blue-400" }
+                        "Change Password"
+                    }
+                }
+                ChangePasswordForm {}
+            }
+        }
+    }
+}
+
+#[component]
+fn ChangePasswordForm() -> Element {
+    let mut current = use_signal(String::new);
+    let mut new_pw = use_signal(String::new);
+    let mut confirm_pw = use_signal(String::new);
+    let mut error = use_signal(|| None::<String>);
+    let mut success = use_signal(|| false);
+    let mut submitting = use_signal(|| false);
+
+    let mut do_submit = move || {
+        if submitting() { return; }
+        if new_pw().len() < 8 {
+            error.set(Some("New password must be at least 8 characters".to_string()));
+            return;
+        }
+        if new_pw() != confirm_pw() {
+            error.set(Some("Passwords do not match".to_string()));
+            return;
+        }
+        submitting.set(true);
+        error.set(None);
+        success.set(false);
+        spawn(async move {
+            let body = serde_json::json!({
+                "current_password": current(),
+                "new_password": new_pw(),
+            });
+            match api_client::put::<serde_json::Value, serde_json::Value>("/auth/password", &body).await {
+                Ok(_) => {
+                    success.set(true);
+                    current.set(String::new());
+                    new_pw.set(String::new());
+                    confirm_pw.set(String::new());
+                }
+                Err(e) => {
+                    if e.contains("401") || e.contains("UNAUTHORIZED") {
+                        error.set(Some("Current password is incorrect".to_string()));
+                    } else {
+                        error.set(Some(e));
+                    }
+                }
+            }
+            submitting.set(false);
+        });
+    };
+
+    rsx! {
+        if success() {
+            div { class: "mb-4 px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-sm text-emerald-400",
+                "Password changed successfully"
+            }
+        }
+        if let Some(err) = error() {
+            div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400",
+                "{err}"
+            }
+        }
+        form {
+            onsubmit: move |e| { e.prevent_default(); do_submit(); },
+            div { class: "grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4",
+                FormField { label: "Current Password".to_string(),
+                    input {
+                        class: INPUT_CLASS,
+                        r#type: "password",
+                        placeholder: "Current password",
+                        value: "{current}",
+                        oninput: move |e| current.set(e.value()),
+                    }
+                }
+                FormField { label: "New Password".to_string(),
+                    input {
+                        class: INPUT_CLASS,
+                        r#type: "password",
+                        placeholder: "Min. 8 characters",
+                        value: "{new_pw}",
+                        oninput: move |e| new_pw.set(e.value()),
+                    }
+                }
+                FormField { label: "Confirm New Password".to_string(),
+                    input {
+                        class: INPUT_CLASS,
+                        r#type: "password",
+                        placeholder: "Confirm password",
+                        value: "{confirm_pw}",
+                        oninput: move |e| confirm_pw.set(e.value()),
+                    }
+                }
+            }
+            SubmitBtn {
+                color: Color::Blue,
+                label: if submitting() { "Changing...".to_string() } else { "Change Password".to_string() },
+                disabled: submitting() || current().is_empty() || new_pw().len() < 8 || confirm_pw().is_empty(),
+                onclick: move |_| do_submit(),
+            }
         }
     }
 }

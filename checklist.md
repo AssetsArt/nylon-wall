@@ -340,24 +340,39 @@
 
 ## Phase 9: UI Authentication
 
-### Daemon - Auth
-- [ ] `nylon-wall-daemon/src/auth.rs` - Session management (bcrypt password hash, JWT tokens)
-- [ ] SlateDB: store admin password hash (`auth:admin_password`)
-- [ ] API: `POST /api/v1/auth/login` - Login (returns JWT)
-- [ ] API: `POST /api/v1/auth/logout` - Invalidate session
-- [ ] API: `PUT /api/v1/auth/password` - Change password
-- [ ] API: `GET /api/v1/auth/check` - Verify token validity
-- [ ] axum middleware: JWT validation on all `/api/v1/*` routes (except login)
-- [ ] First-run setup: if no password set, force setup on first access
+### Daemon - Auth (Phase 9A: Local Password)
+- [x] `nylon-wall-daemon/src/auth.rs` - Session management (bcrypt password hash, JWT tokens)
+- [x] SlateDB: store admin password hash (`auth:admin_password`) + JWT secret (`auth:jwt_secret`)
+- [x] API: `GET /api/v1/auth/setup-check` - Check if initial setup is required
+- [x] API: `POST /api/v1/auth/setup` - First-run password setup (returns JWT)
+- [x] API: `POST /api/v1/auth/login` - Login (returns JWT)
+- [x] API: `POST /api/v1/auth/logout` - Invalidate session (token revocation)
+- [x] API: `PUT /api/v1/auth/password` - Change password
+- [x] API: `GET /api/v1/auth/check` - Verify token validity
+- [x] axum middleware: JWT validation on all `/api/v1/*` routes (except login/setup/setup-check)
+- [x] First-run setup: if no password set, middleware allows all (UI redirects to setup)
+- [x] WebSocket auth: token via query parameter `?token=` for browser WS connections
+
+### Daemon - Auth (Phase 9B: OIDC/OAuth2)
+- [ ] OIDC/OAuth2 provider configuration (Google, GitHub, custom OIDC)
+- [ ] API: `GET /api/v1/auth/providers` - List configured OAuth providers
+- [ ] API: `POST /api/v1/auth/providers` - Add OAuth provider
+- [ ] API: `DELETE /api/v1/auth/providers/{id}` - Remove OAuth provider
+- [ ] API: `GET /api/v1/auth/oauth/{provider}/authorize` - Start OAuth flow (redirect URL)
+- [ ] API: `GET /api/v1/auth/oauth/{provider}/callback` - OAuth callback (exchange code for JWT)
+- [ ] UI: OAuth provider buttons on login page
+- [ ] UI: OAuth provider management in Settings
 
 ### Dioxus UI - Auth
-- [ ] `nylon-wall-ui/src/components/login.rs` - Login page (username + password)
-- [ ] `nylon-wall-ui/src/components/setup.rs` - First-run password setup page
-- [ ] JWT token storage in localStorage
-- [ ] `api_client.rs` - Attach `Authorization: Bearer` header to all requests
-- [ ] Auto-redirect to login on 401 response
-- [ ] Session timeout handling (auto-logout)
-- [ ] Settings page: change password form
+- [x] `nylon-wall-ui/src/components/login.rs` - Login page (password + centered card design)
+- [x] `nylon-wall-ui/src/components/setup.rs` - First-run password setup page (with confirm)
+- [x] JWT token storage in localStorage (`nylon_auth_token`)
+- [x] `api_client.rs` - Attach `Authorization: Bearer` header to all requests
+- [x] Auto-redirect to login on 401 response (clear token + navigate)
+- [x] Session timeout handling (24h JWT expiry, auto-redirect on expired token)
+- [x] Settings page: change password form
+- [x] Sidebar: logout button
+- [x] Auth guard in Layout (checks setup-check → token → validate on mount)
 
 ---
 

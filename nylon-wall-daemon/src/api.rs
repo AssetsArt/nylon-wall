@@ -6,7 +6,7 @@ use axum::{
         Path, Query, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post, put},
 };
@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
 
 use crate::AppState;
+use crate::auth;
 use crate::changeset;
 use crate::events::WsEvent;
 
@@ -151,7 +152,20 @@ struct BackupData {
 
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
 pub fn build_router(state: Arc<AppState>) -> Router {
-    Router::new()
+    // Public routes (no auth required)
+    let public = Router::new()
+        .route("/api/v1/auth/setup-check", get(auth_check_setup))
+        .route("/api/v1/auth/setup", post(auth_setup))
+        .route("/api/v1/auth/login", post(auth_login))
+        // Prometheus metrics (scraped externally)
+        .route("/metrics", get(prometheus_metrics));
+
+    // Protected routes (require JWT auth)
+    let protected = Router::new()
+        // Auth
+        .route("/api/v1/auth/check", get(auth_check))
+        .route("/api/v1/auth/logout", post(auth_logout))
+        .route("/api/v1/auth/password", put(auth_change_password))
         // WebSocket
         .route("/api/v1/ws/events", get(ws_handler))
         // Rules (reorder must be before {id} to avoid matching "reorder" as an id)
@@ -266,8 +280,14 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/changes/pending", get(changes_pending))
         .route("/api/v1/changes/confirm", post(changes_confirm))
         .route("/api/v1/changes/revert", post(changes_revert))
-        // Prometheus metrics
-        .route("/metrics", get(prometheus_metrics))
+        // Apply auth middleware to all protected routes
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            auth::auth_middleware,
+        ));
+
+    public
+        .merge(protected)
         .layer(CorsLayer::permissive())
         .with_state(state)
 }
@@ -278,6 +298,103 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
     tracing::info!("API server listening on {}", addr);
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+// === Auth ===
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct SetupRequest {
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct ChangePasswordRequest {
+    current_password: String,
+    new_password: String,
+}
+
+async fn auth_check_setup(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let setup_required = auth::is_setup_required(&state.db).await;
+    Json(serde_json::json!({ "setup_required": setup_required }))
+}
+
+async fn auth_setup(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SetupRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    // Only allow if no password set yet
+    if !auth::is_setup_required(&state.db).await {
+        return Err((StatusCode::CONFLICT, "Password already configured".to_string()));
+    }
+    if body.password.len() < 8 {
+        return Err((StatusCode::BAD_REQUEST, "Password must be at least 8 characters".to_string()));
+    }
+    auth::set_password(&state.db, &body.password).await.map_err(internal_error)?;
+    let token = auth::create_token(&state.jwt_keys).map_err(internal_error)?;
+    tracing::info!("Initial admin password configured");
+    Ok(Json(serde_json::json!({ "token": token })))
+}
+
+async fn auth_login(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<LoginRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if auth::is_setup_required(&state.db).await {
+        return Err((StatusCode::PRECONDITION_REQUIRED, "Password not configured. Use /auth/setup first.".to_string()));
+    }
+    if !auth::verify_password(&state.db, &body.password).await {
+        return Err((StatusCode::UNAUTHORIZED, "Invalid password".to_string()));
+    }
+    let token = auth::create_token(&state.jwt_keys).map_err(internal_error)?;
+    tracing::info!("Admin login successful");
+    Ok(Json(serde_json::json!({ "token": token })))
+}
+
+async fn auth_check(
+    State(_state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    // If this handler runs, the middleware already validated the token
+    Json(serde_json::json!({ "valid": true, "user": "admin" }))
+}
+
+async fn auth_logout(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Json<serde_json::Value> {
+    // Extract and revoke token
+    if let Some(auth_header) = headers.get("authorization") {
+        if let Ok(val) = auth_header.to_str() {
+            if let Some(token) = val.strip_prefix("Bearer ") {
+                if let Ok(claims) = auth::validate_token(&state.jwt_keys, token) {
+                    state.revoked_tokens.write().await.insert(claims.jti);
+                }
+            }
+        }
+    }
+    tracing::info!("Admin logout");
+    Json(serde_json::json!({ "logged_out": true }))
+}
+
+async fn auth_change_password(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ChangePasswordRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    if !auth::verify_password(&state.db, &body.current_password).await {
+        return Err((StatusCode::UNAUTHORIZED, "Current password is incorrect".to_string()));
+    }
+    if body.new_password.len() < 8 {
+        return Err((StatusCode::BAD_REQUEST, "New password must be at least 8 characters".to_string()));
+    }
+    auth::set_password(&state.db, &body.new_password).await.map_err(internal_error)?;
+    tracing::info!("Admin password changed");
+    Ok(Json(serde_json::json!({ "changed": true })))
 }
 
 // === WebSocket ===
