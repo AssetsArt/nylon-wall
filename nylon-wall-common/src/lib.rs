@@ -11,5 +11,6 @@ pub mod rule;
 pub mod scratchpad;
 pub mod tls;
 pub mod mdns;
+pub mod oauth;
 pub mod wol;
 pub mod zone;

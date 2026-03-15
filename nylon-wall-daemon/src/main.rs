@@ -116,6 +116,7 @@ async fn main() -> anyhow::Result<()> {
         login_tracker: auth::LoginTracker::new(),
         ddns_manager: ddns::DdnsManager::new(),
         mdns_reflector: mdns::MdnsReflector::new(),
+        oauth_states: nylon_wall_daemon::oauth::OAuthStateStore::new(),
     });
 
     // Recover any un-confirmed change from a previous crash

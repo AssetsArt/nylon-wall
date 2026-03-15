@@ -293,6 +293,16 @@ pub fn Settings() -> Element {
                 }
             }
 
+            // OAuth Providers
+            div {
+                class: "mb-6",
+                SectionHeader {
+                    icon: rsx! { Icon { width: 15, height: 15, icon: LdKeyRound, class: "text-violet-400" } },
+                    title: "OAuth / SSO Providers".to_string(),
+                }
+                OAuthProviderSection {}
+            }
+
             // Backup & Restore
             div {
                 class: "mb-6",
@@ -503,6 +513,319 @@ fn ChangePasswordForm() -> Element {
                 label: if submitting() { "Changing...".to_string() } else { "Change Password".to_string() },
                 disabled: submitting() || current().is_empty() || new_pw().len() < 8 || confirm_pw().is_empty(),
                 onclick: move |_| do_submit(),
+            }
+        }
+    }
+}
+
+#[component]
+fn OAuthProviderSection() -> Element {
+    let mut providers = use_resource(|| async {
+        api_client::get::<Vec<OAuthProvider>>("/auth/oauth/manage").await
+    });
+
+    let mut show_form = use_signal(|| false);
+    let mut editing = use_signal(|| None::<OAuthProvider>);
+    let mut confirm_delete = use_signal(|| None::<u32>);
+    let mut error_msg = use_signal(|| None::<String>);
+
+    rsx! {
+        if let Some(err) = error_msg() {
+            ErrorAlert {
+                message: err,
+                on_dismiss: move |_| error_msg.set(None),
+            }
+        }
+
+        FormCard {
+            div { class: "flex items-center justify-between mb-4",
+                div {
+                    p { class: "text-sm text-slate-400",
+                        "Configure OAuth/OIDC providers for single sign-on."
+                    }
+                }
+                Btn {
+                    color: Color::Violet,
+                    label: if show_form() { "Cancel".to_string() } else { "+ Add Provider".to_string() },
+                    onclick: move |_| {
+                        if show_form() {
+                            show_form.set(false);
+                            editing.set(None);
+                        } else {
+                            editing.set(None);
+                            show_form.set(true);
+                        }
+                    },
+                }
+            }
+
+            if show_form() {
+                OAuthProviderForm {
+                    provider: editing(),
+                    on_saved: move |_| {
+                        show_form.set(false);
+                        editing.set(None);
+                        providers.restart();
+                    },
+                    on_cancel: move |_| {
+                        show_form.set(false);
+                        editing.set(None);
+                    },
+                    error_msg: error_msg,
+                }
+            }
+
+            match &*providers.read() {
+                Some(Ok(list)) if list.is_empty() => rsx! {
+                    EmptyState {
+                        icon: rsx! { Icon { width: 32, height: 32, icon: LdKeyRound } },
+                        title: "No OAuth Providers".to_string(),
+                        subtitle: "Add Google, GitHub, or a custom OIDC provider for SSO login.".to_string(),
+                    }
+                },
+                Some(Ok(list)) => rsx! {
+                    div { class: "space-y-3",
+                        for provider in list {
+                            {
+                                let p = provider.clone();
+                                let p_edit = provider.clone();
+                                let pid = provider.id;
+                                rsx! {
+                                    div { class: "flex items-center justify-between rounded-lg border border-slate-800/60 bg-slate-950/30 px-4 py-3",
+                                        div { class: "flex items-center gap-3",
+                                            div { class: "w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center",
+                                                match p.provider_type {
+                                                    OAuthProviderType::GitHub => rsx! { Icon { width: 16, height: 16, icon: LdGithub, class: "text-violet-400" } },
+                                                    _ => rsx! { Icon { width: 16, height: 16, icon: LdLogIn, class: "text-violet-400" } },
+                                                }
+                                            }
+                                            div {
+                                                p { class: "text-sm font-medium text-white", "{p.name}" }
+                                                p { class: "text-[10px] text-slate-600",
+                                                    "{p.provider_type.label()} — Client ID: {p.client_id}"
+                                                }
+                                            }
+                                        }
+                                        div { class: "flex items-center gap-2",
+                                            Badge {
+                                                color: if p.enabled { Color::Emerald } else { Color::Slate },
+                                                label: if p.enabled { "Enabled".to_string() } else { "Disabled".to_string() },
+                                            }
+                                            button {
+                                                class: "w-7 h-7 rounded-lg hover:bg-violet-500/10 flex items-center justify-center transition-colors",
+                                                title: if p.enabled { "Disable" } else { "Enable" },
+                                                onclick: move |_| {
+                                                    spawn(async move {
+                                                        let _ = api_client::post::<(), serde_json::Value>(&format!("/auth/oauth/manage/{}/toggle", pid), &()).await;
+                                                        providers.restart();
+                                                    });
+                                                },
+                                                if p.enabled {
+                                                    Icon { width: 12, height: 12, icon: LdToggleRight, class: "text-emerald-400" }
+                                                } else {
+                                                    Icon { width: 12, height: 12, icon: LdToggleLeft, class: "text-slate-500" }
+                                                }
+                                            }
+                                            button {
+                                                class: "w-7 h-7 rounded-lg hover:bg-slate-700/50 flex items-center justify-center transition-colors",
+                                                title: "Edit",
+                                                onclick: move |_| {
+                                                    editing.set(Some(p_edit.clone()));
+                                                    show_form.set(true);
+                                                },
+                                                Icon { width: 12, height: 12, icon: LdPencil, class: "text-slate-400" }
+                                            }
+                                            button {
+                                                class: "w-7 h-7 rounded-lg hover:bg-red-500/10 flex items-center justify-center transition-colors",
+                                                title: "Delete",
+                                                onclick: move |_| confirm_delete.set(Some(pid)),
+                                                Icon { width: 12, height: 12, icon: LdTrash2, class: "text-red-400" }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => rsx! {},
+            }
+        }
+
+        // Delete confirmation
+        if let Some(id) = confirm_delete() {
+            ConfirmModal {
+                title: "Delete Provider".to_string(),
+                message: "Remove this OAuth provider? Users will no longer be able to sign in with it.".to_string(),
+                on_confirm: move |_| {
+                    spawn(async move {
+                        let _ = api_client::delete(&format!("/auth/oauth/manage/{}", id)).await;
+                        confirm_delete.set(None);
+                        providers.restart();
+                    });
+                },
+                on_cancel: move |_| confirm_delete.set(None),
+            }
+        }
+    }
+}
+
+#[component]
+fn OAuthProviderForm(
+    provider: Option<OAuthProvider>,
+    on_saved: EventHandler<()>,
+    on_cancel: EventHandler<()>,
+    mut error_msg: Signal<Option<String>>,
+) -> Element {
+    let is_edit = provider.is_some();
+    let initial = provider.unwrap_or(OAuthProvider {
+        id: 0,
+        provider_type: OAuthProviderType::Google,
+        name: String::new(),
+        client_id: String::new(),
+        client_secret: String::new(),
+        enabled: true,
+        issuer_url: String::new(),
+        authorize_url: String::new(),
+        token_url: String::new(),
+        userinfo_url: String::new(),
+        scopes: Vec::new(),
+    });
+
+    let mut provider_type = use_signal(move || initial.provider_type.clone());
+    let mut name = use_signal(move || initial.name.clone());
+    let mut client_id = use_signal(move || initial.client_id.clone());
+    let mut client_secret = use_signal(move || initial.client_secret.clone());
+    let mut issuer_url = use_signal(move || initial.issuer_url.clone());
+    let mut submitting = use_signal(|| false);
+    let entry_id = initial.id;
+
+    // Auto-fill name from provider type
+    let mut update_name = move |pt: &OAuthProviderType| {
+        if name().is_empty() || name() == "Google" || name() == "GitHub" || name() == "Custom OIDC" {
+            name.set(pt.label().to_string());
+        }
+    };
+
+    rsx! {
+        div { class: "rounded-lg border border-violet-500/20 bg-violet-500/5 p-4 mb-4",
+            h4 { class: "text-sm font-semibold text-white mb-3",
+                if is_edit { "Edit Provider" } else { "New OAuth Provider" }
+            }
+
+            div { class: "grid grid-cols-2 gap-4 mb-4",
+                div {
+                    label { class: "block text-xs font-medium text-slate-400 mb-1.5", "Provider Type" }
+                    select {
+                        class: "w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/40 text-sm text-white",
+                        value: match provider_type() {
+                            OAuthProviderType::Google => "google",
+                            OAuthProviderType::GitHub => "github",
+                            OAuthProviderType::Oidc => "oidc",
+                        },
+                        onchange: move |e| {
+                            let pt = match e.value().as_str() {
+                                "github" => OAuthProviderType::GitHub,
+                                "oidc" => OAuthProviderType::Oidc,
+                                _ => OAuthProviderType::Google,
+                            };
+                            update_name(&pt);
+                            provider_type.set(pt);
+                        },
+                        option { value: "google", "Google" }
+                        option { value: "github", "GitHub" }
+                        option { value: "oidc", "Custom OIDC" }
+                    }
+                }
+                div {
+                    label { class: "block text-xs font-medium text-slate-400 mb-1.5", "Display Name" }
+                    input {
+                        class: "w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/40 text-sm text-white placeholder-slate-600",
+                        r#type: "text",
+                        placeholder: "Google",
+                        value: "{name}",
+                        oninput: move |e| name.set(e.value()),
+                    }
+                }
+            }
+
+            div { class: "grid grid-cols-2 gap-4 mb-4",
+                div {
+                    label { class: "block text-xs font-medium text-slate-400 mb-1.5", "Client ID" }
+                    input {
+                        class: "w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/40 text-sm text-white placeholder-slate-600 font-mono",
+                        r#type: "text",
+                        placeholder: "your-client-id",
+                        value: "{client_id}",
+                        oninput: move |e| client_id.set(e.value()),
+                    }
+                }
+                div {
+                    label { class: "block text-xs font-medium text-slate-400 mb-1.5", "Client Secret" }
+                    input {
+                        class: "w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/40 text-sm text-white placeholder-slate-600 font-mono",
+                        r#type: "password",
+                        placeholder: if is_edit { "••••••••" } else { "your-client-secret" },
+                        value: "{client_secret}",
+                        oninput: move |e| client_secret.set(e.value()),
+                    }
+                }
+            }
+
+            // Custom OIDC fields
+            if provider_type() == OAuthProviderType::Oidc {
+                div { class: "mb-4",
+                    label { class: "block text-xs font-medium text-slate-400 mb-1.5", "Issuer URL / Discovery URL" }
+                    input {
+                        class: "w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/40 text-sm text-white placeholder-slate-600 font-mono",
+                        r#type: "url",
+                        placeholder: "https://accounts.example.com/.well-known/openid-configuration",
+                        value: "{issuer_url}",
+                        oninput: move |e| issuer_url.set(e.value()),
+                    }
+                }
+            }
+
+            div { class: "flex gap-2",
+                Btn {
+                    color: Color::Violet,
+                    label: if submitting() { "Saving...".to_string() } else if is_edit { "Update".to_string() } else { "Add Provider".to_string() },
+                    disabled: submitting() || client_id().is_empty() || name().is_empty(),
+                    onclick: move |_| {
+                        submitting.set(true);
+                        error_msg.set(None);
+                        let body = OAuthProvider {
+                            id: entry_id,
+                            provider_type: provider_type(),
+                            name: name(),
+                            client_id: client_id(),
+                            client_secret: client_secret(),
+                            enabled: true,
+                            issuer_url: issuer_url(),
+                            authorize_url: String::new(),
+                            token_url: String::new(),
+                            userinfo_url: String::new(),
+                            scopes: Vec::new(),
+                        };
+                        spawn(async move {
+                            let result = if is_edit {
+                                api_client::put::<OAuthProvider, OAuthProvider>(&format!("/auth/oauth/manage/{}", entry_id), &body).await
+                            } else {
+                                api_client::post::<OAuthProvider, OAuthProvider>("/auth/oauth/manage", &body).await
+                            };
+                            match result {
+                                Ok(_) => on_saved.call(()),
+                                Err(e) => error_msg.set(Some(e)),
+                            }
+                            submitting.set(false);
+                        });
+                    },
+                }
+                Btn {
+                    color: Color::Slate,
+                    label: "Cancel".to_string(),
+                    onclick: move |_| on_cancel.call(()),
+                }
             }
         }
     }

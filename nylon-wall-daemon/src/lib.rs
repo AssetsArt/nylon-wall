@@ -10,6 +10,7 @@ pub mod events;
 #[allow(dead_code)]
 pub mod mdns;
 pub mod metrics;
+pub mod oauth;
 pub mod nat;
 pub mod route;
 pub mod rule_engine;
@@ -37,6 +38,7 @@ pub struct AppState {
     pub login_tracker: auth::LoginTracker,
     pub ddns_manager: ddns::DdnsManager,
     pub mdns_reflector: mdns::MdnsReflector,
+    pub oauth_states: oauth::OAuthStateStore,
 }
 
 /// Create an `AppState` for testing (demo mode, no eBPF).
@@ -60,5 +62,6 @@ pub async fn create_test_state(db_path: &str) -> Arc<AppState> {
         login_tracker: auth::LoginTracker::new(),
         ddns_manager: ddns::DdnsManager::new(),
         mdns_reflector: mdns::MdnsReflector::new(),
+        oauth_states: oauth::OAuthStateStore::new(),
     })
 }

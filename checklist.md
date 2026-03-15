@@ -354,14 +354,19 @@
 - [x] WebSocket auth: token via query parameter `?token=` for browser WS connections
 
 ### Daemon - Auth (Phase 9B: OIDC/OAuth2)
-- [ ] OIDC/OAuth2 provider configuration (Google, GitHub, custom OIDC)
-- [ ] API: `GET /api/v1/auth/providers` - List configured OAuth providers
-- [ ] API: `POST /api/v1/auth/providers` - Add OAuth provider
-- [ ] API: `DELETE /api/v1/auth/providers/{id}` - Remove OAuth provider
-- [ ] API: `GET /api/v1/auth/oauth/{provider}/authorize` - Start OAuth flow (redirect URL)
-- [ ] API: `GET /api/v1/auth/oauth/{provider}/callback` - OAuth callback (exchange code for JWT)
-- [ ] UI: OAuth provider buttons on login page
-- [ ] UI: OAuth provider management in Settings
+- [x] OIDC/OAuth2 provider configuration (Google, GitHub, custom OIDC)
+- [x] API: `GET /api/v1/auth/oauth/providers` - List enabled providers (public, no secrets)
+- [x] API: `GET /api/v1/auth/oauth/manage` - List all providers (admin, secrets masked)
+- [x] API: `POST /api/v1/auth/oauth/manage` - Add OAuth provider
+- [x] API: `PUT /api/v1/auth/oauth/manage/{id}` - Update OAuth provider
+- [x] API: `DELETE /api/v1/auth/oauth/manage/{id}` - Remove OAuth provider
+- [x] API: `POST /api/v1/auth/oauth/manage/{id}/toggle` - Enable/disable provider
+- [x] API: `GET /api/v1/auth/oauth/{id}/authorize` - Start OAuth flow (returns authorization URL)
+- [x] API: `GET /api/v1/auth/oauth/callback` - OAuth callback (exchange code → JWT, redirect to UI)
+- [x] CSRF state token management (10-min expiry)
+- [x] Token exchange + userinfo fetch (Google, GitHub, custom OIDC)
+- [x] UI: OAuth provider buttons on login page (dynamic, shows enabled providers)
+- [x] UI: OAuth provider management in Settings (add/edit/delete/toggle)
 
 ### Dioxus UI - Auth
 - [x] `nylon-wall-ui/src/components/login.rs` - Login page (password + centered card design)

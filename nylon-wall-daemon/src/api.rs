@@ -19,6 +19,7 @@ use nylon_wall_common::dhcp::{
 };
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::mdns::MdnsConfig;
+use nylon_wall_common::oauth::OAuthProvider;
 use nylon_wall_common::nat::NatEntry;
 #[cfg(target_os = "linux")]
 use nylon_wall_common::nat::NatType;
@@ -159,6 +160,8 @@ struct BackupData {
     sni_rules: Vec<serde_json::Value>,
     #[serde(default)]
     mdns_config: Option<serde_json::Value>,
+    #[serde(default)]
+    oauth_providers: Vec<serde_json::Value>,
 }
 
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
@@ -170,6 +173,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/auth/login", post(auth_login))
         // Prometheus metrics (scraped externally)
         .route("/metrics", get(prometheus_metrics));
+
+    // OAuth public routes (no auth required)
+    public = public
+        .route("/api/v1/auth/oauth/providers", get(list_oauth_providers_public))
+        .route("/api/v1/auth/oauth/{id}/authorize", get(oauth_authorize))
+        .route("/api/v1/auth/oauth/callback", get(oauth_callback));
 
     // Dev-only: login lockout reset (requires NYLON_DEV=1)
     if std::env::var("NYLON_DEV").as_deref() == Ok("1") {
@@ -183,6 +192,16 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/auth/check", get(auth_check))
         .route("/api/v1/auth/logout", post(auth_logout))
         .route("/api/v1/auth/password", put(auth_change_password))
+        // OAuth provider management (admin)
+        .route(
+            "/api/v1/auth/oauth/manage",
+            get(list_oauth_providers_admin).post(create_oauth_provider),
+        )
+        .route(
+            "/api/v1/auth/oauth/manage/{id}",
+            put(update_oauth_provider).delete(delete_oauth_provider),
+        )
+        .route("/api/v1/auth/oauth/manage/{id}/toggle", post(toggle_oauth_provider))
         // WebSocket
         .route("/api/v1/ws/events", get(ws_handler))
         // Rules (reorder must be before {id} to avoid matching "reorder" as an id)
@@ -2216,6 +2235,15 @@ async fn backup_data(
         .await
         .map_err(internal_error)?;
 
+    let oauth_providers = state
+        .db
+        .scan_prefix::<serde_json::Value>("oauth_provider:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
     let backup = BackupData {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().timestamp(),
@@ -2231,6 +2259,7 @@ async fn backup_data(
         wol_devices,
         sni_rules,
         mdns_config,
+        oauth_providers,
     };
 
     Ok(Json(backup))
@@ -2257,6 +2286,7 @@ pub async fn perform_restore(
         "ddns:",
         "wol:",
         "sni_rule:",
+        "oauth_provider:",
     ] {
         let existing = state
             .db
@@ -2287,6 +2317,7 @@ pub async fn perform_restore(
         ("ddns:", &backup.ddns_entries),
         ("wol:", &backup.wol_devices),
         ("sni_rule:", &backup.sni_rules),
+        ("oauth_provider:", &backup.oauth_providers),
     ];
 
     for (prefix, items) in restore_items {
@@ -2360,6 +2391,7 @@ async fn snapshot_current(state: &AppState) -> Result<serde_json::Value, String>
             .get::<serde_json::Value>("mdns_config")
             .await
             .map_err(|e| e.to_string())?,
+        oauth_providers: scan("oauth_provider:").await?,
     };
 
     serde_json::to_value(&backup).map_err(|e| e.to_string())
@@ -3225,4 +3257,253 @@ async fn tool_traceroute(
         output: String::from_utf8_lossy(&output.stdout).to_string()
             + &String::from_utf8_lossy(&output.stderr),
     }))
+}
+
+// === OAuth / OIDC ===
+
+/// Public endpoint: list enabled providers (client_id + name only, no secrets).
+async fn list_oauth_providers_public(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<serde_json::Value>>, (StatusCode, String)> {
+    let providers = state
+        .db
+        .scan_prefix::<OAuthProvider>("oauth_provider:")
+        .await
+        .map_err(internal_error)?;
+
+    let public: Vec<serde_json::Value> = providers
+        .into_iter()
+        .filter(|(_, p)| p.enabled)
+        .map(|(_, p)| {
+            serde_json::json!({
+                "id": p.id,
+                "provider_type": p.provider_type,
+                "name": p.name,
+            })
+        })
+        .collect();
+
+    Ok(Json(public))
+}
+
+/// Admin endpoint: list all providers with full config (secrets masked).
+async fn list_oauth_providers_admin(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<OAuthProvider>>, (StatusCode, String)> {
+    let providers = state
+        .db
+        .scan_prefix::<OAuthProvider>("oauth_provider:")
+        .await
+        .map_err(internal_error)?;
+
+    let mut list: Vec<OAuthProvider> = providers.into_iter().map(|(_, p)| p).collect();
+    list.sort_by_key(|p| p.id);
+    // Mask secrets in response
+    for p in &mut list {
+        if !p.client_secret.is_empty() {
+            p.client_secret = "••••••••".to_string();
+        }
+    }
+    Ok(Json(list))
+}
+
+async fn create_oauth_provider(
+    State(state): State<Arc<AppState>>,
+    Json(mut provider): Json<OAuthProvider>,
+) -> Result<(StatusCode, Json<OAuthProvider>), (StatusCode, String)> {
+    let existing = state
+        .db
+        .scan_prefix::<OAuthProvider>("oauth_provider:")
+        .await
+        .map_err(internal_error)?;
+    let max_id = existing.iter().map(|(_, p)| p.id).max().unwrap_or(0);
+    provider.id = max_id + 1;
+
+    provider.fill_defaults();
+
+    let key = format!("oauth_provider:{}", provider.id);
+    state.db.put(&key, &provider).await.map_err(internal_error)?;
+    state.db.add_to_index("oauth_provider:", &key).await.map_err(internal_error)?;
+
+    Ok((StatusCode::CREATED, Json(provider)))
+}
+
+async fn update_oauth_provider(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut provider): Json<OAuthProvider>,
+) -> Result<Json<OAuthProvider>, (StatusCode, String)> {
+    let key = format!("oauth_provider:{}", id);
+    let existing = state
+        .db
+        .get::<OAuthProvider>(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "Provider not found".to_string()))?;
+
+    provider.id = id;
+
+    // If secret is masked, keep existing secret
+    if provider.client_secret == "••••••••" {
+        provider.client_secret = existing.client_secret;
+    }
+
+    provider.fill_defaults();
+
+    state.db.put(&key, &provider).await.map_err(internal_error)?;
+
+    Ok(Json(provider))
+}
+
+async fn delete_oauth_provider(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let key = format!("oauth_provider:{}", id);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state.db.remove_from_index("oauth_provider:", &key).await.map_err(internal_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_oauth_provider(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<Json<OAuthProvider>, (StatusCode, String)> {
+    let key = format!("oauth_provider:{}", id);
+    let mut provider = state
+        .db
+        .get::<OAuthProvider>(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "Provider not found".to_string()))?;
+
+    provider.enabled = !provider.enabled;
+    state.db.put(&key, &provider).await.map_err(internal_error)?;
+
+    Ok(Json(provider))
+}
+
+/// Start OAuth flow — returns authorization URL.
+async fn oauth_authorize(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let key = format!("oauth_provider:{}", id);
+    let provider = state
+        .db
+        .get::<OAuthProvider>(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "Provider not found".to_string()))?;
+
+    if !provider.enabled {
+        return Err((StatusCode::BAD_REQUEST, "Provider is disabled".to_string()));
+    }
+
+    let csrf_state = state.oauth_states.create(id).await;
+
+    // Build redirect_uri from the request origin
+    let origin = headers
+        .get("origin")
+        .or_else(|| headers.get("referer"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("http://localhost:9450");
+
+    let base = if let Some(idx) = origin.find("/api/") {
+        &origin[..idx]
+    } else if origin.ends_with('/') {
+        &origin[..origin.len() - 1]
+    } else {
+        origin
+    };
+
+    let redirect_uri = format!("{}/api/v1/auth/oauth/callback", base);
+    let authorize_url = crate::oauth::build_authorize_url(&provider, &csrf_state, &redirect_uri);
+
+    Ok(Json(serde_json::json!({
+        "url": authorize_url,
+    })))
+}
+
+#[derive(Deserialize)]
+struct OAuthCallbackParams {
+    code: String,
+    state: String,
+}
+
+/// OAuth callback — exchanges code for token, fetches user info, issues JWT.
+async fn oauth_callback(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<OAuthCallbackParams>,
+    headers: HeaderMap,
+) -> Result<axum::response::Html<String>, (StatusCode, String)> {
+    // Validate CSRF state and get provider ID
+    let provider_id = state
+        .oauth_states
+        .consume(&params.state)
+        .await
+        .ok_or((StatusCode::BAD_REQUEST, "Invalid or expired state".to_string()))?;
+
+    let key = format!("oauth_provider:{}", provider_id);
+    let provider = state
+        .db
+        .get::<OAuthProvider>(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "Provider not found".to_string()))?;
+
+    // Build redirect_uri (must match the one used in authorize)
+    let origin = headers
+        .get("origin")
+        .or_else(|| headers.get("referer"))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("http://localhost:9450");
+    let base = if let Some(idx) = origin.find("/api/") {
+        &origin[..idx]
+    } else if origin.ends_with('/') {
+        &origin[..origin.len() - 1]
+    } else {
+        origin
+    };
+    let redirect_uri = format!("{}/api/v1/auth/oauth/callback", base);
+
+    // Exchange code for tokens
+    let token_resp = crate::oauth::exchange_code(&provider, &params.code, &redirect_uri)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+
+    // Fetch user info
+    let user_info = crate::oauth::fetch_user_info(&provider, &token_resp.access_token)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+
+    tracing::info!(
+        "OAuth login: provider={}, email={}, name={}",
+        provider.name,
+        user_info.email,
+        user_info.name
+    );
+
+    // Issue our JWT token
+    let jwt_token = crate::auth::create_token(&state.jwt_keys)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    // Return HTML that passes the token to the UI via localStorage and redirects
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head><title>Login successful</title></head>
+<body>
+<script>
+  localStorage.setItem('nylon_auth_token', '{}');
+  window.location.href = '/';
+</script>
+<p>Login successful. Redirecting...</p>
+</body>
+</html>"#,
+        jwt_token
+    );
+
+    Ok(axum::response::Html(html))
 }

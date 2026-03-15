@@ -1,9 +1,17 @@
 use dioxus::prelude::*;
+use dioxus::document;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
 
 use crate::api_client;
 use crate::app::Route;
+
+#[derive(serde::Deserialize, Clone)]
+struct PublicOAuthProvider {
+    id: u32,
+    name: String,
+    provider_type: String,
+}
 
 #[component]
 pub fn Login() -> Element {
@@ -22,6 +30,11 @@ pub fn Login() -> Element {
     });
 
     let mut locked_out = use_signal(|| false);
+
+    // Fetch OAuth providers
+    let oauth_providers = use_resource(|| async {
+        api_client::get::<Vec<PublicOAuthProvider>>("/auth/oauth/providers").await.unwrap_or_default()
+    });
 
     let mut on_submit = move |_| {
         if submitting() { return; }
@@ -110,6 +123,62 @@ pub fn Login() -> Element {
                             r#type: "submit",
                             disabled: submitting() || password().is_empty() || locked_out(),
                             if submitting() { "Signing in..." } else { "Sign In" }
+                        }
+                    }
+
+                    // OAuth provider buttons
+                    {
+                        let providers = match &*oauth_providers.read() {
+                            Some(list) if !list.is_empty() => Some(list.clone()),
+                            _ => None,
+                        };
+                        if let Some(providers) = providers {
+                            rsx! {
+                                div { class: "mt-5",
+                                    div { class: "flex items-center gap-3 mb-4",
+                                        div { class: "flex-1 h-px bg-slate-800" }
+                                        span { class: "text-[10px] text-slate-600 uppercase tracking-wider", "or" }
+                                        div { class: "flex-1 h-px bg-slate-800" }
+                                    }
+                                    div { class: "space-y-2",
+                                        for provider in providers {
+                                            {
+                                                let pid = provider.id;
+                                                let pname = provider.name.clone();
+                                                let ptype = provider.provider_type.clone();
+                                                rsx! {
+                                                    button {
+                                                        class: "w-full px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-800/50 border border-slate-700/40 text-slate-300 hover:bg-slate-700/50 hover:text-white transition-colors flex items-center justify-center gap-2",
+                                                        r#type: "button",
+                                                        onclick: move |_| {
+                                                            spawn(async move {
+                                                                match api_client::get::<serde_json::Value>(&format!("/auth/oauth/{}/authorize", pid)).await {
+                                                                    Ok(resp) => {
+                                                                        if let Some(url) = resp.get("url").and_then(|v| v.as_str()) {
+                                                                            // Redirect to OAuth provider via JS eval
+                                                                            let js = format!("window.location.href = '{}';", url);
+                                                                            document::eval(&js);
+                                                                        }
+                                                                    }
+                                                                    Err(e) => error.set(Some(e)),
+                                                                }
+                                                            });
+                                                        },
+                                                        if ptype == "github" {
+                                                            Icon { width: 16, height: 16, icon: LdGithub }
+                                                        } else {
+                                                            Icon { width: 16, height: 16, icon: LdLogIn }
+                                                        }
+                                                        "Sign in with {pname}"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            rsx! {}
                         }
                     }
                 }
