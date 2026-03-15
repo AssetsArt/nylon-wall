@@ -362,7 +362,7 @@ async fn auth_login(
         tracing::warn!("Login attempt from locked-out IP: {}", client_ip);
         return Err((
             StatusCode::TOO_MANY_REQUESTS,
-            format!("Too many failed attempts. Try again in {} seconds.", remaining),
+            format!("Too many failed attempts. Try again in {} minutes.", (remaining + 59) / 60),
         ));
     }
 
@@ -372,7 +372,7 @@ async fn auth_login(
             tracing::warn!("IP {} locked out after too many failed login attempts", client_ip);
             return Err((
                 StatusCode::TOO_MANY_REQUESTS,
-                format!("Too many failed attempts. Try again in {} seconds.", remaining),
+                format!("Too many failed attempts. Try again in {} minutes.", (remaining + 59) / 60),
             ));
         }
         return Err((StatusCode::UNAUTHORIZED, "Invalid password".to_string()));

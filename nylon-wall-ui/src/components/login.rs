@@ -21,13 +21,15 @@ pub fn Login() -> Element {
         }
     });
 
+    let mut locked_out = use_signal(|| false);
+
     let mut on_submit = move |_| {
         if submitting() { return; }
         submitting.set(true);
         error.set(None);
         spawn(async move {
             let body = serde_json::json!({ "password": password() });
-            match api_client::post::<serde_json::Value, serde_json::Value>("/auth/login", &body).await {
+            match api_client::post_with_detail::<serde_json::Value, serde_json::Value>("/auth/login", &body).await {
                 Ok(resp) => {
                     if let Some(token) = resp.get("token").and_then(|t| t.as_str()) {
                         api_client::set_token(token);
@@ -37,9 +39,16 @@ pub fn Login() -> Element {
                     }
                 }
                 Err(e) => {
-                    if e.contains("401") || e.contains("UNAUTHORIZED") {
+                    if e.starts_with("HTTP 429:") {
+                        locked_out.set(true);
+                        // Extract remaining seconds from server message
+                        let msg = e.strip_prefix("HTTP 429:").unwrap_or(&e);
+                        error.set(Some(format!("⏳ {}", msg.trim())));
+                    } else if e.contains("UNAUTHORIZED") {
+                        locked_out.set(false);
                         error.set(Some("Invalid password".to_string()));
                     } else {
+                        locked_out.set(false);
                         error.set(Some(e));
                     }
                 }
@@ -63,8 +72,14 @@ pub fn Login() -> Element {
                 // Login card
                 div { class: "rounded-2xl border border-slate-800/60 bg-slate-900/50 p-6",
                     if let Some(err) = error() {
-                        div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400",
-                            "{err}"
+                        if locked_out() {
+                            div { class: "mb-4 px-4 py-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm text-amber-400",
+                                "{err}"
+                            }
+                        } else {
+                            div { class: "mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-400",
+                                "{err}"
+                            }
                         }
                     }
 
@@ -93,7 +108,7 @@ pub fn Login() -> Element {
                         button {
                             class: "w-full px-4 py-2.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
                             r#type: "submit",
-                            disabled: submitting() || password().is_empty(),
+                            disabled: submitting() || password().is_empty() || locked_out(),
                             if submitting() { "Signing in..." } else { "Sign In" }
                         }
                     }

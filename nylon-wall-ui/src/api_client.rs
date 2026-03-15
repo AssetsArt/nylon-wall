@@ -98,6 +98,35 @@ fn check_status(status: u16, status_text: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Post that returns the response body as the error message for non-2xx status.
+pub async fn post_with_detail<T: Serialize, R: DeserializeOwned>(
+    path: &str,
+    body: &T,
+) -> Result<R, String> {
+    let url = format!("{}{}", api_base(), path);
+    let resp = with_auth(Request::post(&url))
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(body).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let status = resp.status();
+    if status == 401 {
+        clear_token();
+        return Err(UNAUTHORIZED.to_string());
+    }
+    if status < 200 || status >= 300 {
+        let body_text = resp.text().await.unwrap_or_default();
+        if body_text.is_empty() {
+            return Err(format!("HTTP {}: {}", status, resp.status_text()));
+        }
+        return Err(format!("HTTP {}:{}", status, body_text));
+    }
+    resp.json::<R>().await.map_err(|e| e.to_string())
+}
+
 pub async fn get<T: DeserializeOwned>(path: &str) -> Result<T, String> {
     let url = format!("{}{}", api_base(), path);
     let resp = with_auth(Request::get(&url))
