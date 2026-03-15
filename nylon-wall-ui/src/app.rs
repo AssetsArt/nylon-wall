@@ -44,6 +44,8 @@ pub enum Route {
         Vnet,
         #[route("/vpn")]
         Vpn,
+        #[route("/l4proxy")]
+        L4Proxy,
         #[route("/tools")]
         Tools,
         #[route("/settings")]
@@ -192,6 +194,10 @@ fn Layout() -> Element {
                     Link { class: sub_cls(&Route::Vpn), to: Route::Vpn,
                         Icon { width: 13, height: 13, icon: LdShieldCheck }
                         "VPN"
+                    }
+                    Link { class: sub_cls(&Route::L4Proxy), to: Route::L4Proxy,
+                        Icon { width: 13, height: 13, icon: LdArrowLeftRight }
+                        "L4 Proxy"
                     }
 
                     p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",

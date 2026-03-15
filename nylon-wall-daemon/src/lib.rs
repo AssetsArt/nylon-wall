@@ -11,6 +11,8 @@ pub mod events;
 pub mod mdns;
 pub mod metrics;
 pub mod oauth;
+#[allow(dead_code)]
+pub mod l4proxy;
 pub mod nat;
 pub mod route;
 pub mod rule_engine;

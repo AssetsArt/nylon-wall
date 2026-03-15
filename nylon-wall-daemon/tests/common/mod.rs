@@ -221,6 +221,69 @@ pub fn sample_dhcp_client() -> serde_json::Value {
     })
 }
 
+pub fn sample_l4proxy() -> serde_json::Value {
+    serde_json::json!({
+        "id": 0,
+        "name": "Web Backend",
+        "protocol": "TCP",
+        "listen_address": "0.0.0.0",
+        "listen_port": 8080,
+        "upstream_targets": [
+            { "address": "10.0.0.1", "port": 80, "weight": 1 },
+            { "address": "10.0.0.2", "port": 80, "weight": 1 }
+        ],
+        "load_balance": "RoundRobin",
+        "enabled": true
+    })
+}
+
+pub fn sample_vlan() -> serde_json::Value {
+    serde_json::json!({
+        "id": 0,
+        "parent_interface": "eth0",
+        "vlan_id": 100,
+        "ip_address": "10.10.100.1/24",
+        "enabled": true
+    })
+}
+
+pub fn sample_bridge() -> serde_json::Value {
+    serde_json::json!({
+        "id": 0,
+        "name": "br0",
+        "ports": ["eth1", "eth2"],
+        "ip_address": "192.168.10.1/24",
+        "stp_enabled": false,
+        "enabled": true
+    })
+}
+
+pub fn sample_wg_server() -> serde_json::Value {
+    serde_json::json!({
+        "listen_port": 51820,
+        "address": "10.0.100.1/24",
+        "dns": ["1.1.1.1"],
+        "private_key": "",
+        "public_key": "",
+        "interface": "wg0",
+        "enabled": false,
+        "endpoint": "vpn.example.com"
+    })
+}
+
+pub fn sample_wg_peer() -> serde_json::Value {
+    serde_json::json!({
+        "id": 0,
+        "name": "Phone",
+        "public_key": "",
+        "private_key": "",
+        "preshared_key": "",
+        "allowed_ips": "10.0.100.2/32",
+        "persistent_keepalive": 25,
+        "enabled": true
+    })
+}
+
 /// Create a resource via POST, confirm the change, and return the response body.
 pub async fn create_and_confirm(server: &TestServer, path: &str, body: &serde_json::Value) -> serde_json::Value {
     let resp = server.client.post(server.url(path))

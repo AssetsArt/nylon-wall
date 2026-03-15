@@ -1,6 +1,9 @@
 # Dockerfile for running integration tests (no eBPF needed)
 FROM rust:1.93-bookworm
 
+# Install wireguard-tools for wg genkey/pubkey (used by VPN tests)
+RUN apt-get update && apt-get install -y --no-install-recommends wireguard-tools && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Copy workspace files

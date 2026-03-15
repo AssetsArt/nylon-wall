@@ -117,6 +117,16 @@ pub enum WsEvent {
     #[serde(rename = "wg_peer_deleted")]
     WgPeerDeleted { id: u32 },
 
+    // L4 Proxy
+    #[serde(rename = "l4proxy_created")]
+    L4ProxyCreated(serde_json::Value),
+    #[serde(rename = "l4proxy_updated")]
+    L4ProxyUpdated(serde_json::Value),
+    #[serde(rename = "l4proxy_toggled")]
+    L4ProxyToggled(serde_json::Value),
+    #[serde(rename = "l4proxy_deleted")]
+    L4ProxyDeleted { id: u32 },
+
     // Change management
     #[serde(rename = "changes_reverted")]
     ChangesReverted { count: usize },

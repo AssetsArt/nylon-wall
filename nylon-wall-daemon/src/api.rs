@@ -22,6 +22,7 @@ use nylon_wall_common::mdns::MdnsConfig;
 use nylon_wall_common::oauth::OAuthProvider;
 use nylon_wall_common::vnet::{BridgeConfig, VlanConfig};
 use nylon_wall_common::wireguard::{WgPeer, WgServer};
+use nylon_wall_common::l4proxy::L4ProxyRule;
 use nylon_wall_common::nat::NatEntry;
 #[cfg(target_os = "linux")]
 use nylon_wall_common::nat::NatType;
@@ -172,6 +173,8 @@ struct BackupData {
     vlan_configs: Vec<serde_json::Value>,
     #[serde(default)]
     bridge_configs: Vec<serde_json::Value>,
+    #[serde(default)]
+    l4proxy_rules: Vec<serde_json::Value>,
 }
 
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
@@ -385,6 +388,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/vpn/peers/{id}/config", get(download_wg_peer_config))
         .route("/api/v1/vpn/status", get(wg_peer_status))
         // Network diagnostics
+        .route("/api/v1/l4proxy/rules", get(list_l4proxy).post(create_l4proxy))
+        .route("/api/v1/l4proxy/rules/{id}", put(update_l4proxy).delete(delete_l4proxy))
+        .route("/api/v1/l4proxy/rules/{id}/toggle", post(toggle_l4proxy))
+
         .route("/api/v1/tools/ping", post(tool_ping))
         .route("/api/v1/tools/dns", post(tool_dns_lookup))
         .route("/api/v1/tools/traceroute", post(tool_traceroute))
@@ -2323,6 +2330,15 @@ async fn backup_data(
         .map(|(_, v)| v)
         .collect();
 
+    let l4proxy_rules = state
+        .db
+        .scan_prefix::<serde_json::Value>("l4proxy:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
     let backup = BackupData {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().timestamp(),
@@ -2343,6 +2359,7 @@ async fn backup_data(
         wg_peers,
         vlan_configs,
         bridge_configs,
+        l4proxy_rules,
     };
 
     Ok(Json(backup))
@@ -2373,6 +2390,7 @@ pub async fn perform_restore(
         "wg_peer:",
         "vlan:",
         "bridge:",
+        "l4proxy:",
     ] {
         let existing = state
             .db
@@ -2407,6 +2425,7 @@ pub async fn perform_restore(
         ("wg_peer:", &backup.wg_peers),
         ("vlan:", &backup.vlan_configs),
         ("bridge:", &backup.bridge_configs),
+        ("l4proxy:", &backup.l4proxy_rules),
     ];
 
     for (prefix, items) in restore_items {
@@ -2500,6 +2519,7 @@ async fn snapshot_current(state: &AppState) -> Result<serde_json::Value, String>
         wg_peers: scan("wg_peer:").await?,
         vlan_configs: scan("vlan:").await?,
         bridge_configs: scan("bridge:").await?,
+        l4proxy_rules: scan("l4proxy:").await?,
     };
 
     serde_json::to_value(&backup).map_err(|e| e.to_string())
@@ -4092,4 +4112,112 @@ async fn oauth_callback(
     );
 
     Ok(axum::response::Html(html))
+}
+
+// === L4 Proxy ===
+
+async fn list_l4proxy(State(state): State<Arc<AppState>>) -> AppResult<Vec<L4ProxyRule>> {
+    let results = state
+        .db
+        .scan_prefix::<L4ProxyRule>("l4proxy:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(results.into_iter().map(|(_, r)| r).collect()))
+}
+
+async fn create_l4proxy(
+    State(state): State<Arc<AppState>>,
+    Json(mut rule): Json<L4ProxyRule>,
+) -> Result<(StatusCode, Json<L4ProxyRule>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
+
+    // Validate at least one upstream target
+    if rule.upstream_targets.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "At least one upstream target is required".to_string()));
+    }
+
+    // Check for duplicate listen_port + protocol
+    let existing = state.db.scan_prefix::<L4ProxyRule>("l4proxy:").await.map_err(internal_error)?;
+    for (_, ex) in &existing {
+        if ex.listen_port == rule.listen_port && ex.protocol == rule.protocol && ex.listen_address == rule.listen_address {
+            return Err((StatusCode::CONFLICT, format!(
+                "L4 proxy rule already exists for {:?} {}:{}",
+                rule.protocol, rule.listen_address, rule.listen_port
+            )));
+        }
+    }
+
+    let next_id = existing.iter().map(|(_, r)| r.id).max().unwrap_or(0) + 1;
+    rule.id = next_id;
+    let key = format!("l4proxy:{}", rule.id);
+    state.db.put(&key, &rule).await.map_err(internal_error)?;
+    state.db.add_to_index("l4proxy:", &key).await.map_err(internal_error)?;
+    changeset::record_create(&state, "l4proxy:", &key, format!("Created L4 proxy rule #{}", rule.id)).await;
+    broadcast(&state, WsEvent::L4ProxyCreated(to_json_value(&rule)));
+    crate::l4proxy::sync::sync_l4proxy_to_ebpf(&state).await;
+    Ok((StatusCode::CREATED, Json(rule)))
+}
+
+async fn update_l4proxy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut rule): Json<L4ProxyRule>,
+) -> AppResult<L4ProxyRule> {
+    require_no_pending(&state).await?;
+
+    if rule.upstream_targets.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "At least one upstream target is required".to_string()));
+    }
+
+    rule.id = id;
+    let key = format!("l4proxy:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
+    state.db.put(&key, &rule).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state, &key, old_val, format!("Updated L4 proxy rule #{}", id)).await;
+    }
+    state.db.add_to_index("l4proxy:", &key).await.map_err(internal_error)?;
+    broadcast(&state, WsEvent::L4ProxyUpdated(to_json_value(&rule)));
+    crate::l4proxy::sync::sync_l4proxy_to_ebpf(&state).await;
+    Ok(Json(rule))
+}
+
+async fn delete_l4proxy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
+    let key = format!("l4proxy:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state.db.remove_from_index("l4proxy:", &key).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_delete(&state, "l4proxy:", &key, old_val, format!("Deleted L4 proxy rule #{}", id)).await;
+    }
+    broadcast(&state, WsEvent::L4ProxyDeleted { id });
+    crate::l4proxy::sync::sync_l4proxy_to_ebpf(&state).await;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_l4proxy(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<L4ProxyRule> {
+    require_no_pending(&state).await?;
+    let key = format!("l4proxy:{}", id);
+    let old = state.db.get_raw(&key).await.map_err(internal_error)?;
+    let mut rule: L4ProxyRule = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "L4 proxy rule not found".to_string()))?;
+    rule.enabled = !rule.enabled;
+    state.db.put(&key, &rule).await.map_err(internal_error)?;
+    if let Some(old_val) = old {
+        changeset::record_update(&state, &key, old_val, format!("Toggled L4 proxy rule #{}", id)).await;
+    }
+    broadcast(&state, WsEvent::L4ProxyToggled(to_json_value(&rule)));
+    crate::l4proxy::sync::sync_l4proxy_to_ebpf(&state).await;
+    Ok(Json(rule))
 }

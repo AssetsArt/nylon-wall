@@ -693,3 +693,98 @@ eBPF can parse this to block/allow HTTPS by domain without breaking encryption.
   - Add/edit rule form (domain pattern, action block/allow/log, category, enabled)
   - Per-rule toggle and delete with confirmation modals
 - [x] `nylon-wall-ui/src/app.rs` - `/tls` route + sidebar nav link (icon: LdLock, label: "TLS / SNI")
+
+---
+
+## Phase 19: L4 Proxy (eBPF)
+
+L4 proxy ใช้ eBPF ทำ DNAT/SNAT ใน kernel สำหรับ TCP/UDP — pure kernel-space redirect ไม่มี userspace relay
+แยกจาก NAT เดิม (Phase 3): NAT = simple port forward (1 target), L4 Proxy = reverse proxy + load balance (multiple upstreams + weight + strategy)
+eBPF maps แยกชุดกัน ไม่ share กับ NAT
+
+### nylon-wall-common - L4 Proxy Types
+- [x] `nylon-wall-common/src/l4proxy.rs` - Shared types
+  - **eBPF structs** (`#[repr(C)]`, `no_std`):
+    - `EbpfL4ProxyKey`, `EbpfL4ProxyEntry`, `EbpfL4ProxyNatState`, `EbpfL4ProxyCounters`
+  - **Userspace structs** (`#[cfg(feature = "std")]`):
+    - `L4ProxyRule`: id, name, protocol (TCP/UDP), listen_address, listen_port, upstream_targets (Vec<UpstreamTarget>), load_balance (RoundRobin/IpHash), enabled
+    - `UpstreamTarget`: address, port, weight
+    - `LoadBalanceMode` enum: RoundRobin, IpHash
+    - `L4ProxyStats`: rule_id, active_connections, total_connections, bytes_in, bytes_out
+- [x] `nylon-wall-common/src/lib.rs` - Add `pub mod l4proxy`
+
+### eBPF - L4 Proxy Fast-Path (kernel-space DNAT/SNAT)
+- [ ] eBPF map: `L4_PROXY_TABLE` (HashMap<L4ProxyKey, EbpfL4ProxyEntry>, 256 entries)
+  - Key: `{ protocol: u8, ip: u32, port: u16 }` (listen endpoint)
+  - Value: `EbpfL4ProxyEntry` (upstream endpoint + flags)
+- [ ] eBPF map: `L4_PROXY_CONNTRACK` (LruHashMap<ConntrackKey, L4ProxyNatState>, 16384 entries)
+  - Track original src/dst for return-path SNAT
+- [ ] eBPF map: `L4_PROXY_STATS` (PerCpuArray<L4ProxyCounters>)
+  - Per-rule packet/byte counters (aggregated by daemon)
+- [ ] `nylon-wall-ebpf/src/stages/ingress_l4proxy.rs` - XDP tail-call stage
+  - Lookup (proto, dst_ip, dst_port) in `L4_PROXY_TABLE`
+  - If match found:
+    - Rewrite dst_ip/dst_port to upstream (DNAT)
+    - Store original dst in `L4_PROXY_CONNTRACK` for return path
+    - Recalculate IP/TCP/UDP checksums
+    - XDP_TX or XDP_REDIRECT to upstream interface
+  - If no match → continue tail-call pipeline (pass to next stage)
+- [ ] `nylon-wall-ebpf/src/stages/egress_l4proxy.rs` - TC tail-call stage
+  - Lookup return packets in `L4_PROXY_CONNTRACK`
+  - Rewrite src_ip/src_port back to original listen endpoint (SNAT)
+  - Recalculate checksums
+- [ ] `nylon-wall-ebpf/src/main.rs` - Register new maps + tail-call stages
+  - Add `STAGE_L4PROXY` constant to scratchpad dispatch (before NAT stage, or as stage 3)
+  - Register `ingress_l4proxy` + `egress_l4proxy` in `XDP_DISPATCH` / `TC_DISPATCH`
+- [ ] `nylon-wall-common/src/scratchpad.rs` - Add `STAGE_L4PROXY` constant
+
+### nylon-wall-daemon - L4 Proxy Management
+- [x] `nylon-wall-daemon/src/l4proxy/mod.rs` - Module declarations
+- [x] `nylon-wall-daemon/src/l4proxy/sync.rs` - Sync rules to eBPF maps (placeholder — eBPF map writes added when eBPF programs built)
+- [x] `nylon-wall-daemon/src/l4proxy/loadbalance.rs` - Load balancing strategies
+  - Round-robin: atomic counter mod target count
+  - IP hash: FNV-1a(client_ip) mod target count
+- [ ] `nylon-wall-daemon/src/l4proxy/stats.rs` - Stats aggregation
+  - Read `L4_PROXY_STATS` PerCpuArray → sum per-CPU counters
+  - Expose per-rule: active_connections, total_connections, bytes_in, bytes_out
+- [x] `nylon-wall-daemon/src/lib.rs` - Add `pub mod l4proxy`
+- [ ] `nylon-wall-daemon/src/main.rs` - Start proxy engine on boot
+  - Load rules from DB → sync to eBPF maps
+- [ ] `nylon-wall-daemon/src/ebpf_loader.rs` - Load + attach L4 proxy eBPF programs
+  - Register `ingress_l4proxy` / `egress_l4proxy` in dispatch tables
+
+### Daemon - L4 Proxy API
+- [x] API: `GET /api/v1/l4proxy/rules` - List all proxy rules
+- [x] API: `POST /api/v1/l4proxy/rules` - Create proxy rule (sync eBPF map)
+- [ ] API: `GET /api/v1/l4proxy/rules/{id}` - Get single rule
+- [x] API: `PUT /api/v1/l4proxy/rules/{id}` - Update rule (re-sync eBPF map)
+- [x] API: `DELETE /api/v1/l4proxy/rules/{id}` - Delete rule (remove from eBPF map)
+- [x] API: `POST /api/v1/l4proxy/rules/{id}/toggle` - Enable/disable
+- [ ] API: `GET /api/v1/l4proxy/stats` - All proxy stats (eBPF counters)
+- [ ] API: `GET /api/v1/l4proxy/stats/{id}` - Stats for single rule
+- [x] Validation: listen_port not already in use by another rule or system service
+- [x] Validation: at least one upstream target required
+- [x] WebSocket events: `l4proxy_created`, `l4proxy_updated`, `l4proxy_deleted`, `l4proxy_toggled`
+- [x] Backup/restore: `l4proxy_rules` in BackupData
+
+### Dioxus UI - L4 Proxy
+- [x] `nylon-wall-ui/src/components/l4proxy.rs` - L4 Proxy page
+- [ ] Stats cards: total rules, active rules, total connections, bandwidth in/out
+- [x] Proxy rule table with data
+  - Protocol badge (TCP/UDP)
+  - Listen address:port → upstream targets display
+  - Load balance mode badge
+  - Toggle, edit, delete actions
+- [x] Create/edit form:
+  - Name, Protocol (TCP/UDP select), Listen address, Listen port
+  - Upstream targets: multi-row (address, port, weight) with add/remove
+  - Load balance mode (Round Robin / IP Hash)
+- [x] `nylon-wall-ui/src/components/mod.rs` - Export `L4Proxy` component
+- [x] `nylon-wall-ui/src/app.rs` - Add `/l4proxy` route + sidebar nav link (icon: LdArrowLeftRight)
+
+### Testing
+- [x] Unit test: Load balance strategies (round-robin, ip-hash determinism)
+- [ ] Integration test: eBPF fast-path DNAT+SNAT (plain TCP)
+- [ ] Integration test: eBPF fast-path UDP redirect
+- [ ] Integration test: eBPF map sync on rule create/update/delete
+- [ ] Performance test: eBPF fast-path throughput

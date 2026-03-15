@@ -15,4 +15,5 @@ pub mod mdns;
 pub mod oauth;
 pub mod wireguard;
 pub mod wol;
+pub mod l4proxy;
 pub mod zone;
