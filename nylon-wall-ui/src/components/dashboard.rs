@@ -21,8 +21,7 @@ struct PaginatedConntrack {
 
 #[component]
 pub fn Dashboard() -> Element {
-    let mut status =
-        use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
+    let mut status = use_context::<Resource<Result<SystemStatus, String>>>();
     let mut rules = use_resource(|| async { api_client::get::<Vec<FirewallRule>>("/rules").await });
     let mut nat_entries = use_resource(|| async { api_client::get::<Vec<NatEntry>>("/nat").await });
     let mut conns =

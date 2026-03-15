@@ -18,7 +18,7 @@ struct NetworkInterface {
 
 #[component]
 pub fn Settings() -> Element {
-    let mut status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
+    let mut status = use_context::<Resource<Result<SystemStatus, String>>>();
     let mut interfaces = use_resource(|| async {
         api_client::get::<Vec<NetworkInterface>>("/system/interfaces").await
     });
@@ -26,6 +26,20 @@ pub fn Settings() -> Element {
     let mut backup_msg = use_signal(|| None::<(bool, String)>);
     let mut importing = use_signal(|| false);
     let mut confirm_import = use_signal(|| None::<String>);
+
+    // Live uptime counter — syncs from API, then ticks locally every second
+    let mut uptime = use_signal(|| 0u64);
+    use_effect(move || {
+        if let Some(Ok(s)) = &*status.read() {
+            uptime.set(s.uptime_seconds);
+        }
+    });
+    use_future(move || async move {
+        loop {
+            gloo_timers::future::TimeoutFuture::new(1_000).await;
+            uptime += 1;
+        }
+    });
 
     let refresh = use_refresh_trigger();
     let mut prev_refresh = use_signal(|| refresh());
@@ -115,7 +129,7 @@ pub fn Settings() -> Element {
                                 div { class: "flex items-center justify-between py-2 border-b border-slate-800/40",
                                     span { class: "text-xs font-medium text-slate-500 uppercase tracking-wider", "Uptime" }
                                     span { class: "text-sm text-slate-300 font-mono",
-                                        {format_uptime(s.uptime_seconds)}
+                                        {format_uptime(uptime())}
                                     }
                                 }
                                 div { class: "flex items-center justify-between py-2",

@@ -51,7 +51,10 @@ fn Layout() -> Element {
     let route: Route = use_route();
     let theme = theme::use_theme_init();
     let _change_guard = change_guard::use_change_guard_provider();
+
+    // Provide SystemStatus as context — shared by Dashboard, Settings, and sidebar
     let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });
+    use_context_provider(|| status);
 
     let nav_cls = |target: &Route| {
         if *target == route {
