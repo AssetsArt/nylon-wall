@@ -2,6 +2,7 @@ use super::{ConfirmModal, use_change_guard, use_refresh_trigger, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
+use crate::ws_client::use_ws_events;
 use dioxus::prelude::*;
 
 #[component]
@@ -12,12 +13,13 @@ pub fn Routes() -> Element {
     let mut confirm_delete = use_signal(|| None::<(u32, String)>);
     let mut guard = use_change_guard();
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.routes()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.routes());
+        if current != prev() {
+            prev.set(current);
             routes.restart();
         }
     });
@@ -270,12 +272,13 @@ pub fn PolicyRoutes() -> Element {
     let mut confirm_delete = use_signal(|| None::<u32>);
     let mut guard = use_change_guard();
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.routes()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.routes());
+        if current != prev() {
+            prev.set(current);
             policy_routes.restart();
         }
     });

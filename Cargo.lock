@@ -3827,6 +3827,7 @@ dependencies = [
  "chrono",
  "dioxus",
  "dioxus-free-icons",
+ "futures-util",
  "gloo-net",
  "gloo-timers",
  "nylon-wall-common",

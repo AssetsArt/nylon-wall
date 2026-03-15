@@ -3,6 +3,7 @@ mod app;
 mod components;
 mod models;
 pub mod theme;
+pub mod ws_client;
 
 use app::App;
 

@@ -2,6 +2,7 @@ use super::ui::*;
 use super::use_refresh_trigger;
 use crate::api_client;
 use crate::models::*;
+use crate::ws_client::use_ws_events;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
@@ -33,12 +34,13 @@ pub fn Dashboard() -> Element {
     let mut dhcp_pools =
         use_resource(|| async { api_client::get::<Vec<DhcpPool>>("/dhcp/pools").await });
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.rules(), ws.nat(), ws.dhcp(), ws.logs(), ws.system()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.rules(), ws.nat(), ws.dhcp(), ws.logs(), ws.system());
+        if current != prev() {
+            prev.set(current);
             status.restart();
             rules.restart();
             nat_entries.restart();

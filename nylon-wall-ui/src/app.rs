@@ -7,6 +7,7 @@ use crate::components::change_guard;
 use crate::models::SystemStatus;
 use crate::theme::{self, Theme};
 use crate::api_client;
+use crate::ws_client;
 
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -51,6 +52,7 @@ fn Layout() -> Element {
     let route: Route = use_route();
     let theme = theme::use_theme_init();
     let _change_guard = change_guard::use_change_guard_provider();
+    ws_client::use_ws_provider();
 
     // Provide SystemStatus as context — shared by Dashboard, Settings, and sidebar
     let status = use_resource(|| async { api_client::get::<SystemStatus>("/system/status").await });

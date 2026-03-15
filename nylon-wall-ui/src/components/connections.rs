@@ -1,5 +1,6 @@
 use crate::api_client;
 use crate::models::*;
+use crate::ws_client::use_ws_events;
 use dioxus::prelude::*;
 use nylon_wall_common::conntrack::ConnState;
 use super::ui::*;
@@ -22,8 +23,9 @@ pub fn Connections() -> Element {
     let mut filter_state = use_signal(|| "all".to_string());
     let mut filter_protocol = use_signal(|| "all".to_string());
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.system()));
 
     let mut conns = use_resource(move || {
         let page = current_page();
@@ -43,9 +45,9 @@ pub fn Connections() -> Element {
     });
 
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.system());
+        if current != prev() {
+            prev.set(current);
             conns.restart();
         }
     });

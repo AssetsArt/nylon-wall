@@ -2,6 +2,7 @@ use super::{ConfirmModal, use_change_guard, use_refresh_trigger, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
+use crate::ws_client::use_ws_events;
 use dioxus::prelude::*;
 use dioxus_free_icons::Icon;
 use dioxus_free_icons::icons::ld_icons::*;
@@ -18,12 +19,13 @@ pub fn Dhcp() -> Element {
     let mut clients =
         use_resource(|| async { api_client::get::<Vec<DhcpClientConfig>>("/dhcp/clients").await });
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.dhcp()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.dhcp());
+        if current != prev() {
+            prev.set(current);
             pools.restart();
             leases.restart();
             reservations.restart();
@@ -156,12 +158,13 @@ fn DhcpPoolsTab() -> Element {
     let mut confirm_toggle = use_signal(|| None::<(u32, String, bool)>);
     let mut guard = use_change_guard();
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.dhcp()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.dhcp());
+        if current != prev() {
+            prev.set(current);
             pools.restart();
         }
     });
@@ -412,12 +415,13 @@ fn DhcpLeasesTab() -> Element {
     let mut confirm_release = use_signal(|| None::<String>); // MAC to release
     let mut guard = use_change_guard();
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.dhcp()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.dhcp());
+        if current != prev() {
+            prev.set(current);
             leases.restart();
             reservations.restart();
         }
@@ -718,12 +722,13 @@ fn DhcpClientTab() -> Element {
     let mut confirm_toggle = use_signal(|| None::<(u32, String, bool)>);
     let mut guard = use_change_guard();
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.dhcp()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.dhcp());
+        if current != prev() {
+            prev.set(current);
             clients.restart();
             statuses.restart();
         }

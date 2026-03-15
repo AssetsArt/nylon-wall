@@ -2,6 +2,7 @@ use super::{ConfirmModal, use_change_guard, use_refresh_trigger, notify_change};
 use super::ui::*;
 use crate::api_client;
 use crate::models::*;
+use crate::ws_client::use_ws_events;
 use dioxus::prelude::*;
 
 #[component]
@@ -13,12 +14,13 @@ pub fn Rules() -> Element {
     let mut confirm_toggle = use_signal(|| None::<(u32, String, bool)>);
     let mut guard = use_change_guard();
 
+    let ws = use_ws_events();
     let refresh = use_refresh_trigger();
-    let mut prev_refresh = use_signal(|| refresh());
+    let mut prev = use_signal(|| (refresh(), ws.rules()));
     use_effect(move || {
-        let r = refresh();
-        if r != prev_refresh() {
-            prev_refresh.set(r);
+        let current = (refresh(), ws.rules());
+        if current != prev() {
+            prev.set(current);
             rules.restart();
         }
     });

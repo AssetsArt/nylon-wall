@@ -167,6 +167,15 @@
 - [x] `nylon-wall-ui/src/components/logs.rs` - Log viewer with refresh
 - [x] Logs: filters (src_ip, dst_ip, protocol, action)
 
+### Dioxus UI - WebSocket Real-time Events
+- [x] `nylon-wall-ui/src/ws_client.rs` - WebSocket client with auto-reconnect + per-category event bus
+- [x] `nylon-wall-ui/src/api_client.rs` - `ws_url()` helper (ws/wss from page location or config)
+- [x] `nylon-wall-ui/src/app.rs` - `use_ws_provider()` in Layout (connects on mount)
+- [x] Per-category `Signal<u64>` generation counters (rules, nat, routes, zones, policies, dhcp, sni, logs, system)
+- [x] All components react to WebSocket events — auto-refetch on real-time changes
+  - Dashboard (rules, nat, dhcp, logs, system), Rules, NAT, Routes, Policies (zones+policies),
+    DHCP (pools, leases, reservations, clients), TLS/SNI, Connections, Logs, Settings
+
 ---
 
 ## Phase 6: System & Hardening

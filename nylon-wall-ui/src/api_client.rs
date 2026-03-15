@@ -5,9 +5,21 @@ use wasm_bindgen::prelude::*;
 /// Read the API base URL from the JS global `window.__NYLON_API_URL__`.
 /// Set this in index.html to match config.toml's `[ui] api_url`.
 /// Falls back to relative `/api/v1` if the global is not set (proxy mode).
-#[wasm_bindgen(inline_js = "export function __nylon_get_api_url() { return (typeof window !== 'undefined' && window.__NYLON_API_URL__) || ''; }")]
+#[wasm_bindgen(inline_js = "
+export function __nylon_get_api_url() { return (typeof window !== 'undefined' && window.__NYLON_API_URL__) || ''; }
+export function __nylon_get_ws_url() {
+    var base = (typeof window !== 'undefined' && window.__NYLON_API_URL__) || '';
+    if (!base) {
+        var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        return proto + '://' + location.host + '/api/v1/ws/events';
+    }
+    var ws = base.replace('https://', 'wss://').replace('http://', 'ws://');
+    return ws.replace(/\\/$/, '') + '/api/v1/ws/events';
+}
+")]
 extern "C" {
     fn __nylon_get_api_url() -> String;
+    fn __nylon_get_ws_url() -> String;
 }
 
 fn api_base() -> String {
@@ -17,6 +29,11 @@ fn api_base() -> String {
     } else {
         format!("{}/api/v1", base.trim_end_matches('/'))
     }
+}
+
+/// Build the WebSocket URL for the real-time event stream.
+pub fn ws_url() -> String {
+    __nylon_get_ws_url()
 }
 
 pub async fn get<T: DeserializeOwned>(path: &str) -> Result<T, String> {
