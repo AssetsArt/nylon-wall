@@ -150,6 +150,12 @@ struct BackupData {
     dhcp_reservations: Vec<serde_json::Value>,
     #[serde(default)]
     dhcp_clients: Vec<serde_json::Value>,
+    #[serde(default)]
+    ddns_entries: Vec<serde_json::Value>,
+    #[serde(default)]
+    wol_devices: Vec<serde_json::Value>,
+    #[serde(default)]
+    sni_rules: Vec<serde_json::Value>,
 }
 
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
@@ -2164,6 +2170,33 @@ async fn backup_data(
         .map(|(_, v)| v)
         .collect();
 
+    let ddns_entries = state
+        .db
+        .scan_prefix::<serde_json::Value>("ddns:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
+    let wol_devices = state
+        .db
+        .scan_prefix::<serde_json::Value>("wol:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
+    let sni_rules = state
+        .db
+        .scan_prefix::<serde_json::Value>("sni_rule:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
     let backup = BackupData {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().timestamp(),
@@ -2175,6 +2208,9 @@ async fn backup_data(
         dhcp_pools,
         dhcp_reservations,
         dhcp_clients,
+        ddns_entries,
+        wol_devices,
+        sni_rules,
     };
 
     Ok(Json(backup))
@@ -2198,6 +2234,9 @@ pub async fn perform_restore(
         "dhcp_pool:",
         "dhcp_reservation:",
         "dhcp_client:",
+        "ddns:",
+        "wol:",
+        "sni_rule:",
     ] {
         let existing = state
             .db
@@ -2225,6 +2264,9 @@ pub async fn perform_restore(
         ("dhcp_pool:", &backup.dhcp_pools),
         ("dhcp_reservation:", &backup.dhcp_reservations),
         ("dhcp_client:", &backup.dhcp_clients),
+        ("ddns:", &backup.ddns_entries),
+        ("wol:", &backup.wol_devices),
+        ("sni_rule:", &backup.sni_rules),
     ];
 
     for (prefix, items) in restore_items {
@@ -2243,6 +2285,9 @@ pub async fn perform_restore(
                 .map_err(|e| e.to_string())?;
         }
     }
+
+    // Stop all DDNS tasks (caller should restart with restored entries)
+    state.ddns_manager.stop_all().await;
 
     // Notify DHCP server to reload after restore
     let _ = state.dhcp_pool_notify.send(());
@@ -2272,6 +2317,9 @@ async fn snapshot_current(state: &AppState) -> Result<serde_json::Value, String>
         dhcp_pools: scan("dhcp_pool:").await?,
         dhcp_reservations: scan("dhcp_reservation:").await?,
         dhcp_clients: scan("dhcp_client:").await?,
+        ddns_entries: scan("ddns:").await?,
+        wol_devices: scan("wol:").await?,
+        sni_rules: scan("sni_rule:").await?,
     };
 
     serde_json::to_value(&backup).map_err(|e| e.to_string())
@@ -2294,6 +2342,18 @@ async fn restore_data(
         .await
         .map_err(internal_error)?;
 
+    // Restart DDNS tasks for restored entries
+    let ddns_items = state
+        .db
+        .scan_prefix::<nylon_wall_common::ddns::DdnsEntry>("ddns:")
+        .await
+        .unwrap_or_default();
+    for (_, entry) in ddns_items {
+        if entry.enabled {
+            state.ddns_manager.start(state.clone(), entry).await;
+        }
+    }
+
     // Record pending change for revert
     changeset::record_full_restore(&state,
         old_snapshot,
@@ -2315,6 +2375,9 @@ async fn restore_data(
             "dhcp_pools": backup.dhcp_pools.len(),
             "dhcp_reservations": backup.dhcp_reservations.len(),
             "dhcp_clients": backup.dhcp_clients.len(),
+            "ddns_entries": backup.ddns_entries.len(),
+            "wol_devices": backup.wol_devices.len(),
+            "sni_rules": backup.sni_rules.len(),
         })),
     ))
 }
