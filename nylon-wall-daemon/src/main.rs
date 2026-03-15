@@ -113,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         pending_changes: tokio::sync::Mutex::new(None),
         jwt_keys,
         revoked_tokens: tokio::sync::RwLock::new(std::collections::HashSet::new()),
+        login_tracker: auth::LoginTracker::new(),
     });
 
     // Recover any un-confirmed change from a previous crash

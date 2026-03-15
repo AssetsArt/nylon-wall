@@ -30,6 +30,7 @@ pub struct AppState {
     pub pending_changes: tokio::sync::Mutex<Option<changeset::PendingChange>>,
     pub jwt_keys: auth::JwtKeys,
     pub revoked_tokens: tokio::sync::RwLock<HashSet<String>>,
+    pub login_tracker: auth::LoginTracker,
 }
 
 /// Create an `AppState` for testing (demo mode, no eBPF).
@@ -50,5 +51,6 @@ pub async fn create_test_state(db_path: &str) -> Arc<AppState> {
         pending_changes: tokio::sync::Mutex::new(None),
         jwt_keys,
         revoked_tokens: tokio::sync::RwLock::new(HashSet::new()),
+        login_tracker: auth::LoginTracker::new(),
     })
 }

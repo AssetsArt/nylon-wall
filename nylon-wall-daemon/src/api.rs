@@ -296,7 +296,11 @@ pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("API server listening on {}", addr);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -344,14 +348,39 @@ async fn auth_setup(
 
 async fn auth_login(
     State(state): State<Arc<AppState>>,
+    connect_info: axum::extract::ConnectInfo<std::net::SocketAddr>,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     if auth::is_setup_required(&state.db).await {
         return Err((StatusCode::PRECONDITION_REQUIRED, "Password not configured. Use /auth/setup first.".to_string()));
     }
+
+    let client_ip = connect_info.0.ip();
+
+    // Check if IP is locked out
+    if let Some(remaining) = state.login_tracker.check_lockout(client_ip).await {
+        tracing::warn!("Login attempt from locked-out IP: {}", client_ip);
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            format!("Too many failed attempts. Try again in {} seconds.", remaining),
+        ));
+    }
+
     if !auth::verify_password(&state.db, &body.password).await {
+        // Record failure and check if now locked out
+        if let Some(remaining) = state.login_tracker.record_failure(client_ip).await {
+            tracing::warn!("IP {} locked out after too many failed login attempts", client_ip);
+            return Err((
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("Too many failed attempts. Try again in {} seconds.", remaining),
+            ));
+        }
         return Err((StatusCode::UNAUTHORIZED, "Invalid password".to_string()));
     }
+
+    // Clear attempts on success
+    state.login_tracker.clear(client_ip).await;
+
     let token = auth::create_token(&state.jwt_keys).map_err(internal_error)?;
     tracing::info!("Admin login successful");
     Ok(Json(serde_json::json!({ "token": token })))

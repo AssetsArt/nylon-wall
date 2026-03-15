@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::{
     extract::{Request, State},
@@ -8,6 +11,7 @@ use axum::{
 };
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 use crate::AppState;
 use crate::db::Database;
@@ -15,6 +19,8 @@ use crate::db::Database;
 const PASSWORD_KEY: &str = "auth:admin_password";
 const JWT_KEY_KEY: &str = "auth:jwt_ed25519_pkcs8";
 const TOKEN_EXPIRY_SECS: u64 = 86400; // 24 hours
+const MAX_LOGIN_ATTEMPTS: u32 = 5;
+const LOCKOUT_DURATION_SECS: u64 = 900; // 15 minutes
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -28,6 +34,68 @@ pub struct Claims {
 pub struct JwtKeys {
     pub encoding: EncodingKey,
     pub decoding: DecodingKey,
+}
+
+// === Brute-force protection ===
+
+struct AttemptRecord {
+    count: u32,
+    first_attempt: Instant,
+}
+
+pub struct LoginTracker {
+    attempts: Mutex<HashMap<IpAddr, AttemptRecord>>,
+}
+
+impl LoginTracker {
+    pub fn new() -> Self {
+        Self {
+            attempts: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Check if an IP is currently locked out. Returns remaining seconds if locked.
+    pub async fn check_lockout(&self, ip: IpAddr) -> Option<u64> {
+        let attempts = self.attempts.lock().await;
+        if let Some(record) = attempts.get(&ip) {
+            if record.count >= MAX_LOGIN_ATTEMPTS {
+                let elapsed = record.first_attempt.elapsed().as_secs();
+                if elapsed < LOCKOUT_DURATION_SECS {
+                    return Some(LOCKOUT_DURATION_SECS - elapsed);
+                }
+            }
+        }
+        None
+    }
+
+    /// Record a failed login attempt. Returns remaining seconds if now locked out.
+    pub async fn record_failure(&self, ip: IpAddr) -> Option<u64> {
+        let mut attempts = self.attempts.lock().await;
+        let record = attempts.entry(ip).or_insert(AttemptRecord {
+            count: 0,
+            first_attempt: Instant::now(),
+        });
+
+        // Reset if lockout window has expired
+        if record.first_attempt.elapsed().as_secs() >= LOCKOUT_DURATION_SECS {
+            record.count = 0;
+            record.first_attempt = Instant::now();
+        }
+
+        record.count += 1;
+
+        if record.count >= MAX_LOGIN_ATTEMPTS {
+            let elapsed = record.first_attempt.elapsed().as_secs();
+            Some(LOCKOUT_DURATION_SECS - elapsed)
+        } else {
+            None
+        }
+    }
+
+    /// Clear attempts for an IP after successful login.
+    pub async fn clear(&self, ip: IpAddr) {
+        self.attempts.lock().await.remove(&ip);
+    }
 }
 
 // === Password management ===
