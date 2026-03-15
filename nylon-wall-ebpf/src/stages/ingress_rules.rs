@@ -1,97 +1,59 @@
-use aya_ebpf::{bindings::xdp_action, helpers::bpf_ktime_get_ns, programs::XdpContext};
+use aya_ebpf::programs::XdpContext;
+use aya_ebpf::bindings::xdp_action;
 
 use nylon_wall_common::conntrack::{ConntrackEntry, ConntrackKey};
 use nylon_wall_common::log::EbpfPacketEvent;
 use nylon_wall_common::rule::EbpfRule;
 
 use crate::common::*;
+use crate::scratchpad::read_scratch;
 
-// XDP action constants
 const XDP_PASS: u32 = xdp_action::XDP_PASS;
 const XDP_DROP: u32 = xdp_action::XDP_DROP;
 
-/// Process an ingress (incoming) packet through the firewall.
+/// Ingress rules stage (XDP tail call target, terminal).
 ///
-/// Steps:
-/// 1. Parse Ethernet → IPv4 → TCP/UDP headers
-/// 2. Update global metrics
-/// 3. Check zone-based policies
-/// 4. Check connection tracking (ESTABLISHED connections pass immediately)
-/// 5. Evaluate ingress rules in priority order
-/// 6. Apply rate limiting if needed
-/// 7. Update conntrack state
-/// 8. Emit perf event for logging if needed
-///
-/// Note: NAT (DNAT/reverse-SNAT) is handled via separate eBPF programs
-/// chained before this one. See nat.rs for NAT processing logic.
-pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
-    let data = ctx.data();
-    let data_end = ctx.data_end();
-
-    // Parse packet headers
-    let pkt = match parse_packet(data, data_end) {
-        Some(p) => p,
-        None => return Ok(XDP_PASS), // Non-IPv4 or malformed → pass
+/// Handles: zone policies, conntrack, firewall rules, rate limiting,
+/// conntrack updates, and perf event emission.
+pub fn process(ctx: &XdpContext) -> Result<u32, ()> {
+    let scratch = match read_scratch() {
+        Some(s) => s,
+        None => return Ok(XDP_PASS),
     };
 
-    let now = unsafe { bpf_ktime_get_ns() };
-
-    // Apply NAT before firewall rules:
-    // 1. Reverse SNAT for return traffic (undo outbound SNAT)
-    // 2. DNAT for inbound port forwarding
-    let _nat_applied = crate::nat::try_reverse_nat_ingress(data, data_end, &pkt)
-        || crate::nat::try_dnat_ingress(data, data_end, &pkt);
-
-    // Re-parse packet if NAT was applied (IP/port may have changed)
-    let pkt = if _nat_applied {
-        match parse_packet(data, data_end) {
-            Some(p) => p,
-            None => return Ok(XDP_PASS),
-        }
-    } else {
-        pkt
-    };
-
-    // Update global metrics
-    if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
-        unsafe {
-            (*m).packets_total += 1;
-            (*m).bytes_total += pkt.pkt_len as u64;
-        }
+    // If already decided (e.g. by SNI stage), apply that decision
+    let decided = unsafe { (*scratch).decided };
+    if decided != 0 {
+        let action = unsafe { (*scratch).action };
+        return Ok(if action == 1 { XDP_DROP } else { XDP_PASS });
     }
 
-    // SNI filtering: check TLS ClientHello for blocked domains
-    let sni_enabled = unsafe { crate::SNI_ENABLED.get(0).copied().unwrap_or(0) };
-    if sni_enabled == 1 && pkt.protocol == IPPROTO_TCP && pkt.dst_port == 443 {
-        let ip_base = data + ETH_HDR_LEN;
-        let ihl = unsafe { (*((ip_base) as *const u8) & 0x0F) as usize * 4 };
-        let transport_base = ip_base + ihl;
-
-        if crate::tls::check_sni_block(data, data_end, transport_base) {
-            if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
-                unsafe { (*m).packets_dropped += 1 };
-            }
-            return Ok(XDP_DROP);
-        }
-    }
+    // Read scratch fields
+    let src_ip = unsafe { (*scratch).src_ip };
+    let dst_ip = unsafe { (*scratch).dst_ip };
+    let src_port = unsafe { (*scratch).src_port };
+    let dst_port = unsafe { (*scratch).dst_port };
+    let protocol = unsafe { (*scratch).protocol };
+    let tcp_flags = unsafe { (*scratch).tcp_flags };
+    let pkt_len = unsafe { (*scratch).pkt_len };
+    let ifindex = unsafe { (*scratch).ifindex };
+    let now = unsafe { (*scratch).timestamp };
 
     // Zone-based policy check
-    let ifindex = unsafe { (*ctx.ctx).ingress_ifindex };
     if let Some(src_zone) = unsafe { crate::ZONE_MAP.get(&ifindex) } {
-        let dst_zone: u32 = 0; // Local zone
+        let dst_zone: u32 = 0;
         if *src_zone != dst_zone {
             let policy_key = (*src_zone << 16) | dst_zone;
             if let Some(policy) = unsafe { crate::POLICY_MAP.get(&policy_key) } {
                 if policy.action == 1 {
-                    // Zone policy says DROP
                     if let Some(m) = unsafe { crate::METRICS.get_ptr_mut(0) } {
                         unsafe { (*m).packets_dropped += 1 };
                     }
                     let event = EbpfPacketEvent {
-                        timestamp: now, src_ip: pkt.src_ip, dst_ip: pkt.dst_ip,
-                        src_port: pkt.src_port, dst_port: pkt.dst_port,
-                        protocol: pkt.protocol, action: 1, rule_id: 0,
-                        ifindex, bytes: pkt.pkt_len,
+                        timestamp: now, src_ip, dst_ip,
+                        src_port, dst_port,
+                        protocol, action: 1, rule_id: 0,
+                        ifindex, bytes: pkt_len,
                     };
                     unsafe { crate::EVENTS.output(ctx, &event, 0); }
                     return Ok(XDP_DROP);
@@ -102,28 +64,27 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
 
     // Build conntrack keys
     let fwd_key = ConntrackKey {
-        src_ip: pkt.src_ip, dst_ip: pkt.dst_ip,
-        src_port: pkt.src_port, dst_port: pkt.dst_port,
-        protocol: pkt.protocol, _pad: [0; 3],
+        src_ip, dst_ip, src_port, dst_port,
+        protocol, _pad: [0; 3],
     };
     let rev_key = ConntrackKey {
-        src_ip: pkt.dst_ip, dst_ip: pkt.src_ip,
-        src_port: pkt.dst_port, dst_port: pkt.src_port,
-        protocol: pkt.protocol, _pad: [0; 3],
+        src_ip: dst_ip, dst_ip: src_ip,
+        src_port: dst_port, dst_port: src_port,
+        protocol, _pad: [0; 3],
     };
 
-    // Check conntrack: if reply to established outgoing connection, pass
+    // Check conntrack: reply to established outgoing connection → pass
     if let Some(entry) = unsafe { crate::CONNTRACK.get(&rev_key) } {
         if entry.state == 1 || entry.state == 0 {
             if let Some(entry_mut) = unsafe { crate::CONNTRACK.get_ptr_mut(&rev_key) } {
                 unsafe {
-                    if pkt.tcp_flags & (TCP_FIN | TCP_RST) != 0 {
+                    if tcp_flags & (TCP_FIN | TCP_RST) != 0 {
                         (*entry_mut).state = 4;
                     } else {
                         (*entry_mut).state = 1;
                     }
                     (*entry_mut).packets_in += 1;
-                    (*entry_mut).bytes_in += pkt.pkt_len as u64;
+                    (*entry_mut).bytes_in += pkt_len as u64;
                     (*entry_mut).last_seen = now;
                 }
             }
@@ -134,7 +95,6 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
         }
     }
 
-    // Check existing forward conntrack entry
     let existing_state = unsafe {
         crate::CONNTRACK.get(&fwd_key).map(|e| e.state).unwrap_or(255)
     };
@@ -149,9 +109,7 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
     let mut should_log = false;
 
     for i in 0..MAX_RULES {
-        if i >= rule_count {
-            break;
-        }
+        if i >= rule_count { break; }
 
         let rule: &EbpfRule = match unsafe { crate::INGRESS_RULES.get(i) } {
             Some(r) => r,
@@ -160,11 +118,11 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
 
         if rule.enabled == 0 { continue; }
         if rule.direction != 0 { continue; }
-        if rule.protocol != 0 && rule.protocol != pkt.protocol { continue; }
-        if !ip_match(pkt.src_ip, rule.src_ip, rule.src_mask) { continue; }
-        if !ip_match(pkt.dst_ip, rule.dst_ip, rule.dst_mask) { continue; }
-        if !port_match(pkt.src_port, rule.src_port_start, rule.src_port_end) { continue; }
-        if !port_match(pkt.dst_port, rule.dst_port_start, rule.dst_port_end) { continue; }
+        if rule.protocol != 0 && rule.protocol != protocol { continue; }
+        if !ip_match(src_ip, rule.src_ip, rule.src_mask) { continue; }
+        if !ip_match(dst_ip, rule.dst_ip, rule.dst_mask) { continue; }
+        if !port_match(src_port, rule.src_port_start, rule.src_port_end) { continue; }
+        if !port_match(dst_port, rule.dst_port_start, rule.dst_port_end) { continue; }
 
         matched_action = rule.action;
         matched_rule_id = rule.id;
@@ -183,9 +141,9 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
                     if tokens > 0 {
                         (*state).tokens = tokens - 1;
                         (*state).last_update = now;
-                        matched_action = 0; // Allow
+                        matched_action = 0;
                     } else {
-                        matched_action = 1; // Drop (over rate)
+                        matched_action = 1;
                         should_log = true;
                     }
                 },
@@ -194,7 +152,7 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
                         tokens: rate, last_update: now,
                     };
                     let _ = crate::RATE_LIMIT.insert(&rule.id, &state, 0);
-                    matched_action = 0; // Allow (initial)
+                    matched_action = 0;
                 }
             }
         }
@@ -221,15 +179,15 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
             let entry = ConntrackEntry {
                 state: 0, _pad: [0; 3],
                 packets_in: 1, packets_out: 0,
-                bytes_in: pkt.pkt_len as u64, bytes_out: 0,
+                bytes_in: pkt_len as u64, bytes_out: 0,
                 last_seen: now, timeout: 300, _pad2: 0,
             };
             let _ = crate::CONNTRACK.insert(&fwd_key, &entry, 0);
         } else if let Some(entry_mut) = unsafe { crate::CONNTRACK.get_ptr_mut(&fwd_key) } {
             unsafe {
-                if pkt.tcp_flags & (TCP_FIN | TCP_RST) != 0 { (*entry_mut).state = 4; }
+                if tcp_flags & (TCP_FIN | TCP_RST) != 0 { (*entry_mut).state = 4; }
                 (*entry_mut).packets_in += 1;
-                (*entry_mut).bytes_in += pkt.pkt_len as u64;
+                (*entry_mut).bytes_in += pkt_len as u64;
                 (*entry_mut).last_seen = now;
             }
         }
@@ -242,10 +200,10 @@ pub fn process_ingress(ctx: &XdpContext) -> Result<u32, ()> {
     // Emit perf event for logging
     if should_log || matched_action == 1 {
         let event = EbpfPacketEvent {
-            timestamp: now, src_ip: pkt.src_ip, dst_ip: pkt.dst_ip,
-            src_port: pkt.src_port, dst_port: pkt.dst_port,
-            protocol: pkt.protocol, action: matched_action,
-            rule_id: matched_rule_id, ifindex, bytes: pkt.pkt_len,
+            timestamp: now, src_ip, dst_ip,
+            src_port, dst_port,
+            protocol, action: matched_action,
+            rule_id: matched_rule_id, ifindex, bytes: pkt_len,
         };
         unsafe { crate::EVENTS.output(ctx, &event, 0); }
     }

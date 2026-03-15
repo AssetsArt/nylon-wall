@@ -2,11 +2,14 @@
 
 #[cfg(target_os = "linux")]
 mod linux {
+    use std::os::fd::{AsFd, AsRawFd};
+
     use aya::Ebpf;
-    use aya::maps::Array;
-    use aya::programs::{SchedClassifier, Xdp, XdpFlags};
+    use aya::maps::{Array, ProgramArray};
+    use aya::programs::{ProgramFd, SchedClassifier, Xdp, XdpFlags};
     use nylon_wall_common::nat::EbpfNatEntry;
     use nylon_wall_common::rule::EbpfRule;
+    use nylon_wall_common::scratchpad::{STAGE_NAT, STAGE_RULES, STAGE_SNI};
     use nylon_wall_common::zone::EbpfPolicyValue;
     use tracing::info;
 
@@ -35,6 +38,8 @@ mod linux {
 
         let iface = std::env::var("NYLON_WALL_IFACE").unwrap_or_else(|_| "eth0".to_string());
 
+        // === Attach entry point programs ===
+
         // Attach XDP ingress
         let program: &mut Xdp = bpf
             .program_mut("nylon_wall_ingress")
@@ -57,13 +62,96 @@ mod linux {
         tc_prog.attach(&iface, aya::programs::TcAttachType::Egress)?;
         info!("TC egress attached to {}", iface);
 
+        // === Load tail-call stage programs (load only, do NOT attach) ===
+
+        // XDP tail-call targets
+        for name in ["ingress_nat", "ingress_sni", "ingress_rules"] {
+            let prog: &mut Xdp = bpf
+                .program_mut(name)
+                .ok_or_else(|| anyhow::anyhow!("XDP tail program '{}' not found", name))?
+                .try_into()?;
+            prog.load()?;
+            info!("Loaded XDP tail program: {}", name);
+        }
+
+        // TC tail-call targets
+        for name in ["egress_nat", "egress_sni", "egress_rules"] {
+            let prog: &mut SchedClassifier = bpf
+                .program_mut(name)
+                .ok_or_else(|| anyhow::anyhow!("TC tail program '{}' not found", name))?
+                .try_into()?;
+            prog.load()?;
+            info!("Loaded TC tail program: {}", name);
+        }
+
+        // === Register tail programs into dispatch ProgramArrays ===
+
+        register_tail_call(&mut bpf, "ingress_nat", "XDP_DISPATCH", STAGE_NAT)?;
+        register_tail_call(&mut bpf, "ingress_sni", "XDP_DISPATCH", STAGE_SNI)?;
+        register_tail_call(&mut bpf, "ingress_rules", "XDP_DISPATCH", STAGE_RULES)?;
+
+        register_tail_call(&mut bpf, "egress_nat", "TC_DISPATCH", STAGE_NAT)?;
+        register_tail_call(&mut bpf, "egress_sni", "TC_DISPATCH", STAGE_SNI)?;
+        register_tail_call(&mut bpf, "egress_rules", "TC_DISPATCH", STAGE_RULES)?;
+
+        info!("Registered 6 tail-call programs into dispatch maps");
+
         // Set initial rule/NAT counts to 0
         set_map_u32(&mut bpf, "INGRESS_RULE_COUNT", 0, 0)?;
         set_map_u32(&mut bpf, "EGRESS_RULE_COUNT", 0, 0)?;
         set_map_u32(&mut bpf, "NAT_ENTRY_COUNT", 0, 0)?;
 
-        info!("eBPF programs loaded and attached successfully");
+        info!("eBPF programs loaded and attached successfully (2 entry + 6 tail)");
         Ok(bpf)
+    }
+
+    /// Register a tail-call program into a ProgramArray dispatch map.
+    ///
+    /// Works around aya 0.13's borrow conflict: `bpf.program()` (immutable)
+    /// and `bpf.map_mut()` (mutable) can't coexist. We collect the program's
+    /// raw fd first (Copy, releases borrow), dup it into an OwnedFd, then
+    /// transmute to ProgramFd (which is a transparent newtype over OwnedFd).
+    fn register_tail_call(
+        bpf: &mut Ebpf,
+        prog_name: &str,
+        map_name: &str,
+        index: u32,
+    ) -> anyhow::Result<()> {
+        use std::os::fd::{FromRawFd, OwnedFd};
+
+        // Get the program's raw fd. as_raw_fd() returns Copy i32,
+        // so the borrow on `bpf` is released at the semicolon.
+        let prog_raw_fd = bpf
+            .program(prog_name)
+            .ok_or_else(|| anyhow::anyhow!("Program '{}' not found", prog_name))?
+            .fd()?
+            .as_fd()
+            .as_raw_fd();
+        // bpf borrow is dropped here (i32 is Copy)
+
+        // dup() the fd to get an independent owned copy
+        let duped_fd = unsafe { libc::dup(prog_raw_fd) };
+        if duped_fd < 0 {
+            return Err(anyhow::anyhow!(
+                "Failed to dup fd for '{}': {}",
+                prog_name,
+                std::io::Error::last_os_error()
+            ));
+        }
+        let owned_fd = unsafe { OwnedFd::from_raw_fd(duped_fd) };
+
+        // SAFETY: ProgramFd is a #[repr(transparent)] newtype around OwnedFd.
+        // Layout: ProgramFd(OwnedFd) — single field, identical memory representation.
+        let prog_fd: ProgramFd = unsafe { core::mem::transmute(owned_fd) };
+
+        // Now we can safely get a mutable borrow for the map
+        let map = bpf
+            .map_mut(map_name)
+            .ok_or_else(|| anyhow::anyhow!("Map '{}' not found", map_name))?;
+        let mut prog_array: ProgramArray<_> = ProgramArray::try_from(map)?;
+        prog_array.set(index, &prog_fd, 0)?;
+
+        Ok(())
     }
 
     /// Push firewall rules into eBPF maps using typed Array API.
