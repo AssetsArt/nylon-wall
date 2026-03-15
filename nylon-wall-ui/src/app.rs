@@ -40,6 +40,8 @@ pub enum Route {
         Connections,
         #[route("/logs")]
         Logs,
+        #[route("/tools")]
+        Tools,
         #[route("/settings")]
         Settings,
 }
@@ -194,6 +196,10 @@ fn Layout() -> Element {
 
                     p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",
                         "System"
+                    }
+                    Link { class: sub_cls(&Route::Tools), to: Route::Tools,
+                        Icon { width: 13, height: 13, icon: LdWrench }
+                        "Tools"
                     }
                     Link { class: sub_cls(&Route::Settings), to: Route::Settings,
                         Icon { width: 13, height: 13, icon: LdSettings }

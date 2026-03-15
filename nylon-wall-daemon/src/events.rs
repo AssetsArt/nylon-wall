@@ -67,6 +67,14 @@ pub enum WsEvent {
     #[serde(rename = "sni_rule_deleted")]
     SniRuleDeleted { id: u32 },
 
+    // Wake-on-LAN
+    #[serde(rename = "wol_device_created")]
+    WolDeviceCreated(serde_json::Value),
+    #[serde(rename = "wol_device_deleted")]
+    WolDeviceDeleted { id: u32 },
+    #[serde(rename = "wol_sent")]
+    WolSent(serde_json::Value),
+
     // DDNS
     #[serde(rename = "ddns_created")]
     DdnsCreated(serde_json::Value),

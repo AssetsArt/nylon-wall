@@ -14,6 +14,7 @@ pub mod rule_engine;
 #[allow(dead_code)]
 pub mod schedule;
 pub mod state;
+pub mod wol;
 
 use std::collections::HashSet;
 use std::sync::Arc;

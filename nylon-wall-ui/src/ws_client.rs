@@ -17,6 +17,7 @@ pub struct WsEventBus {
     dhcp: Signal<u64>,
     sni: Signal<u64>,
     ddns: Signal<u64>,
+    wol: Signal<u64>,
     logs: Signal<u64>,
     system: Signal<u64>,
     connected: Signal<bool>,
@@ -31,6 +32,7 @@ impl WsEventBus {
     pub fn dhcp(&self) -> u64 { (self.dhcp)() }
     pub fn sni(&self) -> u64 { (self.sni)() }
     pub fn ddns(&self) -> u64 { (self.ddns)() }
+    pub fn wol(&self) -> u64 { (self.wol)() }
     pub fn logs(&self) -> u64 { (self.logs)() }
     pub fn system(&self) -> u64 { (self.system)() }
     pub fn connected(&self) -> bool { (self.connected)() }
@@ -57,6 +59,7 @@ fn increment_for_event(bus: &mut WsEventBus, event_type: &str) {
         t if t.starts_with("dhcp_") => WsEventBus::inc(&mut bus.dhcp),
         t if t.starts_with("sni_") => WsEventBus::inc(&mut bus.sni),
         t if t.starts_with("ddns_") => WsEventBus::inc(&mut bus.ddns),
+        t if t.starts_with("wol_") => WsEventBus::inc(&mut bus.wol),
         "log_event" => WsEventBus::inc(&mut bus.logs),
         "config_restored" => {
             WsEventBus::inc(&mut bus.rules);
@@ -67,6 +70,7 @@ fn increment_for_event(bus: &mut WsEventBus, event_type: &str) {
             WsEventBus::inc(&mut bus.dhcp);
             WsEventBus::inc(&mut bus.sni);
             WsEventBus::inc(&mut bus.ddns);
+            WsEventBus::inc(&mut bus.wol);
             WsEventBus::inc(&mut bus.system);
         }
         "changes_reverted" => WsEventBus::inc(&mut bus.system),
@@ -86,6 +90,7 @@ pub fn use_ws_provider() {
         dhcp: use_signal(|| 0u64),
         sni: use_signal(|| 0u64),
         ddns: use_signal(|| 0u64),
+        wol: use_signal(|| 0u64),
         logs: use_signal(|| 0u64),
         system: use_signal(|| 0u64),
         connected: use_signal(|| false),

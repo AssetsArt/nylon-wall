@@ -13,6 +13,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use nylon_wall_common::conntrack::ConntrackInfo;
 use nylon_wall_common::ddns::{DdnsEntry, DdnsStatus};
+use nylon_wall_common::wol::{WolDevice, WolRequest};
 use nylon_wall_common::dhcp::{
     DhcpClientConfig, DhcpClientStatus, DhcpLease, DhcpLeaseState, DhcpPool, DhcpReservation,
 };
@@ -292,6 +293,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/ddns/{id}/toggle", post(toggle_ddns))
         .route("/api/v1/ddns/{id}/update-now", post(force_update_ddns))
         .route("/api/v1/ddns/status", get(list_ddns_status))
+        // Wake-on-LAN
+        .route("/api/v1/tools/wol", post(wol_send))
+        .route(
+            "/api/v1/tools/wol/devices",
+            get(list_wol_devices).post(create_wol_device),
+        )
+        .route(
+            "/api/v1/tools/wol/devices/{id}",
+            put(update_wol_device).delete(delete_wol_device),
+        )
+        .route("/api/v1/tools/wol/devices/{id}/wake", post(wol_wake_device))
         // Change management (auto-revert)
         .route("/api/v1/changes/pending", get(changes_pending))
         .route("/api/v1/changes/confirm", post(changes_confirm))
@@ -2835,4 +2847,102 @@ async fn list_ddns_status(
 ) -> Result<Json<Vec<DdnsStatus>>, (StatusCode, String)> {
     let statuses = crate::ddns::load_all_status(&state).await;
     Ok(Json(statuses))
+}
+
+// === Wake-on-LAN ===
+
+async fn wol_send(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<WolRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    crate::wol::send_magic_packet(&body.mac)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    let _ = state.event_tx.send(crate::events::WsEvent::WolSent(
+        serde_json::json!({ "mac": body.mac }),
+    ));
+    Ok(Json(serde_json::json!({ "sent": true, "mac": body.mac })))
+}
+
+async fn list_wol_devices(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<WolDevice>>, (StatusCode, String)> {
+    let devices = state
+        .db
+        .scan_prefix::<WolDevice>("wol:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(devices.into_iter().map(|(_, d)| d).collect()))
+}
+
+async fn create_wol_device(
+    State(state): State<Arc<AppState>>,
+    Json(mut device): Json<WolDevice>,
+) -> Result<Json<WolDevice>, (StatusCode, String)> {
+    // Validate MAC
+    crate::wol::parse_mac(&device.mac).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    let existing = state.db.scan_prefix::<WolDevice>("wol:").await.map_err(internal_error)?;
+    device.id = existing.iter().map(|(_, d)| d.id).max().unwrap_or(0) + 1;
+    let key = format!("wol:{}", device.id);
+    state.db.put(&key, &device).await.map_err(internal_error)?;
+    state.db.add_to_index("wol:", &key).await.map_err(internal_error)?;
+
+    let _ = state.event_tx.send(crate::events::WsEvent::WolDeviceCreated(
+        serde_json::to_value(&device).unwrap_or_default(),
+    ));
+    tracing::info!("WOL device saved: {} ({})", device.name, device.mac);
+    Ok(Json(device))
+}
+
+async fn update_wol_device(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut device): Json<WolDevice>,
+) -> Result<Json<WolDevice>, (StatusCode, String)> {
+    let key = format!("wol:{}", id);
+    if state.db.get::<WolDevice>(&key).await.map_err(internal_error)?.is_none() {
+        return Err((StatusCode::NOT_FOUND, "WOL device not found".to_string()));
+    }
+    crate::wol::parse_mac(&device.mac).map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    device.id = id;
+    state.db.put(&key, &device).await.map_err(internal_error)?;
+    Ok(Json(device))
+}
+
+async fn delete_wol_device(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let key = format!("wol:{}", id);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state.db.remove_from_index("wol:", &key).await.map_err(internal_error)?;
+    let _ = state.event_tx.send(crate::events::WsEvent::WolDeviceDeleted { id });
+    tracing::info!("WOL device deleted: {}", id);
+    Ok(Json(serde_json::json!({ "deleted": id })))
+}
+
+async fn wol_wake_device(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let key = format!("wol:{}", id);
+    let mut device = state
+        .db
+        .get::<WolDevice>(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "WOL device not found".to_string()))?;
+
+    crate::wol::send_magic_packet(&device.mac)
+        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+
+    // Update last_wake timestamp
+    device.last_wake = Some(chrono::Utc::now().to_rfc3339());
+    let _ = state.db.put(&key, &device).await;
+
+    let _ = state.event_tx.send(crate::events::WsEvent::WolSent(
+        serde_json::json!({ "mac": device.mac, "name": device.name }),
+    ));
+
+    Ok(Json(serde_json::json!({ "sent": true, "device": device.name })))
 }

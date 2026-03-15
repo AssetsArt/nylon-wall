@@ -593,11 +593,15 @@
 ## Phase 17: Utility Tools
 
 ### Wake-on-LAN
-- [ ] API: `POST /api/v1/tools/wol` - Send magic packet (MAC + broadcast address)
-- [ ] API: `GET /api/v1/tools/wol/devices` - Saved WOL devices list
-- [ ] API: `POST /api/v1/tools/wol/devices` - Save device (name, MAC, interface)
-- [ ] API: `DELETE /api/v1/tools/wol/devices/{id}` - Remove saved device
-- [ ] Daemon: construct and send magic packet (6x `0xFF` + 16x MAC) via UDP broadcast
+- [x] `nylon-wall-common/src/wol.rs` - `WolDevice`, `WolRequest` types
+- [x] `nylon-wall-daemon/src/wol.rs` - Magic packet builder + UDP broadcast sender (with unit tests)
+- [x] API: `POST /api/v1/tools/wol` - Send magic packet (MAC + broadcast address)
+- [x] API: `GET /api/v1/tools/wol/devices` - Saved WOL devices list
+- [x] API: `POST /api/v1/tools/wol/devices` - Save device (name, MAC, interface)
+- [x] API: `PUT /api/v1/tools/wol/devices/{id}` - Update device
+- [x] API: `DELETE /api/v1/tools/wol/devices/{id}` - Remove saved device
+- [x] API: `POST /api/v1/tools/wol/devices/{id}/wake` - Wake saved device (updates last_wake timestamp)
+- [x] WebSocket events: `wol_device_created`, `wol_device_deleted`, `wol_sent`
 
 ### mDNS Reflector
 - [ ] `nylon-wall-daemon/src/mdns.rs` - mDNS reflector (forward mDNS between interfaces/VLANs)
@@ -626,8 +630,9 @@
 - [ ] API: `POST /api/v1/tools/captive/toggle` - Enable/disable
 
 ### Dioxus UI - Tools
-- [ ] `nylon-wall-ui/src/components/tools.rs` - Tools page with sections
-- [ ] Wake-on-LAN: device cards with wake button
+- [x] `nylon-wall-ui/src/components/tools.rs` - Tools page with sections
+- [x] Wake-on-LAN: device cards with wake button, quick-wake by MAC, add/edit/delete devices
+- [x] `/tools` route + sidebar nav link (LdWrench icon under System)
 - [ ] mDNS reflector: interface multi-select + enable toggle
 - [ ] UPnP: config + active port mappings table
 - [ ] Captive portal: config form + connected clients list

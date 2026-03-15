@@ -14,6 +14,7 @@ mod routes;
 mod rules;
 mod settings;
 mod tls;
+mod tools;
 
 pub use change_guard::{ChangeTimerModal, use_change_guard, use_refresh_trigger, notify_change};
 pub use confirm::ConfirmModal;
@@ -30,3 +31,4 @@ pub use login::Login;
 pub use setup::Setup;
 pub use settings::Settings;
 pub use tls::Tls;
+pub use tools::Tools;
