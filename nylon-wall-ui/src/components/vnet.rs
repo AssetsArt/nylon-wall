@@ -7,6 +7,12 @@ use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::*;
 use dioxus_free_icons::Icon;
 
+/// Simple interface info from /api/v1/system/interfaces
+#[derive(serde::Deserialize, Clone)]
+struct NetIface {
+    name: String,
+}
+
 #[component]
 pub fn Vnet() -> Element {
     let refresh = use_refresh_trigger();
@@ -267,6 +273,9 @@ fn VlanForm(
     let mut ip_addr = use_signal(|| vlan.ip_address.clone().unwrap_or_default());
     let mut saving = use_signal(|| false);
 
+    let ifaces = use_resource(|| async { api_client::get::<Vec<NetIface>>("/system/interfaces").await });
+    let iface_list = ifaces.read().as_ref().and_then(|r| r.as_ref().ok()).cloned().unwrap_or_default();
+
     rsx! {
         FormCard {
             p { class: "text-sm font-medium text-white mb-4",
@@ -275,11 +284,18 @@ fn VlanForm(
             div { class: "grid grid-cols-3 gap-4",
                 label { class: "block",
                     span { class: "text-xs font-medium text-slate-400 mb-1 block", "Parent Interface" }
-                    input {
+                    select {
                         class: "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white",
-                        placeholder: "eth0",
                         value: "{parent}",
-                        oninput: move |e| parent.set(e.value()),
+                        onchange: move |e| parent.set(e.value()),
+                        option { value: "", disabled: true, selected: parent().is_empty(), "Select interface..." }
+                        for iface in iface_list.iter() {
+                            option {
+                                value: "{iface.name}",
+                                selected: parent() == iface.name,
+                                "{iface.name}"
+                            }
+                        }
                     }
                 }
                 label { class: "block",
@@ -514,10 +530,13 @@ fn BridgeForm(
     error_msg: Signal<Option<String>>,
 ) -> Element {
     let mut name = use_signal(|| bridge.name.clone());
-    let mut ports = use_signal(|| bridge.ports.join(", "));
+    let mut selected_ports = use_signal(|| bridge.ports.clone());
     let mut ip_addr = use_signal(|| bridge.ip_address.clone().unwrap_or_default());
     let mut stp = use_signal(|| bridge.stp_enabled);
     let mut saving = use_signal(|| false);
+
+    let ifaces = use_resource(|| async { api_client::get::<Vec<NetIface>>("/system/interfaces").await });
+    let iface_list = ifaces.read().as_ref().and_then(|r| r.as_ref().ok()).cloned().unwrap_or_default();
 
     rsx! {
         FormCard {
@@ -543,13 +562,58 @@ fn BridgeForm(
                         oninput: move |e| ip_addr.set(e.value()),
                     }
                 }
-                label { class: "col-span-2 block",
-                    span { class: "text-xs font-medium text-slate-400 mb-1 block", "Ports (comma-separated interfaces)" }
-                    input {
+                div { class: "col-span-2",
+                    span { class: "text-xs font-medium text-slate-400 mb-2 block", "Ports" }
+                    // Selected ports as chips
+                    div { class: "flex flex-wrap gap-2 mb-2 min-h-[28px]",
+                        for port in selected_ports().iter() {
+                            {
+                                let port_name = port.clone();
+                                let port_remove = port.clone();
+                                rsx! {
+                                    span { class: "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-400 text-xs font-medium border border-blue-500/20",
+                                        "{port_name}"
+                                        button {
+                                            class: "ml-0.5 hover:text-red-400 transition-colors",
+                                            onclick: move |_| {
+                                                let mut current = selected_ports();
+                                                current.retain(|p| *p != port_remove);
+                                                selected_ports.set(current);
+                                            },
+                                            "×"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Add port dropdown
+                    select {
                         class: "w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white",
-                        placeholder: "eth1, eth2, eth0.100",
-                        value: "{ports}",
-                        oninput: move |e| ports.set(e.value()),
+                        value: "",
+                        onchange: move |e: Event<FormData>| {
+                            let val = e.value();
+                            if !val.is_empty() {
+                                let mut current = selected_ports();
+                                if !current.contains(&val) {
+                                    current.push(val);
+                                    selected_ports.set(current);
+                                }
+                            }
+                        },
+                        option { value: "", "Add interface..." }
+                        for iface in iface_list.iter() {
+                            {
+                                let already = selected_ports().contains(&iface.name);
+                                rsx! {
+                                    option {
+                                        value: "{iface.name}",
+                                        disabled: already,
+                                        if already { "{iface.name} (added)" } else { "{iface.name}" }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 label { class: "flex items-center gap-2 cursor-pointer",
@@ -577,7 +641,7 @@ fn BridgeForm(
                         let b = BridgeConfig {
                             id: bridge.id,
                             name: name(),
-                            ports: ports().split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+                            ports: selected_ports(),
                             ip_address: if ip_addr().is_empty() { None } else { Some(ip_addr()) },
                             stp_enabled: stp(),
                             enabled: bridge.enabled,
