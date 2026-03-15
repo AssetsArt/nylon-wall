@@ -12,6 +12,7 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use nylon_wall_common::conntrack::ConntrackInfo;
+use nylon_wall_common::ddns::{DdnsEntry, DdnsStatus};
 use nylon_wall_common::dhcp::{
     DhcpClientConfig, DhcpClientStatus, DhcpLease, DhcpLeaseState, DhcpPool, DhcpReservation,
 };
@@ -282,6 +283,15 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/api/v1/tls/sni/stats", get(sni_stats))
         .route("/api/v1/tls/sni/toggle", post(toggle_sni_filtering))
         .route("/api/v1/tls/sni/debug", get(debug_sni_maps))
+        // DDNS
+        .route("/api/v1/ddns", get(list_ddns).post(create_ddns))
+        .route(
+            "/api/v1/ddns/{id}",
+            get(get_ddns).put(update_ddns).delete(delete_ddns),
+        )
+        .route("/api/v1/ddns/{id}/toggle", post(toggle_ddns))
+        .route("/api/v1/ddns/{id}/update-now", post(force_update_ddns))
+        .route("/api/v1/ddns/status", get(list_ddns_status))
         // Change management (auto-revert)
         .route("/api/v1/changes/pending", get(changes_pending))
         .route("/api/v1/changes/confirm", post(changes_confirm))
@@ -2660,4 +2670,169 @@ pub async fn sync_sni_to_ebpf(state: &AppState) {
             policy_entries.len()
         );
     }
+}
+
+// === DDNS ===
+
+async fn list_ddns(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<DdnsEntry>>, (StatusCode, String)> {
+    let entries = state
+        .db
+        .scan_prefix::<DdnsEntry>("ddns:")
+        .await
+        .map_err(internal_error)?;
+    Ok(Json(entries.into_iter().map(|(_, e)| e).collect()))
+}
+
+async fn get_ddns(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<Json<DdnsEntry>, (StatusCode, String)> {
+    let key = format!("ddns:{}", id);
+    state
+        .db
+        .get::<DdnsEntry>(&key)
+        .await
+        .map_err(internal_error)?
+        .map(Json)
+        .ok_or((StatusCode::NOT_FOUND, "DDNS entry not found".to_string()))
+}
+
+async fn create_ddns(
+    State(state): State<Arc<AppState>>,
+    Json(mut entry): Json<DdnsEntry>,
+) -> Result<Json<DdnsEntry>, (StatusCode, String)> {
+    let existing = state.db.scan_prefix::<DdnsEntry>("ddns:").await.map_err(internal_error)?;
+    entry.id = existing.iter().map(|(_, e)| e.id).max().unwrap_or(0) + 1;
+    let key = format!("ddns:{}", entry.id);
+    state.db.put(&key, &entry).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("ddns:", &key)
+        .await
+        .map_err(internal_error)?;
+
+    // Start background task if enabled
+    if entry.enabled {
+        state
+            .ddns_manager
+            .start(Arc::clone(&state), entry.clone())
+            .await;
+    }
+
+    let _ = state.event_tx.send(crate::events::WsEvent::DdnsCreated(
+        serde_json::to_value(&entry).unwrap_or_default(),
+    ));
+    tracing::info!("DDNS entry created: {} ({})", entry.hostname, entry.id);
+    Ok(Json(entry))
+}
+
+async fn update_ddns(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut entry): Json<DdnsEntry>,
+) -> Result<Json<DdnsEntry>, (StatusCode, String)> {
+    let key = format!("ddns:{}", id);
+    if state
+        .db
+        .get::<DdnsEntry>(&key)
+        .await
+        .map_err(internal_error)?
+        .is_none()
+    {
+        return Err((StatusCode::NOT_FOUND, "DDNS entry not found".to_string()));
+    }
+    entry.id = id;
+    state.db.put(&key, &entry).await.map_err(internal_error)?;
+
+    // Restart background task
+    state.ddns_manager.stop(id).await;
+    if entry.enabled {
+        state
+            .ddns_manager
+            .start(Arc::clone(&state), entry.clone())
+            .await;
+    }
+
+    let _ = state.event_tx.send(crate::events::WsEvent::DdnsUpdated(
+        serde_json::to_value(&entry).unwrap_or_default(),
+    ));
+    tracing::info!("DDNS entry updated: {} ({})", entry.hostname, id);
+    Ok(Json(entry))
+}
+
+async fn delete_ddns(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let key = format!("ddns:{}", id);
+    state.ddns_manager.stop(id).await;
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("ddns:", &key)
+        .await
+        .map_err(internal_error)?;
+    // Also clean up status
+    let _ = state.db.delete(&format!("ddns_status:{}", id)).await;
+
+    let _ = state
+        .event_tx
+        .send(crate::events::WsEvent::DdnsDeleted { id });
+    tracing::info!("DDNS entry deleted: {}", id);
+    Ok(Json(serde_json::json!({ "deleted": id })))
+}
+
+async fn toggle_ddns(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<Json<DdnsEntry>, (StatusCode, String)> {
+    let key = format!("ddns:{}", id);
+    let mut entry = state
+        .db
+        .get::<DdnsEntry>(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "DDNS entry not found".to_string()))?;
+    entry.enabled = !entry.enabled;
+    state.db.put(&key, &entry).await.map_err(internal_error)?;
+
+    if entry.enabled {
+        state
+            .ddns_manager
+            .start(Arc::clone(&state), entry.clone())
+            .await;
+    } else {
+        state.ddns_manager.stop(id).await;
+    }
+
+    let _ = state.event_tx.send(crate::events::WsEvent::DdnsUpdated(
+        serde_json::to_value(&entry).unwrap_or_default(),
+    ));
+    Ok(Json(entry))
+}
+
+async fn force_update_ddns(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<Json<DdnsStatus>, (StatusCode, String)> {
+    let key = format!("ddns:{}", id);
+    let entry = state
+        .db
+        .get::<DdnsEntry>(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or((StatusCode::NOT_FOUND, "DDNS entry not found".to_string()))?;
+    let status = crate::ddns::force_update(&state, &entry)
+        .await
+        .map_err(|e| (StatusCode::BAD_GATEWAY, e))?;
+    Ok(Json(status))
+}
+
+async fn list_ddns_status(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<DdnsStatus>>, (StatusCode, String)> {
+    let statuses = crate::ddns::load_all_status(&state).await;
+    Ok(Json(statuses))
 }

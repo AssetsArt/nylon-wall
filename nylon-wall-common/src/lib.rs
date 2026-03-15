@@ -1,6 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub mod conntrack;
+pub mod ddns;
 pub mod dhcp;
 pub mod log;
 pub mod nat;

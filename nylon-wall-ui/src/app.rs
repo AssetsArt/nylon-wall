@@ -30,6 +30,8 @@ pub enum Route {
         Routes,
         #[route("/dhcp")]
         Dhcp,
+        #[route("/ddns")]
+        Ddns,
         #[route("/policies")]
         Policies,
         #[route("/tls")]
@@ -168,6 +170,10 @@ fn Layout() -> Element {
                     Link { class: sub_cls(&Route::Dhcp), to: Route::Dhcp,
                         Icon { width: 13, height: 13, icon: LdWifi }
                         "DHCP"
+                    }
+                    Link { class: sub_cls(&Route::Ddns), to: Route::Ddns,
+                        Icon { width: 13, height: 13, icon: LdGlobe }
+                        "Dynamic DNS"
                     }
                     Link { class: sub_cls(&Route::Policies), to: Route::Policies,
                         Icon { width: 13, height: 13, icon: LdLayers }

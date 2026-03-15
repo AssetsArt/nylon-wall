@@ -41,6 +41,7 @@ rand = "0.10"
 bcrypt = "0.17"
 jsonwebtoken = "9"
 ring = "0.17"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 socket2 = { version = "0.6", features = ["all"] }
 aya = { version = "0.13", features = ["async_tokio"] }
 aya-log = "0.2"

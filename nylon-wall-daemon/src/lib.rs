@@ -2,6 +2,7 @@ pub mod api;
 pub mod auth;
 pub mod changeset;
 pub mod db;
+pub mod ddns;
 #[allow(dead_code)]
 pub mod dhcp;
 pub mod ebpf_loader;
@@ -31,6 +32,7 @@ pub struct AppState {
     pub jwt_keys: auth::JwtKeys,
     pub revoked_tokens: tokio::sync::RwLock<HashSet<String>>,
     pub login_tracker: auth::LoginTracker,
+    pub ddns_manager: ddns::DdnsManager,
 }
 
 /// Create an `AppState` for testing (demo mode, no eBPF).
@@ -52,5 +54,6 @@ pub async fn create_test_state(db_path: &str) -> Arc<AppState> {
         jwt_keys,
         revoked_tokens: tokio::sync::RwLock::new(HashSet::new()),
         login_tracker: auth::LoginTracker::new(),
+        ddns_manager: ddns::DdnsManager::new(),
     })
 }

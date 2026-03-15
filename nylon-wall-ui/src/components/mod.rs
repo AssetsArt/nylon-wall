@@ -2,6 +2,7 @@ pub mod ui;
 pub mod change_guard;
 mod confirm;
 mod connections;
+mod ddns;
 mod login;
 mod setup;
 mod dashboard;
@@ -18,6 +19,7 @@ pub use change_guard::{ChangeTimerModal, use_change_guard, use_refresh_trigger, 
 pub use confirm::ConfirmModal;
 pub use connections::Connections;
 pub use dashboard::Dashboard;
+pub use ddns::Ddns;
 pub use dhcp::Dhcp;
 pub use logs::Logs;
 pub use nat::Nat;

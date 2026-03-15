@@ -440,24 +440,35 @@
 
 ## Phase 12: Dynamic DNS (DDNS)
 
+### nylon-wall-common - DDNS Types
+- [x] `nylon-wall-common/src/ddns.rs` - `DdnsEntry`, `DdnsProvider`, `DdnsStatus`
+- [x] `nylon-wall-common/src/lib.rs` - Add `pub mod ddns`
+
 ### Daemon - DDNS
-- [ ] `nylon-wall-daemon/src/ddns.rs` - DDNS updater
-- [ ] Support providers: Cloudflare, No-IP, DuckDNS, Dynu, custom URL
-- [ ] Background task: detect WAN IP change → update DNS record
-- [ ] SlateDB: store DDNS configs (`ddns:{id}`)
-- [ ] API: `GET /api/v1/ddns` - List DDNS configs
-- [ ] API: `POST /api/v1/ddns` - Create DDNS config
-- [ ] API: `PUT /api/v1/ddns/{id}` - Update DDNS config
-- [ ] API: `DELETE /api/v1/ddns/{id}` - Delete DDNS config
-- [ ] API: `POST /api/v1/ddns/{id}/update` - Force update now
-- [ ] API: `GET /api/v1/ddns/{id}/status` - Last update status + current WAN IP
+- [x] `nylon-wall-daemon/src/ddns.rs` - DDNS updater (WAN IP detection + provider updates)
+- [x] Support providers: Cloudflare, No-IP, DuckDNS, Dynu, custom URL
+- [x] Background task: detect WAN IP change → update DNS record (per-entry loops)
+- [x] SlateDB: store DDNS configs (`ddns:{id}`) + status (`ddns_status:{id}`)
+- [x] API: `GET /api/v1/ddns` - List DDNS configs
+- [x] API: `POST /api/v1/ddns` - Create DDNS config
+- [x] API: `GET /api/v1/ddns/{id}` - Get DDNS config
+- [x] API: `PUT /api/v1/ddns/{id}` - Update DDNS config
+- [x] API: `DELETE /api/v1/ddns/{id}` - Delete DDNS config
+- [x] API: `POST /api/v1/ddns/{id}/toggle` - Enable/disable
+- [x] API: `POST /api/v1/ddns/{id}/update-now` - Force update now
+- [x] API: `GET /api/v1/ddns/status` - All entry statuses (current IP, last update, errors)
+- [x] WebSocket events: `ddns_created`, `ddns_updated`, `ddns_deleted`, `ddns_status_changed`
+- [x] Startup: auto-start update loops for enabled entries
 
 ### Dioxus UI - DDNS
-- [ ] `nylon-wall-ui/src/components/ddns.rs` - DDNS config page
-- [ ] Provider selector + credentials form (per provider)
-- [ ] Status display: current WAN IP, last update time, success/error
-- [ ] Force update button
-- [ ] Settings page integration or standalone `/ddns` route
+- [x] `nylon-wall-ui/src/components/ddns.rs` - DDNS config page
+- [x] Provider selector + credentials form (per provider: Cloudflare zone_id, DuckDNS token, etc.)
+- [x] Status display: current WAN IP, last update time, success/error badges
+- [x] Force update button per entry
+- [x] Toggle enable/disable, edit, delete with confirmation
+- [x] Standalone `/ddns` route + sidebar nav link (LdGlobe icon under Network)
+- [x] Stats cards: total entries, active, total updates
+- [x] WebSocket real-time updates via event bus
 
 ---
 

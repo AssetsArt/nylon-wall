@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
-use nylon_wall_daemon::{api, auth, changeset, db, dhcp, events, rule_engine, AppState};
+use nylon_wall_daemon::{api, auth, changeset, db, ddns, dhcp, events, rule_engine, AppState};
 #[cfg(target_os = "linux")]
 use nylon_wall_daemon::{route, state};
 
@@ -114,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_keys,
         revoked_tokens: tokio::sync::RwLock::new(std::collections::HashSet::new()),
         login_tracker: auth::LoginTracker::new(),
+        ddns_manager: ddns::DdnsManager::new(),
     });
 
     // Recover any un-confirmed change from a previous crash
@@ -185,6 +186,25 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         info!("DHCP client tasks spawned");
+    }
+
+    // Start DDNS update tasks for enabled entries
+    {
+        let ddns_entries = state
+            .db
+            .scan_prefix::<nylon_wall_common::ddns::DdnsEntry>("ddns:")
+            .await
+            .unwrap_or_default();
+        let mut started = 0u32;
+        for (_, entry) in ddns_entries {
+            if entry.enabled {
+                state.ddns_manager.start(Arc::clone(&state), entry).await;
+                started += 1;
+            }
+        }
+        if started > 0 {
+            info!("{} DDNS update tasks started", started);
+        }
     }
 
     // Start auto-revert background task

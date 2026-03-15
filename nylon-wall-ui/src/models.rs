@@ -1,5 +1,6 @@
 // Re-export common types for convenience
 pub use nylon_wall_common::conntrack::ConntrackInfo;
+pub use nylon_wall_common::ddns::{DdnsEntry, DdnsProvider, DdnsStatus};
 pub use nylon_wall_common::dhcp::{
     DhcpClientConfig, DhcpClientState, DhcpClientStatus, DhcpLease, DhcpLeaseState, DhcpPool,
     DhcpReservation,

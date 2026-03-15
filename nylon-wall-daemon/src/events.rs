@@ -67,6 +67,16 @@ pub enum WsEvent {
     #[serde(rename = "sni_rule_deleted")]
     SniRuleDeleted { id: u32 },
 
+    // DDNS
+    #[serde(rename = "ddns_created")]
+    DdnsCreated(serde_json::Value),
+    #[serde(rename = "ddns_updated")]
+    DdnsUpdated(serde_json::Value),
+    #[serde(rename = "ddns_deleted")]
+    DdnsDeleted { id: u32 },
+    #[serde(rename = "ddns_status_changed")]
+    DdnsStatusChanged(serde_json::Value),
+
     // Change management
     #[serde(rename = "changes_reverted")]
     ChangesReverted { count: usize },
