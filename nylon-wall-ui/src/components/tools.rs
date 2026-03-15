@@ -1,7 +1,7 @@
 use super::ui::*;
 use super::{ConfirmModal, notify_change, use_change_guard, use_refresh_trigger};
 use crate::api_client;
-use crate::models::{WolDevice, WolRequest};
+use crate::models::{MdnsConfig, WolDevice, WolRequest};
 use crate::ws_client;
 use dioxus::prelude::*;
 use dioxus_free_icons::icons::ld_icons::*;
@@ -16,6 +16,7 @@ pub fn Tools() -> Element {
                 subtitle: "Network utilities and management tools.".to_string(),
             }
             WakeOnLan {}
+            MdnsReflector {}
         }
     }
 }
@@ -206,6 +207,141 @@ fn WakeOnLan() -> Element {
                     },
                     on_cancel: move |_| confirm_delete.set(None),
                 }
+            }
+        }
+    }
+}
+
+// === mDNS Reflector ===
+
+/// Simple interface info from /api/v1/system/interfaces
+#[derive(serde::Deserialize, Clone)]
+struct NetIface {
+    name: String,
+}
+
+#[component]
+fn MdnsReflector() -> Element {
+    let ws = ws_client::use_ws_events();
+
+    let mut config = use_resource(move || async move {
+        let _ = ws.mdns();
+        api_client::get::<MdnsConfig>("/tools/mdns").await
+    });
+
+    let interfaces = use_resource(|| async {
+        api_client::get::<Vec<NetIface>>("/system/interfaces").await
+    });
+
+    let mut error_msg = use_signal(|| None::<String>);
+    let mut saving = use_signal(|| false);
+
+    rsx! {
+        div { class: "mb-8",
+            SectionHeader {
+                icon: rsx! { Icon { width: 16, height: 16, icon: LdRadio, class: "text-violet-400" } },
+                title: "mDNS Reflector".to_string(),
+            }
+
+            if let Some(err) = error_msg() {
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
+                }
+            }
+
+            match (&*config.read(), &*interfaces.read()) {
+                (Some(Ok(cfg)), Some(Ok(ifaces))) => {
+                    let enabled = cfg.enabled;
+                    let selected = cfg.interfaces.clone();
+                    rsx! {
+                        div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6",
+                            div { class: "flex items-center justify-between mb-4",
+                                div {
+                                    h4 { class: "text-sm font-semibold text-white", "Reflect mDNS between interfaces" }
+                                    p { class: "text-xs text-slate-500 mt-0.5",
+                                        "Forward Bonjour/Avahi discovery packets across VLANs and subnets."
+                                    }
+                                }
+                                div { class: "flex items-center gap-3",
+                                    Badge {
+                                        color: if enabled { Color::Emerald } else { Color::Slate },
+                                        label: if enabled { "Active".to_string() } else { "Disabled".to_string() },
+                                    }
+                                    Btn {
+                                        color: if enabled { Color::Slate } else { Color::Emerald },
+                                        label: if enabled { "Disable".to_string() } else { "Enable".to_string() },
+                                        onclick: move |_| {
+                                            spawn(async move {
+                                                match api_client::post::<(), MdnsConfig>("/tools/mdns/toggle", &()).await {
+                                                    Ok(_) => config.restart(),
+                                                    Err(e) => error_msg.set(Some(e)),
+                                                }
+                                            });
+                                        },
+                                    }
+                                }
+                            }
+
+                            // Interface selection
+                            p { class: "text-xs font-medium text-slate-400 mb-2", "Interfaces" }
+                            div { class: "flex flex-wrap gap-2 mb-4",
+                                for iface in ifaces {
+                                    {
+                                        let name = iface.name.clone();
+                                        let is_selected = selected.contains(&name);
+                                        let sel_clone = selected.clone();
+                                        rsx! {
+                                            button {
+                                                class: if is_selected {
+                                                    "px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-300 border border-violet-500/30 transition-colors"
+                                                } else {
+                                                    "px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800/50 text-slate-500 border border-slate-700/40 hover:text-slate-300 hover:border-slate-600/40 transition-colors"
+                                                },
+                                                r#type: "button",
+                                                onclick: move |_| {
+                                                    let mut new_list = sel_clone.clone();
+                                                    let n = name.clone();
+                                                    if is_selected {
+                                                        new_list.retain(|x| x != &n);
+                                                    } else {
+                                                        new_list.push(n);
+                                                    }
+                                                    let new_cfg = MdnsConfig {
+                                                        enabled,
+                                                        interfaces: new_list,
+                                                    };
+                                                    saving.set(true);
+                                                    spawn(async move {
+                                                        match api_client::put::<MdnsConfig, MdnsConfig>("/tools/mdns", &new_cfg).await {
+                                                            Ok(_) => config.restart(),
+                                                            Err(e) => error_msg.set(Some(e)),
+                                                        }
+                                                        saving.set(false);
+                                                    });
+                                                },
+                                                "{iface.name}"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if selected.len() < 2 && enabled {
+                                p { class: "text-xs text-amber-400",
+                                    "Select at least 2 interfaces to reflect mDNS packets between."
+                                }
+                            }
+
+                            if !selected.is_empty() {
+                                p { class: "text-[10px] text-slate-600",
+                                    "Selected: {selected.join(\", \")}"
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => rsx! {},
             }
         }
     }

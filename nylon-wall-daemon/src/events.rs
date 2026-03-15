@@ -85,6 +85,10 @@ pub enum WsEvent {
     #[serde(rename = "ddns_status_changed")]
     DdnsStatusChanged(serde_json::Value),
 
+    // mDNS
+    #[serde(rename = "mdns_config_changed")]
+    MdnsConfigChanged(serde_json::Value),
+
     // Change management
     #[serde(rename = "changes_reverted")]
     ChangesReverted { count: usize },

@@ -604,12 +604,12 @@
 - [x] WebSocket events: `wol_device_created`, `wol_device_deleted`, `wol_sent`
 
 ### mDNS Reflector
-- [ ] `nylon-wall-daemon/src/mdns.rs` - mDNS reflector (forward mDNS between interfaces/VLANs)
-- [ ] Listen on `224.0.0.251:5353` on configured interfaces
-- [ ] Re-broadcast received mDNS packets to other configured interfaces
-- [ ] API: `GET /api/v1/tools/mdns` - Get mDNS reflector config
-- [ ] API: `PUT /api/v1/tools/mdns` - Set interfaces to reflect between
-- [ ] API: `POST /api/v1/tools/mdns/toggle` - Enable/disable reflector
+- [x] `nylon-wall-daemon/src/mdns.rs` - mDNS reflector (forward mDNS between interfaces/VLANs)
+- [x] Listen on `224.0.0.251:5353` on configured interfaces
+- [x] Re-broadcast received mDNS packets to other configured interfaces
+- [x] API: `GET /api/v1/tools/mdns` - Get mDNS reflector config
+- [x] API: `PUT /api/v1/tools/mdns` - Set interfaces to reflect between
+- [x] API: `POST /api/v1/tools/mdns/toggle` - Enable/disable reflector
 
 ### UPnP/NAT-PMP
 - [ ] `nylon-wall-daemon/src/upnp.rs` - UPnP IGD + NAT-PMP server
@@ -633,7 +633,7 @@
 - [x] `nylon-wall-ui/src/components/tools.rs` - Tools page with sections
 - [x] Wake-on-LAN: device cards with wake button, quick-wake by MAC, add/edit/delete devices
 - [x] `/tools` route + sidebar nav link (LdWrench icon under System)
-- [ ] mDNS reflector: interface multi-select + enable toggle
+- [x] mDNS reflector: interface multi-select + enable toggle
 - [ ] UPnP: config + active port mappings table
 - [ ] Captive portal: config form + connected clients list
 - [ ] `nylon-wall-ui/src/app.rs` - Add `/tools` route + sidebar nav link (icon: LdWrench)

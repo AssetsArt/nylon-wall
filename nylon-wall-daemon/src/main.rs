@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
 
-use nylon_wall_daemon::{api, auth, changeset, db, ddns, dhcp, events, rule_engine, AppState};
+use nylon_wall_daemon::{api, auth, changeset, db, ddns, dhcp, events, mdns, rule_engine, AppState};
 #[cfg(target_os = "linux")]
 use nylon_wall_daemon::{route, state};
 
@@ -115,6 +115,7 @@ async fn main() -> anyhow::Result<()> {
         revoked_tokens: tokio::sync::RwLock::new(std::collections::HashSet::new()),
         login_tracker: auth::LoginTracker::new(),
         ddns_manager: ddns::DdnsManager::new(),
+        mdns_reflector: mdns::MdnsReflector::new(),
     });
 
     // Recover any un-confirmed change from a previous crash
@@ -204,6 +205,15 @@ async fn main() -> anyhow::Result<()> {
         }
         if started > 0 {
             info!("{} DDNS update tasks started", started);
+        }
+    }
+
+    // Start mDNS reflector if enabled
+    {
+        let mdns_config = mdns::load_config(&state).await;
+        if mdns_config.enabled {
+            state.mdns_reflector.start(mdns_config).await;
+            info!("mDNS reflector started");
         }
     }
 

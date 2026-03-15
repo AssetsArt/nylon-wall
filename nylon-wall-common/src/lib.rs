@@ -10,5 +10,6 @@ pub mod route;
 pub mod rule;
 pub mod scratchpad;
 pub mod tls;
+pub mod mdns;
 pub mod wol;
 pub mod zone;

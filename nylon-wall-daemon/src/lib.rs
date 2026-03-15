@@ -7,6 +7,8 @@ pub mod ddns;
 pub mod dhcp;
 pub mod ebpf_loader;
 pub mod events;
+#[allow(dead_code)]
+pub mod mdns;
 pub mod metrics;
 pub mod nat;
 pub mod route;
@@ -34,6 +36,7 @@ pub struct AppState {
     pub revoked_tokens: tokio::sync::RwLock<HashSet<String>>,
     pub login_tracker: auth::LoginTracker,
     pub ddns_manager: ddns::DdnsManager,
+    pub mdns_reflector: mdns::MdnsReflector,
 }
 
 /// Create an `AppState` for testing (demo mode, no eBPF).
@@ -56,5 +59,6 @@ pub async fn create_test_state(db_path: &str) -> Arc<AppState> {
         revoked_tokens: tokio::sync::RwLock::new(HashSet::new()),
         login_tracker: auth::LoginTracker::new(),
         ddns_manager: ddns::DdnsManager::new(),
+        mdns_reflector: mdns::MdnsReflector::new(),
     })
 }

@@ -11,6 +11,7 @@ pub use nylon_wall_common::protocol::{PortRange, Protocol};
 pub use nylon_wall_common::route::{PolicyRoute, Route};
 pub use nylon_wall_common::rule::{Direction, FirewallRule, RuleAction};
 pub use nylon_wall_common::tls::{SniAction, SniRule, SniStats};
+pub use nylon_wall_common::mdns::MdnsConfig;
 pub use nylon_wall_common::wol::{WolDevice, WolRequest};
 pub use nylon_wall_common::zone::{NetworkPolicy, Schedule, Zone};
 

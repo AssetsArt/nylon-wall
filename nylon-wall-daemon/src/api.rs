@@ -18,6 +18,7 @@ use nylon_wall_common::dhcp::{
     DhcpClientConfig, DhcpClientStatus, DhcpLease, DhcpLeaseState, DhcpPool, DhcpReservation,
 };
 use nylon_wall_common::log::PacketLog;
+use nylon_wall_common::mdns::MdnsConfig;
 use nylon_wall_common::nat::NatEntry;
 #[cfg(target_os = "linux")]
 use nylon_wall_common::nat::NatType;
@@ -156,6 +157,8 @@ struct BackupData {
     wol_devices: Vec<serde_json::Value>,
     #[serde(default)]
     sni_rules: Vec<serde_json::Value>,
+    #[serde(default)]
+    mdns_config: Option<serde_json::Value>,
 }
 
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
@@ -310,6 +313,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             put(update_wol_device).delete(delete_wol_device),
         )
         .route("/api/v1/tools/wol/devices/{id}/wake", post(wol_wake_device))
+        // mDNS reflector
+        .route(
+            "/api/v1/tools/mdns",
+            get(get_mdns_config).put(update_mdns_config),
+        )
+        .route("/api/v1/tools/mdns/toggle", post(toggle_mdns))
         // Change management (auto-revert)
         .route("/api/v1/changes/pending", get(changes_pending))
         .route("/api/v1/changes/confirm", post(changes_confirm))
@@ -2197,6 +2206,12 @@ async fn backup_data(
         .map(|(_, v)| v)
         .collect();
 
+    let mdns_config = state
+        .db
+        .get::<serde_json::Value>("mdns_config")
+        .await
+        .map_err(internal_error)?;
+
     let backup = BackupData {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().timestamp(),
@@ -2211,6 +2226,7 @@ async fn backup_data(
         ddns_entries,
         wol_devices,
         sni_rules,
+        mdns_config,
     };
 
     Ok(Json(backup))
@@ -2286,8 +2302,23 @@ pub async fn perform_restore(
         }
     }
 
+    // Restore mDNS config (single key, not prefix-based)
+    if let Some(mdns_val) = &backup.mdns_config {
+        state
+            .db
+            .put("mdns_config", mdns_val)
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        let _ = state.db.delete("mdns_config").await;
+    }
+
     // Stop all DDNS tasks (caller should restart with restored entries)
     state.ddns_manager.stop_all().await;
+
+    // Restart mDNS reflector with restored config
+    let mdns_cfg = crate::mdns::load_config(state).await;
+    state.mdns_reflector.restart(mdns_cfg).await;
 
     // Notify DHCP server to reload after restore
     let _ = state.dhcp_pool_notify.send(());
@@ -2320,6 +2351,11 @@ async fn snapshot_current(state: &AppState) -> Result<serde_json::Value, String>
         ddns_entries: scan("ddns:").await?,
         wol_devices: scan("wol:").await?,
         sni_rules: scan("sni_rule:").await?,
+        mdns_config: state
+            .db
+            .get::<serde_json::Value>("mdns_config")
+            .await
+            .map_err(|e| e.to_string())?,
     };
 
     serde_json::to_value(&backup).map_err(|e| e.to_string())
@@ -3008,4 +3044,55 @@ async fn wol_wake_device(
     ));
 
     Ok(Json(serde_json::json!({ "sent": true, "device": device.name })))
+}
+
+// === mDNS Reflector ===
+
+async fn get_mdns_config(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<MdnsConfig>, (StatusCode, String)> {
+    let config = crate::mdns::load_config(&state).await;
+    Ok(Json(config))
+}
+
+async fn update_mdns_config(
+    State(state): State<Arc<AppState>>,
+    Json(config): Json<MdnsConfig>,
+) -> Result<Json<MdnsConfig>, (StatusCode, String)> {
+    crate::mdns::save_config(&state, &config)
+        .await
+        .map_err(internal_error)?;
+
+    // Restart reflector with new config
+    state.mdns_reflector.restart(config.clone()).await;
+
+    let _ = state.event_tx.send(crate::events::WsEvent::MdnsConfigChanged(
+        serde_json::to_value(&config).unwrap_or_default(),
+    ));
+
+    Ok(Json(config))
+}
+
+async fn toggle_mdns(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<MdnsConfig>, (StatusCode, String)> {
+    let mut config = crate::mdns::load_config(&state).await;
+    config.enabled = !config.enabled;
+
+    crate::mdns::save_config(&state, &config)
+        .await
+        .map_err(internal_error)?;
+
+    // Start or stop reflector
+    if config.enabled {
+        state.mdns_reflector.start(config.clone()).await;
+    } else {
+        state.mdns_reflector.stop().await;
+    }
+
+    let _ = state.event_tx.send(crate::events::WsEvent::MdnsConfigChanged(
+        serde_json::to_value(&config).unwrap_or_default(),
+    ));
+
+    Ok(Json(config))
 }
