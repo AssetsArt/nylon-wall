@@ -13,6 +13,7 @@ pub use nylon_wall_common::rule::{Direction, FirewallRule, RuleAction};
 pub use nylon_wall_common::tls::{SniAction, SniRule, SniStats};
 pub use nylon_wall_common::mdns::MdnsConfig;
 pub use nylon_wall_common::oauth::{OAuthProvider, OAuthProviderType};
+pub use nylon_wall_common::wireguard::{WgPeer, WgPeerStatus, WgServer};
 pub use nylon_wall_common::wol::{WolDevice, WolRequest};
 pub use nylon_wall_common::zone::{NetworkPolicy, Schedule, Zone};
 

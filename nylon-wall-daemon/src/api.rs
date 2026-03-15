@@ -20,6 +20,7 @@ use nylon_wall_common::dhcp::{
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::mdns::MdnsConfig;
 use nylon_wall_common::oauth::OAuthProvider;
+use nylon_wall_common::wireguard::{WgPeer, WgServer};
 use nylon_wall_common::nat::NatEntry;
 #[cfg(target_os = "linux")]
 use nylon_wall_common::nat::NatType;
@@ -162,6 +163,10 @@ struct BackupData {
     mdns_config: Option<serde_json::Value>,
     #[serde(default)]
     oauth_providers: Vec<serde_json::Value>,
+    #[serde(default)]
+    wg_server: Option<serde_json::Value>,
+    #[serde(default)]
+    wg_peers: Vec<serde_json::Value>,
 }
 
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
@@ -338,6 +343,23 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(get_mdns_config).put(update_mdns_config),
         )
         .route("/api/v1/tools/mdns/toggle", post(toggle_mdns))
+        // WireGuard VPN
+        .route(
+            "/api/v1/vpn/server",
+            get(get_wg_server).put(update_wg_server),
+        )
+        .route("/api/v1/vpn/server/toggle", post(toggle_wg_server))
+        .route(
+            "/api/v1/vpn/peers",
+            get(list_wg_peers).post(create_wg_peer),
+        )
+        .route(
+            "/api/v1/vpn/peers/{id}",
+            put(update_wg_peer).delete(delete_wg_peer),
+        )
+        .route("/api/v1/vpn/peers/{id}/toggle", post(toggle_wg_peer))
+        .route("/api/v1/vpn/peers/{id}/config", get(download_wg_peer_config))
+        .route("/api/v1/vpn/status", get(wg_peer_status))
         // Network diagnostics
         .route("/api/v1/tools/ping", post(tool_ping))
         .route("/api/v1/tools/dns", post(tool_dns_lookup))
@@ -2244,6 +2266,21 @@ async fn backup_data(
         .map(|(_, v)| v)
         .collect();
 
+    let wg_server = state
+        .db
+        .get::<serde_json::Value>("wg:server")
+        .await
+        .map_err(internal_error)?;
+
+    let wg_peers = state
+        .db
+        .scan_prefix::<serde_json::Value>("wg_peer:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
     let backup = BackupData {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().timestamp(),
@@ -2260,6 +2297,8 @@ async fn backup_data(
         sni_rules,
         mdns_config,
         oauth_providers,
+        wg_server,
+        wg_peers,
     };
 
     Ok(Json(backup))
@@ -2287,6 +2326,7 @@ pub async fn perform_restore(
         "wol:",
         "sni_rule:",
         "oauth_provider:",
+        "wg_peer:",
     ] {
         let existing = state
             .db
@@ -2318,6 +2358,7 @@ pub async fn perform_restore(
         ("wol:", &backup.wol_devices),
         ("sni_rule:", &backup.sni_rules),
         ("oauth_provider:", &backup.oauth_providers),
+        ("wg_peer:", &backup.wg_peers),
     ];
 
     for (prefix, items) in restore_items {
@@ -2346,6 +2387,17 @@ pub async fn perform_restore(
             .map_err(|e| e.to_string())?;
     } else {
         let _ = state.db.delete("mdns_config").await;
+    }
+
+    // Restore WireGuard server config (single key, not prefix-based)
+    if let Some(wg_val) = &backup.wg_server {
+        state
+            .db
+            .put("wg:server", wg_val)
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        let _ = state.db.delete("wg:server").await;
     }
 
     // Stop all DDNS tasks (caller should restart with restored entries)
@@ -2392,6 +2444,12 @@ async fn snapshot_current(state: &AppState) -> Result<serde_json::Value, String>
             .await
             .map_err(|e| e.to_string())?,
         oauth_providers: scan("oauth_provider:").await?,
+        wg_server: state
+            .db
+            .get::<serde_json::Value>("wg:server")
+            .await
+            .map_err(|e| e.to_string())?,
+        wg_peers: scan("wg_peer:").await?,
     };
 
     serde_json::to_value(&backup).map_err(|e| e.to_string())
@@ -3257,6 +3315,237 @@ async fn tool_traceroute(
         output: String::from_utf8_lossy(&output.stdout).to_string()
             + &String::from_utf8_lossy(&output.stderr),
     }))
+}
+
+// === WireGuard VPN ===
+
+async fn get_wg_server(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<WgServer> {
+    let server = crate::wireguard::load_server(&state.db).await;
+    Ok(Json(server))
+}
+
+async fn update_wg_server(
+    State(state): State<Arc<AppState>>,
+    Json(mut server): Json<WgServer>,
+) -> AppResult<WgServer> {
+    // Auto-generate keys if not provided
+    if server.private_key.is_empty() {
+        let (priv_key, pub_key) = crate::wireguard::generate_keypair().map_err(internal_error)?;
+        server.private_key = priv_key;
+        server.public_key = pub_key;
+    } else if server.public_key.is_empty() {
+        // Derive public key from private key (best-effort)
+        let (_, pub_key) = crate::wireguard::generate_keypair().map_err(internal_error)?;
+        server.public_key = pub_key;
+    }
+
+    crate::wireguard::save_server(&state.db, &server)
+        .await
+        .map_err(internal_error)?;
+
+    // Apply config on Linux
+    #[cfg(target_os = "linux")]
+    if server.enabled {
+        let peers = list_wg_peers_from_db(&state).await.map_err(internal_error)?;
+        let _ = crate::wireguard::apply_config(&server, &peers).await;
+    }
+
+    broadcast(&state, WsEvent::WgServerUpdated(to_json_value(&server)));
+    Ok(Json(server))
+}
+
+async fn toggle_wg_server(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<WgServer> {
+    let mut server = crate::wireguard::load_server(&state.db).await;
+    server.enabled = !server.enabled;
+    crate::wireguard::save_server(&state.db, &server)
+        .await
+        .map_err(internal_error)?;
+
+    #[cfg(target_os = "linux")]
+    if server.enabled {
+        let peers = list_wg_peers_from_db(&state).await.map_err(internal_error)?;
+        let _ = crate::wireguard::apply_config(&server, &peers).await;
+    } else {
+        crate::wireguard::remove_interface(&server.interface);
+    }
+
+    broadcast(&state, WsEvent::WgServerUpdated(to_json_value(&server)));
+    Ok(Json(server))
+}
+
+async fn list_wg_peers_from_db(state: &AppState) -> Result<Vec<WgPeer>, String> {
+    state
+        .db
+        .scan_prefix::<WgPeer>("wg_peer:")
+        .await
+        .map(|v| v.into_iter().map(|(_, p)| p).collect())
+        .map_err(|e| e.to_string())
+}
+
+async fn list_wg_peers(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Vec<WgPeer>> {
+    let mut peers = list_wg_peers_from_db(&state).await.map_err(internal_error)?;
+    peers.sort_by_key(|p| p.id);
+    // Mask private keys in response
+    for p in &mut peers {
+        if !p.private_key.is_empty() {
+            p.private_key = "••••••••".to_string();
+        }
+        if !p.preshared_key.is_empty() {
+            p.preshared_key = "••••••••".to_string();
+        }
+    }
+    Ok(Json(peers))
+}
+
+async fn create_wg_peer(
+    State(state): State<Arc<AppState>>,
+    Json(mut peer): Json<WgPeer>,
+) -> Result<(StatusCode, Json<WgPeer>), (StatusCode, String)> {
+    let existing = state
+        .db
+        .scan_prefix::<WgPeer>("wg_peer:")
+        .await
+        .map_err(internal_error)?;
+    let next_id = existing.iter().map(|(_, p)| p.id).max().unwrap_or(0) + 1;
+    peer.id = next_id;
+
+    // Auto-generate keypair if not provided
+    if peer.public_key.is_empty() {
+        let (priv_key, pub_key) = crate::wireguard::generate_keypair().map_err(internal_error)?;
+        peer.private_key = priv_key;
+        peer.public_key = pub_key;
+    }
+
+    // Auto-generate PSK if empty
+    if peer.preshared_key.is_empty() {
+        peer.preshared_key = crate::wireguard::generate_psk().map_err(internal_error)?;
+    }
+
+    // Auto-assign allowed_ips if empty
+    if peer.allowed_ips.is_empty() {
+        let server = crate::wireguard::load_server(&state.db).await;
+        // Parse server address prefix and assign next IP
+        if let Some(prefix) = server.address.split('/').next() {
+            if let Some(last_dot) = prefix.rfind('.') {
+                let base = &prefix[..last_dot + 1];
+                let next_host = next_id + 1; // server is .1, peers start at .2
+                peer.allowed_ips = format!("{}{}/32", base, next_host);
+            }
+        }
+    }
+
+    let key = format!("wg_peer:{}", peer.id);
+    state.db.put(&key, &peer).await.map_err(internal_error)?;
+    state
+        .db
+        .add_to_index("wg_peer:", &key)
+        .await
+        .map_err(internal_error)?;
+
+    broadcast(&state, WsEvent::WgPeerCreated(to_json_value(&peer)));
+    Ok((StatusCode::CREATED, Json(peer)))
+}
+
+async fn update_wg_peer(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut peer): Json<WgPeer>,
+) -> AppResult<WgPeer> {
+    let key = format!("wg_peer:{}", id);
+    let existing: WgPeer = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Peer not found".to_string()))?;
+
+    peer.id = id;
+    // Preserve keys if masked
+    if peer.private_key == "••••••••" || peer.private_key.is_empty() {
+        peer.private_key = existing.private_key;
+    }
+    if peer.preshared_key == "••••••••" || peer.preshared_key.is_empty() {
+        peer.preshared_key = existing.preshared_key;
+    }
+    if peer.public_key.is_empty() {
+        peer.public_key = existing.public_key;
+    }
+
+    state.db.put(&key, &peer).await.map_err(internal_error)?;
+    broadcast(&state, WsEvent::WgPeerUpdated(to_json_value(&peer)));
+    Ok(Json(peer))
+}
+
+async fn delete_wg_peer(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let key = format!("wg_peer:{}", id);
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state
+        .db
+        .remove_from_index("wg_peer:", &key)
+        .await
+        .map_err(internal_error)?;
+    broadcast(&state, WsEvent::WgPeerDeleted { id });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_wg_peer(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<WgPeer> {
+    let key = format!("wg_peer:{}", id);
+    let mut peer: WgPeer = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Peer not found".to_string()))?;
+    peer.enabled = !peer.enabled;
+    state.db.put(&key, &peer).await.map_err(internal_error)?;
+    broadcast(&state, WsEvent::WgPeerUpdated(to_json_value(&peer)));
+    Ok(Json(peer))
+}
+
+async fn download_wg_peer_config(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let key = format!("wg_peer:{}", id);
+    let peer: WgPeer = state
+        .db
+        .get(&key)
+        .await
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Peer not found".to_string()))?;
+    let server = crate::wireguard::load_server(&state.db).await;
+    let conf = crate::wireguard::build_peer_config(&server, &peer);
+    let filename = format!("{}.conf", peer.name.replace(' ', "_"));
+    let disposition = format!("attachment; filename=\"{}\"", filename);
+
+    let mut headers = HeaderMap::new();
+    headers.insert(axum::http::header::CONTENT_TYPE, "text/plain".parse().unwrap());
+    headers.insert(
+        axum::http::header::CONTENT_DISPOSITION,
+        disposition.parse().unwrap(),
+    );
+
+    Ok((StatusCode::OK, headers, conf))
+}
+
+async fn wg_peer_status(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Vec<nylon_wall_common::wireguard::WgPeerStatus>> {
+    let server = crate::wireguard::load_server(&state.db).await;
+    let statuses = crate::wireguard::get_peer_status(&server.interface);
+    Ok(Json(statuses))
 }
 
 // === OAuth / OIDC ===

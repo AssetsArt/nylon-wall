@@ -43,6 +43,11 @@ fn api_base() -> String {
     }
 }
 
+/// Build a full API URL for a given path (for direct browser navigation like file downloads).
+pub fn base_url(path: &str) -> String {
+    format!("{}{}", api_base(), path)
+}
+
 /// Build the WebSocket URL for the real-time event stream.
 /// Includes the auth token as a query parameter.
 pub fn ws_url() -> String {

@@ -12,5 +12,6 @@ pub mod scratchpad;
 pub mod tls;
 pub mod mdns;
 pub mod oauth;
+pub mod wireguard;
 pub mod wol;
 pub mod zone;

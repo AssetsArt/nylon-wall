@@ -40,6 +40,8 @@ pub enum Route {
         Connections,
         #[route("/logs")]
         Logs,
+        #[route("/vpn")]
+        Vpn,
         #[route("/tools")]
         Tools,
         #[route("/settings")]
@@ -180,6 +182,10 @@ fn Layout() -> Element {
                     Link { class: sub_cls(&Route::Policies), to: Route::Policies,
                         Icon { width: 13, height: 13, icon: LdLayers }
                         "Policies"
+                    }
+                    Link { class: sub_cls(&Route::Vpn), to: Route::Vpn,
+                        Icon { width: 13, height: 13, icon: LdShieldCheck }
+                        "VPN"
                     }
 
                     p { class: "text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600 px-3 py-1 mt-3",

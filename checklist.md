@@ -505,30 +505,36 @@
 
 ---
 
-## Phase 14: WireGuard VPN
+## Phase 14: WireGuard VPN ✅
 
 ### Daemon - WireGuard
-- [ ] `nylon-wall-daemon/src/wireguard.rs` - WireGuard management via `wg` CLI / netlink
-- [ ] Create WireGuard interface: `ip link add wg0 type wireguard`
-- [ ] Key generation: `wg genkey`, `wg pubkey`
-- [ ] Apply config: `wg set wg0 listen-port {port} private-key {key}`
-- [ ] Peer management: `wg set wg0 peer {pubkey} allowed-ips {cidr} endpoint {addr}`
-- [ ] API: `GET /api/v1/vpn/wireguard` - Get WireGuard server config
-- [ ] API: `PUT /api/v1/vpn/wireguard` - Update server config (port, address, DNS)
-- [ ] API: `GET /api/v1/vpn/wireguard/peers` - List peers
-- [ ] API: `POST /api/v1/vpn/wireguard/peers` - Add peer (auto-generate keys)
-- [ ] API: `DELETE /api/v1/vpn/wireguard/peers/{id}` - Remove peer
-- [ ] API: `GET /api/v1/vpn/wireguard/peers/{id}/config` - Download peer config file
+- [x] `nylon-wall-daemon/src/wireguard.rs` - WireGuard management via `wg` CLI / netlink
+- [x] Create WireGuard interface: `ip link add wg0 type wireguard`
+- [x] Key generation: `wg genkey`, `wg pubkey`
+- [x] Apply config: `wg set wg0 listen-port {port} private-key {key}`
+- [x] Peer management: `wg set wg0 peer {pubkey} allowed-ips {cidr} endpoint {addr}`
+- [x] API: `GET/PUT /api/v1/vpn/server` - Server config CRUD
+- [x] API: `POST /api/v1/vpn/server/toggle` - Toggle server enabled
+- [x] API: `GET/POST /api/v1/vpn/peers` - List/create peers (auto-generate keys)
+- [x] API: `PUT/DELETE /api/v1/vpn/peers/{id}` - Update/delete peer
+- [x] API: `POST /api/v1/vpn/peers/{id}/toggle` - Toggle peer enabled
+- [x] API: `GET /api/v1/vpn/peers/{id}/config` - Download peer config file
+- [x] API: `GET /api/v1/vpn/status` - Live peer status from `wg show`
+- [x] WebSocket events: `wg_server_updated`, `wg_peer_created`, `wg_peer_updated`, `wg_peer_deleted`
+- [x] Backup/restore integration (wg_server + wg_peers)
 - [ ] Auto-create firewall rules for VPN traffic (UDP listen port + wg0 interface)
 - [ ] Auto-create NAT masquerade for VPN → LAN access
 
 ### Dioxus UI - WireGuard
-- [ ] `nylon-wall-ui/src/components/wireguard.rs` - WireGuard VPN page
-- [ ] Server config form (listen port, address range, DNS)
-- [ ] Peer table with QR code generation (for mobile clients)
-- [ ] Peer config download button (.conf file)
-- [ ] Live peer status: last handshake, transfer, endpoint
-- [ ] `nylon-wall-ui/src/app.rs` - Add `/vpn` route + sidebar nav link (icon: LdShieldCheck)
+- [x] `nylon-wall-ui/src/components/vpn.rs` - WireGuard VPN page
+- [x] Server config form (listen port, address range, DNS, endpoint, interface)
+- [x] Server toggle (enable/disable) with status display
+- [x] Peer list with status indicators (connected/idle/disabled)
+- [x] Peer config download button (.conf file)
+- [x] Live peer status: transfer rx/tx, connection indicator
+- [x] Peer CRUD (create/edit/delete with confirmation)
+- [x] `nylon-wall-ui/src/app.rs` - Add `/vpn` route + sidebar nav link (icon: LdShieldCheck)
+- [ ] QR code generation for mobile clients
 
 ---
 

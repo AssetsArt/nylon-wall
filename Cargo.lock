@@ -3873,6 +3873,7 @@ dependencies = [
  "axum",
  "aya",
  "aya-log",
+ "base64",
  "bcrypt",
  "bytes",
  "chrono",

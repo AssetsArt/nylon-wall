@@ -17,6 +17,8 @@ pub mod rule_engine;
 #[allow(dead_code)]
 pub mod schedule;
 pub mod state;
+#[allow(dead_code)]
+pub mod wireguard;
 pub mod wol;
 
 use std::collections::HashSet;

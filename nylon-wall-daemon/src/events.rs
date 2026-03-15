@@ -89,6 +89,16 @@ pub enum WsEvent {
     #[serde(rename = "mdns_config_changed")]
     MdnsConfigChanged(serde_json::Value),
 
+    // WireGuard VPN
+    #[serde(rename = "wg_server_updated")]
+    WgServerUpdated(serde_json::Value),
+    #[serde(rename = "wg_peer_created")]
+    WgPeerCreated(serde_json::Value),
+    #[serde(rename = "wg_peer_updated")]
+    WgPeerUpdated(serde_json::Value),
+    #[serde(rename = "wg_peer_deleted")]
+    WgPeerDeleted { id: u32 },
+
     // Change management
     #[serde(rename = "changes_reverted")]
     ChangesReverted { count: usize },
