@@ -319,6 +319,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(get_mdns_config).put(update_mdns_config),
         )
         .route("/api/v1/tools/mdns/toggle", post(toggle_mdns))
+        // Network diagnostics
+        .route("/api/v1/tools/ping", post(tool_ping))
+        .route("/api/v1/tools/dns", post(tool_dns_lookup))
+        .route("/api/v1/tools/traceroute", post(tool_traceroute))
         // Change management (auto-revert)
         .route("/api/v1/changes/pending", get(changes_pending))
         .route("/api/v1/changes/confirm", post(changes_confirm))
@@ -3095,4 +3099,130 @@ async fn toggle_mdns(
     ));
 
     Ok(Json(config))
+}
+
+// === Network Diagnostic Tools ===
+
+#[derive(Deserialize)]
+struct DiagRequest {
+    target: String,
+    #[serde(default = "default_count")]
+    count: u32,
+}
+
+fn default_count() -> u32 { 4 }
+
+#[derive(Serialize)]
+struct DiagResult {
+    success: bool,
+    output: String,
+}
+
+/// Validate target: only allow hostnames, IPs, and simple domains.
+/// Prevents command injection.
+fn validate_diag_target(target: &str) -> Result<(), (StatusCode, String)> {
+    if target.is_empty() || target.len() > 253 {
+        return Err((StatusCode::BAD_REQUEST, "Invalid target".to_string()));
+    }
+    if !target
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == ':')
+    {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Target contains invalid characters".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+async fn tool_ping(
+    Json(req): Json<DiagRequest>,
+) -> Result<Json<DiagResult>, (StatusCode, String)> {
+    validate_diag_target(&req.target)?;
+    let count = req.count.min(20).max(1);
+
+    let output = tokio::process::Command::new("ping")
+        .args(["-c", &count.to_string(), "-W", "3", &req.target])
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to run ping: {}", e)))?;
+
+    Ok(Json(DiagResult {
+        success: output.status.success(),
+        output: String::from_utf8_lossy(&output.stdout).to_string()
+            + &String::from_utf8_lossy(&output.stderr),
+    }))
+}
+
+async fn tool_dns_lookup(
+    Json(req): Json<DiagRequest>,
+) -> Result<Json<DiagResult>, (StatusCode, String)> {
+    validate_diag_target(&req.target)?;
+
+    // Try dig first, fall back to nslookup, then host
+    let result = try_dns_command("dig", &["+short", "+time=3", "+tries=1", &req.target]).await
+        .or(try_dns_command("nslookup", &["-timeout=3", &req.target]).await)
+        .or(try_dns_command("host", &["-W", "3", &req.target]).await);
+
+    match result {
+        Ok(output) => Ok(Json(DiagResult {
+            success: true,
+            output,
+        })),
+        Err(e) => Ok(Json(DiagResult {
+            success: false,
+            output: e,
+        })),
+    }
+}
+
+async fn try_dns_command(cmd: &str, args: &[&str]) -> Result<String, String> {
+    let output = tokio::process::Command::new(cmd)
+        .args(args)
+        .output()
+        .await
+        .map_err(|e| format!("{} not available: {}", cmd, e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        Ok(if stdout.is_empty() { stderr } else { stdout + &stderr })
+    } else {
+        Err(format!("{}{}", stdout, stderr))
+    }
+}
+
+async fn tool_traceroute(
+    Json(req): Json<DiagRequest>,
+) -> Result<Json<DiagResult>, (StatusCode, String)> {
+    validate_diag_target(&req.target)?;
+    let hops = req.count.min(30).max(5);
+
+    let output = match tokio::process::Command::new("traceroute")
+        .args(["-m", &hops.to_string(), "-w", "3", &req.target])
+        .output()
+        .await
+    {
+        Ok(o) => o,
+        Err(_) => {
+            tokio::process::Command::new("tracepath")
+                .args(["-m", &hops.to_string(), &req.target])
+                .output()
+                .await
+                .map_err(|e| {
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Failed to run traceroute: {}", e),
+                    )
+                })?
+        }
+    };
+
+    Ok(Json(DiagResult {
+        success: output.status.success(),
+        output: String::from_utf8_lossy(&output.stdout).to_string()
+            + &String::from_utf8_lossy(&output.stderr),
+    }))
 }

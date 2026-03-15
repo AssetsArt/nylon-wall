@@ -603,6 +603,13 @@
 - [x] API: `POST /api/v1/tools/wol/devices/{id}/wake` - Wake saved device (updates last_wake timestamp)
 - [x] WebSocket events: `wol_device_created`, `wol_device_deleted`, `wol_sent`
 
+### Network Diagnostics
+- [x] API: `POST /api/v1/tools/ping` - Run ping with target validation
+- [x] API: `POST /api/v1/tools/dns` - DNS lookup (dig/nslookup/host fallback)
+- [x] API: `POST /api/v1/tools/traceroute` - Traceroute (traceroute/tracepath fallback)
+- [x] Input validation: prevent command injection (alphanumeric + dots/hyphens/colons only)
+- [x] UI: Tool tab selector (Ping / DNS Lookup / Traceroute) + target input + monospace output
+
 ### mDNS Reflector
 - [x] `nylon-wall-daemon/src/mdns.rs` - mDNS reflector (forward mDNS between interfaces/VLANs)
 - [x] Listen on `224.0.0.251:5353` on configured interfaces

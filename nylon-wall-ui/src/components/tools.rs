@@ -15,8 +15,185 @@ pub fn Tools() -> Element {
                 title: "Tools".to_string(),
                 subtitle: "Network utilities and management tools.".to_string(),
             }
+            NetworkDiagnostics {}
             WakeOnLan {}
             MdnsReflector {}
+        }
+    }
+}
+
+// === Network Diagnostics ===
+
+#[derive(serde::Serialize)]
+struct DiagRequest {
+    target: String,
+    count: u32,
+}
+
+#[derive(serde::Deserialize, Clone)]
+struct DiagResult {
+    success: bool,
+    output: String,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum DiagTool {
+    Ping,
+    Dns,
+    Traceroute,
+}
+
+impl DiagTool {
+    fn label(self) -> &'static str {
+        match self {
+            DiagTool::Ping => "Ping",
+            DiagTool::Dns => "DNS Lookup",
+            DiagTool::Traceroute => "Traceroute",
+        }
+    }
+
+    fn endpoint(self) -> &'static str {
+        match self {
+            DiagTool::Ping => "/tools/ping",
+            DiagTool::Dns => "/tools/dns",
+            DiagTool::Traceroute => "/tools/traceroute",
+        }
+    }
+
+    fn placeholder(self) -> &'static str {
+        match self {
+            DiagTool::Ping => "8.8.8.8 or example.com",
+            DiagTool::Dns => "example.com",
+            DiagTool::Traceroute => "8.8.8.8 or example.com",
+        }
+    }
+
+    fn default_count(self) -> u32 {
+        match self {
+            DiagTool::Ping => 4,
+            DiagTool::Dns => 1,
+            DiagTool::Traceroute => 15,
+        }
+    }
+}
+
+#[component]
+fn NetworkDiagnostics() -> Element {
+    let mut tool = use_signal(|| DiagTool::Ping);
+    let mut target = use_signal(String::new);
+    let mut running = use_signal(|| false);
+    let mut result = use_signal(|| None::<DiagResult>);
+    let mut error_msg = use_signal(|| None::<String>);
+
+    let tab_cls = |t: DiagTool| -> &'static str {
+        if tool() == t {
+            "px-3 py-1.5 rounded-lg text-xs font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/20"
+        } else {
+            "px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors"
+        }
+    };
+
+    rsx! {
+        div { class: "mb-8",
+            SectionHeader {
+                icon: rsx! { Icon { width: 16, height: 16, icon: LdTerminal, class: "text-cyan-400" } },
+                title: "Network Diagnostics".to_string(),
+            }
+
+            if let Some(err) = error_msg() {
+                ErrorAlert {
+                    message: err,
+                    on_dismiss: move |_| error_msg.set(None),
+                }
+            }
+
+            div { class: "rounded-xl border border-slate-800/60 bg-slate-900/50 p-6",
+                // Tool tabs
+                div { class: "flex items-center gap-2 mb-4",
+                    for t in [DiagTool::Ping, DiagTool::Dns, DiagTool::Traceroute] {
+                        button {
+                            class: tab_cls(t),
+                            r#type: "button",
+                            onclick: move |_| {
+                                tool.set(t);
+                                result.set(None);
+                            },
+                            "{t.label()}"
+                        }
+                    }
+                }
+
+                // Input + run
+                div { class: "flex items-center gap-2 mb-4",
+                    input {
+                        class: "flex-1 px-3 py-2 rounded-lg bg-slate-800/50 border border-slate-700/40 text-sm text-white placeholder-slate-600 font-mono",
+                        r#type: "text",
+                        placeholder: tool().placeholder(),
+                        value: "{target}",
+                        oninput: move |e| target.set(e.value()),
+                        onkeypress: move |e| {
+                            if e.key() == Key::Enter && !target().is_empty() && !running() {
+                                let t = tool();
+                                let tgt = target();
+                                running.set(true);
+                                result.set(None);
+                                error_msg.set(None);
+                                spawn(async move {
+                                    let body = DiagRequest { target: tgt, count: t.default_count() };
+                                    match api_client::post::<DiagRequest, DiagResult>(t.endpoint(), &body).await {
+                                        Ok(r) => result.set(Some(r)),
+                                        Err(e) => error_msg.set(Some(e)),
+                                    }
+                                    running.set(false);
+                                });
+                            }
+                        },
+                    }
+                    Btn {
+                        color: Color::Cyan,
+                        label: if running() { "Running...".to_string() } else { "Run".to_string() },
+                        disabled: running() || target().is_empty(),
+                        onclick: move |_| {
+                            let t = tool();
+                            let tgt = target();
+                            running.set(true);
+                            result.set(None);
+                            error_msg.set(None);
+                            spawn(async move {
+                                let body = DiagRequest { target: tgt, count: t.default_count() };
+                                match api_client::post::<DiagRequest, DiagResult>(t.endpoint(), &body).await {
+                                    Ok(r) => result.set(Some(r)),
+                                    Err(e) => error_msg.set(Some(e)),
+                                }
+                                running.set(false);
+                            });
+                        },
+                        icon: rsx! { Icon { width: 12, height: 12, icon: LdPlay } },
+                    }
+                }
+
+                // Results
+                if running() {
+                    div { class: "flex items-center gap-2 text-xs text-slate-500 py-4",
+                        Icon { width: 14, height: 14, icon: LdRefreshCw, class: "animate-spin" }
+                        "Running {tool().label()}..."
+                    }
+                }
+
+                if let Some(res) = result() {
+                    div { class: "rounded-lg bg-slate-950/50 border border-slate-800/40 p-4",
+                        div { class: "flex items-center gap-2 mb-2",
+                            Badge {
+                                color: if res.success { Color::Emerald } else { Color::Red },
+                                label: if res.success { "Success".to_string() } else { "Failed".to_string() },
+                            }
+                        }
+                        pre { class: "text-xs font-mono text-slate-300 whitespace-pre-wrap overflow-x-auto max-h-80 overflow-y-auto",
+                            "{res.output}"
+                        }
+                    }
+                }
+            }
         }
     }
 }
