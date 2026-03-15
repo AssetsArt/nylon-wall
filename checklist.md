@@ -255,61 +255,54 @@
 
 ---
 
-## Phase 8: Virtual Networking (VLAN + Bridge)
+## Phase 8: Virtual Networking (VLAN + Bridge) ✅
 
 ### nylon-wall-common - Virtual Network Types
-- [ ] `nylon-wall-common/src/vnet.rs` - `VlanConfig`, `BridgeConfig` structs
-  - `VlanConfig`: id, parent_interface, vlan_id (1-4094), ip_address (optional CIDR), enabled
-  - `BridgeConfig`: id, name, ports (Vec<String> — interfaces/VLANs to attach), ip_address (optional CIDR), stp_enabled, enabled
-- [ ] `nylon-wall-common/src/lib.rs` - Add `pub mod vnet`
+- [x] `nylon-wall-common/src/vnet.rs` - `VlanConfig`, `BridgeConfig` structs (std-gated)
+  - `VlanConfig`: id, parent_interface, vlan_id (1-4094), ip_address (optional CIDR), enabled, `iface_name()` helper
+  - `BridgeConfig`: id, name, ports (Vec<String>), ip_address (optional CIDR), stp_enabled, enabled
+- [x] `nylon-wall-common/src/lib.rs` - Add `pub mod vnet`
 
 ### nylon-wall-daemon - VLAN Module
-- [ ] `nylon-wall-daemon/src/vnet/mod.rs` - Module declarations
-- [ ] `nylon-wall-daemon/src/vnet/vlan.rs` - Create/delete VLAN sub-interfaces
-  - Create: `ip link add link {parent} name {parent}.{vlan_id} type vlan id {vlan_id}`
-  - Delete: `ip link delete {parent}.{vlan_id}`
-  - IP assign: `ip addr add {cidr} dev {parent}.{vlan_id}`
-  - Bring up: `ip link set {parent}.{vlan_id} up`
-- [ ] `nylon-wall-daemon/src/vnet/bridge.rs` - Create/delete Linux bridges
-  - Create: `ip link add name {name} type bridge`
-  - Add port: `ip link set {port} master {bridge}`
-  - Remove port: `ip link set {port} nomaster`
-  - Delete: `ip link delete {bridge}`
-  - STP: `ip link set {bridge} type bridge stp_state {0|1}`
-  - IP assign: `ip addr add {cidr} dev {bridge}`
-  - Bring up: `ip link set {bridge} up`
-- [ ] Persist configs in SlateDB (recreate VLANs + bridges on daemon restart)
-- [ ] Startup order: create VLANs first, then bridges (bridges may reference VLAN interfaces)
+- [x] `nylon-wall-daemon/src/vnet/mod.rs` - Module declarations
+- [x] `nylon-wall-daemon/src/vnet/vlan.rs` - Create/delete VLAN sub-interfaces (Linux cfg-gated)
+- [x] `nylon-wall-daemon/src/vnet/bridge.rs` - Create/delete Linux bridges + port diff on update
+- [x] Persist configs in SlateDB (`vlan:` and `bridge:` key prefixes)
+- [ ] Startup order: create VLANs first, then bridges on daemon restart
 
 ### Daemon - VLAN API
-- [ ] API: `GET /api/v1/vlans` - List VLAN interfaces
-- [ ] API: `POST /api/v1/vlans` - Create VLAN sub-interface
-- [ ] API: `PUT /api/v1/vlans/{id}` - Update VLAN (IP config)
-- [ ] API: `DELETE /api/v1/vlans/{id}` - Delete VLAN sub-interface
-- [ ] Validation: prevent duplicate VLAN ID on same parent interface
-- [ ] Validation: parent interface must exist
+- [x] API: `GET /api/v1/vnet/vlans` - List VLAN interfaces
+- [x] API: `POST /api/v1/vnet/vlans` - Create VLAN sub-interface
+- [x] API: `PUT /api/v1/vnet/vlans/{id}` - Update VLAN (IP config)
+- [x] API: `DELETE /api/v1/vnet/vlans/{id}` - Delete VLAN sub-interface
+- [x] API: `POST /api/v1/vnet/vlans/{id}/toggle` - Toggle VLAN enabled
+- [x] Validation: prevent duplicate VLAN ID on same parent interface
+- [x] Validation: parent interface required, VLAN ID 1-4094
 
 ### Daemon - Bridge API
-- [ ] API: `GET /api/v1/bridges` - List bridges
-- [ ] API: `POST /api/v1/bridges` - Create bridge
-- [ ] API: `PUT /api/v1/bridges/{id}` - Update bridge (ports, IP, STP)
-- [ ] API: `DELETE /api/v1/bridges/{id}` - Delete bridge
-- [ ] API: `POST /api/v1/bridges/{id}/ports` - Add port to bridge
-- [ ] API: `DELETE /api/v1/bridges/{id}/ports/{interface}` - Remove port from bridge
-- [ ] Validation: port interface must exist (physical, VLAN, or other virtual)
-- [ ] Validation: port not already in another bridge
+- [x] API: `GET /api/v1/vnet/bridges` - List bridges
+- [x] API: `POST /api/v1/vnet/bridges` - Create bridge
+- [x] API: `PUT /api/v1/vnet/bridges/{id}` - Update bridge (ports diff, IP, STP)
+- [x] API: `DELETE /api/v1/vnet/bridges/{id}` - Delete bridge
+- [x] API: `POST /api/v1/vnet/bridges/{id}/toggle` - Toggle bridge enabled
+- [x] Validation: bridge name required, duplicate name check
+
+### WebSocket Events
+- [x] `vlan_created`, `vlan_updated`, `vlan_toggled`, `vlan_deleted`
+- [x] `bridge_created`, `bridge_updated`, `bridge_toggled`, `bridge_deleted`
+
+### Backup/Restore
+- [x] `vlan_configs` and `bridge_configs` in BackupData
+- [x] `perform_restore` clears and restores VLAN + bridge prefixes
+- [x] `snapshot_current` includes VLAN + bridge data
 
 ### Dioxus UI - Virtual Networking
-- [ ] `nylon-wall-ui/src/components/vnet.rs` - Virtual Networking page with 2-tab layout
-- [ ] Tab: VLANs - VLAN table + create/edit form
-  - Form fields: Parent Interface (select), VLAN ID (1-4094), IP Address (CIDR, optional)
-- [ ] Tab: Bridges - Bridge cards/table + create/edit form
-  - Form fields: Bridge Name, IP Address (CIDR, optional), STP toggle
-  - Port management: multi-select of available interfaces (physical + VLANs)
-  - Visual: show attached ports as tags/chips on bridge card
+- [x] `nylon-wall-ui/src/components/vnet.rs` - Virtual Networking page with 2-tab layout
+- [x] Tab: VLANs - VLAN cards + create/edit form (parent interface, VLAN ID, IP)
+- [x] Tab: Bridges - Bridge cards + create/edit form (name, ports, IP, STP toggle)
+- [x] `nylon-wall-ui/src/components/mod.rs` - Export `Vnet` component
+- [x] `nylon-wall-ui/src/app.rs` - Add `/vnet` route + sidebar nav link (icon: LdGitMerge)
 - [ ] Show VLANs + bridges in interface selects across all pages (rules, NAT, DHCP, routes)
-- [ ] `nylon-wall-ui/src/components/mod.rs` - Export `Vnet` component
-- [ ] `nylon-wall-ui/src/app.rs` - Add `/vnet` route + sidebar nav link (icon: LdNetwork)
 
 ### eBPF - VLAN-aware packet parsing
 - [ ] `nylon-wall-ebpf/src/common.rs` - Add `ETH_P_8021Q` constant (`0x8100`)

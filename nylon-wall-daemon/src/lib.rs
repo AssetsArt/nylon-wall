@@ -18,6 +18,8 @@ pub mod rule_engine;
 pub mod schedule;
 pub mod state;
 #[allow(dead_code)]
+pub mod vnet;
+#[allow(dead_code)]
 pub mod wireguard;
 pub mod wol;
 

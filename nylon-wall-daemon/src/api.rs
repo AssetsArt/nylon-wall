@@ -20,6 +20,7 @@ use nylon_wall_common::dhcp::{
 use nylon_wall_common::log::PacketLog;
 use nylon_wall_common::mdns::MdnsConfig;
 use nylon_wall_common::oauth::OAuthProvider;
+use nylon_wall_common::vnet::{BridgeConfig, VlanConfig};
 use nylon_wall_common::wireguard::{WgPeer, WgServer};
 use nylon_wall_common::nat::NatEntry;
 #[cfg(target_os = "linux")]
@@ -167,6 +168,10 @@ struct BackupData {
     wg_server: Option<serde_json::Value>,
     #[serde(default)]
     wg_peers: Vec<serde_json::Value>,
+    #[serde(default)]
+    vlan_configs: Vec<serde_json::Value>,
+    #[serde(default)]
+    bridge_configs: Vec<serde_json::Value>,
 }
 
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
@@ -343,6 +348,25 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             get(get_mdns_config).put(update_mdns_config),
         )
         .route("/api/v1/tools/mdns/toggle", post(toggle_mdns))
+        // VLAN & Bridge
+        .route(
+            "/api/v1/vnet/vlans",
+            get(list_vlans).post(create_vlan),
+        )
+        .route(
+            "/api/v1/vnet/vlans/{id}",
+            put(update_vlan).delete(delete_vlan),
+        )
+        .route("/api/v1/vnet/vlans/{id}/toggle", post(toggle_vlan))
+        .route(
+            "/api/v1/vnet/bridges",
+            get(list_bridges).post(create_bridge),
+        )
+        .route(
+            "/api/v1/vnet/bridges/{id}",
+            put(update_bridge).delete(delete_bridge),
+        )
+        .route("/api/v1/vnet/bridges/{id}/toggle", post(toggle_bridge))
         // WireGuard VPN
         .route(
             "/api/v1/vpn/server",
@@ -2281,6 +2305,24 @@ async fn backup_data(
         .map(|(_, v)| v)
         .collect();
 
+    let vlan_configs = state
+        .db
+        .scan_prefix::<serde_json::Value>("vlan:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
+    let bridge_configs = state
+        .db
+        .scan_prefix::<serde_json::Value>("bridge:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+
     let backup = BackupData {
         version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: chrono::Utc::now().timestamp(),
@@ -2299,6 +2341,8 @@ async fn backup_data(
         oauth_providers,
         wg_server,
         wg_peers,
+        vlan_configs,
+        bridge_configs,
     };
 
     Ok(Json(backup))
@@ -2327,6 +2371,8 @@ pub async fn perform_restore(
         "sni_rule:",
         "oauth_provider:",
         "wg_peer:",
+        "vlan:",
+        "bridge:",
     ] {
         let existing = state
             .db
@@ -2359,6 +2405,8 @@ pub async fn perform_restore(
         ("sni_rule:", &backup.sni_rules),
         ("oauth_provider:", &backup.oauth_providers),
         ("wg_peer:", &backup.wg_peers),
+        ("vlan:", &backup.vlan_configs),
+        ("bridge:", &backup.bridge_configs),
     ];
 
     for (prefix, items) in restore_items {
@@ -2450,6 +2498,8 @@ async fn snapshot_current(state: &AppState) -> Result<serde_json::Value, String>
             .await
             .map_err(|e| e.to_string())?,
         wg_peers: scan("wg_peer:").await?,
+        vlan_configs: scan("vlan:").await?,
+        bridge_configs: scan("bridge:").await?,
     };
 
     serde_json::to_value(&backup).map_err(|e| e.to_string())
@@ -3315,6 +3365,253 @@ async fn tool_traceroute(
         output: String::from_utf8_lossy(&output.stdout).to_string()
             + &String::from_utf8_lossy(&output.stderr),
     }))
+}
+
+// === VLAN & Bridge ===
+
+async fn list_vlans(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Vec<VlanConfig>> {
+    let mut vlans: Vec<VlanConfig> = state
+        .db
+        .scan_prefix::<VlanConfig>("vlan:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+    vlans.sort_by_key(|v| v.id);
+    Ok(Json(vlans))
+}
+
+async fn create_vlan(
+    State(state): State<Arc<AppState>>,
+    Json(mut vlan): Json<VlanConfig>,
+) -> Result<(StatusCode, Json<VlanConfig>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
+
+    if vlan.vlan_id < 1 || vlan.vlan_id > 4094 {
+        return Err((StatusCode::BAD_REQUEST, "VLAN ID must be 1-4094".to_string()));
+    }
+    if vlan.parent_interface.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Parent interface is required".to_string()));
+    }
+
+    // Check for duplicate VLAN ID on same parent
+    let existing = state
+        .db
+        .scan_prefix::<VlanConfig>("vlan:")
+        .await
+        .map_err(internal_error)?;
+    if existing.iter().any(|(_, v)| v.vlan_id == vlan.vlan_id && v.parent_interface == vlan.parent_interface) {
+        return Err((StatusCode::CONFLICT, format!("VLAN {} already exists on {}", vlan.vlan_id, vlan.parent_interface)));
+    }
+
+    let next_id = existing.iter().map(|(_, v)| v.id).max().unwrap_or(0) + 1;
+    vlan.id = next_id;
+
+    let key = format!("vlan:{}", vlan.id);
+    state.db.put(&key, &vlan).await.map_err(internal_error)?;
+    state.db.add_to_index("vlan:", &key).await.map_err(internal_error)?;
+
+    if vlan.enabled {
+        let _ = crate::vnet::vlan::apply_vlan(&vlan);
+    }
+
+    broadcast(&state, WsEvent::VlanCreated(to_json_value(&vlan)));
+    Ok((StatusCode::CREATED, Json(vlan)))
+}
+
+async fn update_vlan(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut vlan): Json<VlanConfig>,
+) -> AppResult<VlanConfig> {
+    require_no_pending(&state).await?;
+
+    if vlan.vlan_id < 1 || vlan.vlan_id > 4094 {
+        return Err((StatusCode::BAD_REQUEST, "VLAN ID must be 1-4094".to_string()));
+    }
+
+    let key = format!("vlan:{}", id);
+    let old: VlanConfig = state.db.get(&key).await.map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "VLAN not found".to_string()))?;
+
+    vlan.id = id;
+
+    // If old was enabled, remove old interface first
+    if old.enabled {
+        crate::vnet::vlan::remove_vlan(&old);
+    }
+
+    state.db.put(&key, &vlan).await.map_err(internal_error)?;
+
+    if vlan.enabled {
+        let _ = crate::vnet::vlan::apply_vlan(&vlan);
+    }
+
+    broadcast(&state, WsEvent::VlanUpdated(to_json_value(&vlan)));
+    Ok(Json(vlan))
+}
+
+async fn delete_vlan(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
+
+    let key = format!("vlan:{}", id);
+    if let Ok(Some(vlan)) = state.db.get::<VlanConfig>(&key).await {
+        if vlan.enabled {
+            crate::vnet::vlan::remove_vlan(&vlan);
+        }
+    }
+
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state.db.remove_from_index("vlan:", &key).await.map_err(internal_error)?;
+    broadcast(&state, WsEvent::VlanDeleted { id });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_vlan(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<VlanConfig> {
+    let key = format!("vlan:{}", id);
+    let mut vlan: VlanConfig = state.db.get(&key).await.map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "VLAN not found".to_string()))?;
+
+    vlan.enabled = !vlan.enabled;
+    state.db.put(&key, &vlan).await.map_err(internal_error)?;
+
+    if vlan.enabled {
+        let _ = crate::vnet::vlan::apply_vlan(&vlan);
+    } else {
+        crate::vnet::vlan::remove_vlan(&vlan);
+    }
+
+    broadcast(&state, WsEvent::VlanToggled(to_json_value(&vlan)));
+    Ok(Json(vlan))
+}
+
+async fn list_bridges(
+    State(state): State<Arc<AppState>>,
+) -> AppResult<Vec<BridgeConfig>> {
+    let mut bridges: Vec<BridgeConfig> = state
+        .db
+        .scan_prefix::<BridgeConfig>("bridge:")
+        .await
+        .map_err(internal_error)?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect();
+    bridges.sort_by_key(|b| b.id);
+    Ok(Json(bridges))
+}
+
+async fn create_bridge(
+    State(state): State<Arc<AppState>>,
+    Json(mut bridge): Json<BridgeConfig>,
+) -> Result<(StatusCode, Json<BridgeConfig>), (StatusCode, String)> {
+    require_no_pending(&state).await?;
+
+    if bridge.name.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "Bridge name is required".to_string()));
+    }
+
+    let existing = state
+        .db
+        .scan_prefix::<BridgeConfig>("bridge:")
+        .await
+        .map_err(internal_error)?;
+
+    // Check duplicate name
+    if existing.iter().any(|(_, b)| b.name == bridge.name) {
+        return Err((StatusCode::CONFLICT, format!("Bridge '{}' already exists", bridge.name)));
+    }
+
+    let next_id = existing.iter().map(|(_, b)| b.id).max().unwrap_or(0) + 1;
+    bridge.id = next_id;
+
+    let key = format!("bridge:{}", bridge.id);
+    state.db.put(&key, &bridge).await.map_err(internal_error)?;
+    state.db.add_to_index("bridge:", &key).await.map_err(internal_error)?;
+
+    if bridge.enabled {
+        let _ = crate::vnet::bridge::apply_bridge(&bridge);
+    }
+
+    broadcast(&state, WsEvent::BridgeCreated(to_json_value(&bridge)));
+    Ok((StatusCode::CREATED, Json(bridge)))
+}
+
+async fn update_bridge(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+    Json(mut bridge): Json<BridgeConfig>,
+) -> AppResult<BridgeConfig> {
+    require_no_pending(&state).await?;
+
+    let key = format!("bridge:{}", id);
+    let old: BridgeConfig = state.db.get(&key).await.map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Bridge not found".to_string()))?;
+
+    bridge.id = id;
+    state.db.put(&key, &bridge).await.map_err(internal_error)?;
+
+    if old.enabled && bridge.enabled {
+        // Update ports diff
+        crate::vnet::bridge::update_bridge_ports(&bridge.name, &old.ports, &bridge.ports);
+        // Re-apply config (STP, IP)
+        let _ = crate::vnet::bridge::apply_bridge(&bridge);
+    } else if old.enabled && !bridge.enabled {
+        crate::vnet::bridge::remove_bridge(&old);
+    } else if !old.enabled && bridge.enabled {
+        let _ = crate::vnet::bridge::apply_bridge(&bridge);
+    }
+
+    broadcast(&state, WsEvent::BridgeUpdated(to_json_value(&bridge)));
+    Ok(Json(bridge))
+}
+
+async fn delete_bridge(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    require_no_pending(&state).await?;
+
+    let key = format!("bridge:{}", id);
+    if let Ok(Some(bridge)) = state.db.get::<BridgeConfig>(&key).await {
+        if bridge.enabled {
+            crate::vnet::bridge::remove_bridge(&bridge);
+        }
+    }
+
+    state.db.delete(&key).await.map_err(internal_error)?;
+    state.db.remove_from_index("bridge:", &key).await.map_err(internal_error)?;
+    broadcast(&state, WsEvent::BridgeDeleted { id });
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn toggle_bridge(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<u32>,
+) -> AppResult<BridgeConfig> {
+    let key = format!("bridge:{}", id);
+    let mut bridge: BridgeConfig = state.db.get(&key).await.map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Bridge not found".to_string()))?;
+
+    bridge.enabled = !bridge.enabled;
+    state.db.put(&key, &bridge).await.map_err(internal_error)?;
+
+    if bridge.enabled {
+        let _ = crate::vnet::bridge::apply_bridge(&bridge);
+    } else {
+        crate::vnet::bridge::remove_bridge(&bridge);
+    }
+
+    broadcast(&state, WsEvent::BridgeToggled(to_json_value(&bridge)));
+    Ok(Json(bridge))
 }
 
 // === WireGuard VPN ===

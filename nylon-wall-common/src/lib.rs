@@ -10,6 +10,7 @@ pub mod route;
 pub mod rule;
 pub mod scratchpad;
 pub mod tls;
+pub mod vnet;
 pub mod mdns;
 pub mod oauth;
 pub mod wireguard;

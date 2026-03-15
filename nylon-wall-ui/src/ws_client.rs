@@ -19,6 +19,7 @@ pub struct WsEventBus {
     ddns: Signal<u64>,
     wol: Signal<u64>,
     mdns: Signal<u64>,
+    vnet: Signal<u64>,
     wireguard: Signal<u64>,
     logs: Signal<u64>,
     system: Signal<u64>,
@@ -36,6 +37,7 @@ impl WsEventBus {
     pub fn ddns(&self) -> u64 { (self.ddns)() }
     pub fn wol(&self) -> u64 { (self.wol)() }
     pub fn mdns(&self) -> u64 { (self.mdns)() }
+    pub fn vnet(&self) -> u64 { (self.vnet)() }
     pub fn wireguard(&self) -> u64 { (self.wireguard)() }
     pub fn logs(&self) -> u64 { (self.logs)() }
     pub fn system(&self) -> u64 { (self.system)() }
@@ -65,6 +67,7 @@ fn increment_for_event(bus: &mut WsEventBus, event_type: &str) {
         t if t.starts_with("ddns_") => WsEventBus::inc(&mut bus.ddns),
         t if t.starts_with("wol_") => WsEventBus::inc(&mut bus.wol),
         t if t.starts_with("mdns_") => WsEventBus::inc(&mut bus.mdns),
+        t if t.starts_with("vlan_") || t.starts_with("bridge_") => WsEventBus::inc(&mut bus.vnet),
         t if t.starts_with("wg_") => WsEventBus::inc(&mut bus.wireguard),
         "log_event" => WsEventBus::inc(&mut bus.logs),
         "config_restored" => {
@@ -78,6 +81,7 @@ fn increment_for_event(bus: &mut WsEventBus, event_type: &str) {
             WsEventBus::inc(&mut bus.ddns);
             WsEventBus::inc(&mut bus.wol);
             WsEventBus::inc(&mut bus.mdns);
+            WsEventBus::inc(&mut bus.vnet);
             WsEventBus::inc(&mut bus.wireguard);
             WsEventBus::inc(&mut bus.system);
         }
@@ -100,6 +104,7 @@ pub fn use_ws_provider() {
         ddns: use_signal(|| 0u64),
         wol: use_signal(|| 0u64),
         mdns: use_signal(|| 0u64),
+        vnet: use_signal(|| 0u64),
         wireguard: use_signal(|| 0u64),
         logs: use_signal(|| 0u64),
         system: use_signal(|| 0u64),

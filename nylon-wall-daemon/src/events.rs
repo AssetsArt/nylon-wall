@@ -89,6 +89,24 @@ pub enum WsEvent {
     #[serde(rename = "mdns_config_changed")]
     MdnsConfigChanged(serde_json::Value),
 
+    // Virtual Networking (VLAN + Bridge)
+    #[serde(rename = "vlan_created")]
+    VlanCreated(serde_json::Value),
+    #[serde(rename = "vlan_updated")]
+    VlanUpdated(serde_json::Value),
+    #[serde(rename = "vlan_toggled")]
+    VlanToggled(serde_json::Value),
+    #[serde(rename = "vlan_deleted")]
+    VlanDeleted { id: u32 },
+    #[serde(rename = "bridge_created")]
+    BridgeCreated(serde_json::Value),
+    #[serde(rename = "bridge_updated")]
+    BridgeUpdated(serde_json::Value),
+    #[serde(rename = "bridge_toggled")]
+    BridgeToggled(serde_json::Value),
+    #[serde(rename = "bridge_deleted")]
+    BridgeDeleted { id: u32 },
+
     // WireGuard VPN
     #[serde(rename = "wg_server_updated")]
     WgServerUpdated(serde_json::Value),

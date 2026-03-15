@@ -40,6 +40,8 @@ pub enum Route {
         Connections,
         #[route("/logs")]
         Logs,
+        #[route("/vnet")]
+        Vnet,
         #[route("/vpn")]
         Vpn,
         #[route("/tools")]
@@ -182,6 +184,10 @@ fn Layout() -> Element {
                     Link { class: sub_cls(&Route::Policies), to: Route::Policies,
                         Icon { width: 13, height: 13, icon: LdLayers }
                         "Policies"
+                    }
+                    Link { class: sub_cls(&Route::Vnet), to: Route::Vnet,
+                        Icon { width: 13, height: 13, icon: LdGitMerge }
+                        "VLAN / Bridge"
                     }
                     Link { class: sub_cls(&Route::Vpn), to: Route::Vpn,
                         Icon { width: 13, height: 13, icon: LdShieldCheck }

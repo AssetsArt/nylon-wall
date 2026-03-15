@@ -15,6 +15,7 @@ mod rules;
 mod settings;
 mod tls;
 mod tools;
+mod vnet;
 mod vpn;
 
 pub use change_guard::{ChangeTimerModal, use_change_guard, use_refresh_trigger, notify_change};
@@ -33,4 +34,5 @@ pub use setup::Setup;
 pub use settings::Settings;
 pub use tls::Tls;
 pub use tools::Tools;
+pub use vnet::Vnet;
 pub use vpn::Vpn;
