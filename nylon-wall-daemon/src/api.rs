@@ -153,12 +153,18 @@ struct BackupData {
 /// Build the axum Router with all API routes. Separated from `serve` for testability.
 pub fn build_router(state: Arc<AppState>) -> Router {
     // Public routes (no auth required)
-    let public = Router::new()
+    let mut public = Router::new()
         .route("/api/v1/auth/setup-check", get(auth_check_setup))
         .route("/api/v1/auth/setup", post(auth_setup))
         .route("/api/v1/auth/login", post(auth_login))
         // Prometheus metrics (scraped externally)
         .route("/metrics", get(prometheus_metrics));
+
+    // Dev-only: login lockout reset (requires NYLON_DEV=1)
+    if std::env::var("NYLON_DEV").as_deref() == Ok("1") {
+        tracing::warn!("Dev mode enabled — /api/v1/auth/reset-lockout is exposed");
+        public = public.route("/api/v1/auth/reset-lockout", post(auth_reset_lockout));
+    }
 
     // Protected routes (require JWT auth)
     let protected = Router::new()
@@ -424,6 +430,15 @@ async fn auth_change_password(
     auth::set_password(&state.db, &body.new_password).await.map_err(internal_error)?;
     tracing::info!("Admin password changed");
     Ok(Json(serde_json::json!({ "changed": true })))
+}
+
+/// Dev-only: clear all login lockouts.
+async fn auth_reset_lockout(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    state.login_tracker.clear_all().await;
+    tracing::info!("Login lockout reset (dev mode)");
+    Json(serde_json::json!({ "reset": true }))
 }
 
 // === WebSocket ===

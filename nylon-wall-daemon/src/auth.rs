@@ -96,6 +96,11 @@ impl LoginTracker {
     pub async fn clear(&self, ip: IpAddr) {
         self.attempts.lock().await.remove(&ip);
     }
+
+    /// Clear all lockouts (dev use).
+    pub async fn clear_all(&self) {
+        self.attempts.lock().await.clear();
+    }
 }
 
 // === Password management ===
