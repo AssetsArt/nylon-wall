@@ -1,5 +1,5 @@
-use super::{ConfirmModal, use_change_guard, use_refresh_trigger, notify_change};
 use super::ui::*;
+use super::{ConfirmModal, notify_change, use_change_guard, use_refresh_trigger};
 use crate::api_client;
 use crate::models::*;
 use crate::ws_client::use_ws_events;
@@ -281,8 +281,21 @@ pub fn Settings() -> Element {
                 }
             }
 
+            // Change Password
+            div {
+                class: "mb-6",
+                SectionHeader {
+                    icon: rsx! { Icon { width: 15, height: 15, icon: LdHardDrive, class: "text-slate-500" } },
+                    title: "Change Password".to_string(),
+                }
+                FormCard {
+                    ChangePasswordForm {}
+                }
+            }
+
             // Backup & Restore
             div {
+                class: "mb-6",
                 SectionHeader {
                     icon: rsx! { Icon { width: 15, height: 15, icon: LdHardDrive, class: "text-slate-500" } },
                     title: "Backup & Restore".to_string(),
@@ -387,16 +400,6 @@ pub fn Settings() -> Element {
                     }
                 }
             }
-            // Change Password
-            FormCard {
-                h3 { class: "text-sm font-semibold text-white mb-4",
-                    div { class: "flex items-center gap-2",
-                        Icon { width: 14, height: 14, icon: LdLock, class: "text-blue-400" }
-                        "Change Password"
-                    }
-                }
-                ChangePasswordForm {}
-            }
         }
     }
 }
@@ -411,9 +414,13 @@ fn ChangePasswordForm() -> Element {
     let mut submitting = use_signal(|| false);
 
     let mut do_submit = move || {
-        if submitting() { return; }
+        if submitting() {
+            return;
+        }
         if new_pw().len() < 8 {
-            error.set(Some("New password must be at least 8 characters".to_string()));
+            error.set(Some(
+                "New password must be at least 8 characters".to_string(),
+            ));
             return;
         }
         if new_pw() != confirm_pw() {
@@ -428,7 +435,9 @@ fn ChangePasswordForm() -> Element {
                 "current_password": current(),
                 "new_password": new_pw(),
             });
-            match api_client::put::<serde_json::Value, serde_json::Value>("/auth/password", &body).await {
+            match api_client::put::<serde_json::Value, serde_json::Value>("/auth/password", &body)
+                .await
+            {
                 Ok(_) => {
                     success.set(true);
                     current.set(String::new());
