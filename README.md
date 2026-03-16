@@ -36,14 +36,21 @@ sudo systemctl enable --now nylon-wall
 - **eBPF Packet Filtering** — XDP ingress + TC egress, line-rate performance in kernel space
 - **Stateful Firewall** — Connection tracking (NEW/ESTABLISHED/RELATED/INVALID)
 - **NAT** — SNAT, DNAT, masquerade, with a port-forward wizard
+- **L4 Proxy** — Layer 4 load balancer with eBPF DNAT/SNAT, round-robin & IP hash strategies
+- **TLS / SNI Filtering** — Block or allow traffic by domain name using SNI inspection in eBPF
+- **WireGuard VPN** — Integrated VPN server with peer management and config download
+- **VLAN & Bridge** — 802.1Q VLANs and Linux bridge management
 - **DHCP** — Built-in DHCP server (pools, reservations, leases) and WAN DHCP client
+- **Dynamic DNS** — Auto-update DNS records (Cloudflare, custom providers)
 - **Routing** — Static routes and policy-based routing (source/dest/port/protocol)
 - **Network Zones & Policies** — Zone-based security model with inter-zone rules and time-based schedules
 - **Rate Limiting** — Per-rule token bucket enforcement in eBPF
+- **Authentication** — JWT auth with brute-force protection, OAuth/OIDC support
 - **Web UI** — Modern dark-theme dashboard built with Dioxus + Tailwind CSS
 - **REST API** — Full CRUD API for automation and integration
 - **Real-time Monitoring** — Packet logging, metrics, WebSocket events
-- **Backup & Restore** — Export/import full configuration
+- **Network Tools** — Ping, DNS lookup, traceroute, Wake-on-LAN, mDNS reflector
+- **Backup & Restore** — Export/import full configuration with auto-revert safety
 
 ## Architecture
 
@@ -61,8 +68,12 @@ sudo systemctl enable --now nylon-wall
 │     │ Engine   │ Server   │ Metrics      │          │
 │     └──────────┴──────────┴──────────────┘          │
 │     ┌──────────┬──────────┬──────────────┐          │
-│     │ NAT      │ Policy   │ Schedule     │          │
-│     │ Manager  │ Router   │ Engine       │          │
+│     │ NAT /    │ Policy   │ WireGuard    │          │
+│     │ L4 Proxy │ Router   │ VPN          │          │
+│     └──────────┴──────────┴──────────────┘          │
+│     ┌──────────┬──────────┬──────────────┐          │
+│     │ VLAN /   │ DDNS /   │ SNI          │          │
+│     │ Bridge   │ mDNS     │ Filter       │          │
 │     └──────────┴──────────┴──────────────┘          │
 ├─────────────────────────────────────────────────────┤
 │         eBPF Programs (aya - pure Rust)             │
@@ -102,6 +113,19 @@ cargo +nightly build -p nylon-wall-ebpf --target bpfel-unknown-none -Z build-std
 
 # Build release
 ./scripts/build-release.sh
+```
+
+### Testing
+
+```bash
+# Unit tests
+cargo test -p nylon-wall-common -p nylon-wall-daemon --lib
+
+# Integration tests (requires wireguard-tools)
+cargo test -p nylon-wall-daemon --test '*'
+
+# Docker integration tests
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit
 ```
 
 ### Docker
