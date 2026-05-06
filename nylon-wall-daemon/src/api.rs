@@ -32,6 +32,7 @@ use nylon_wall_common::tls::{SniRule, SniStats};
 use nylon_wall_common::zone::{NetworkPolicy, Zone};
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::AppState;
 use crate::auth;
@@ -411,16 +412,37 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-pub async fn serve(state: Arc<AppState>, addr: &str) -> anyhow::Result<()> {
-    let app = build_router(state);
+pub async fn serve(
+    state: Arc<AppState>,
+    addr: &str,
+    ui_dir: Option<&str>,
+) -> anyhow::Result<()> {
+    let mut app = build_router(state);
+
+    // If a built UI directory exists, serve it as the fallback (after API routes).
+    // We register an explicit /api/v1/* and /metrics catch-all that returns
+    // 404 first so unmatched API paths don't accidentally serve the SPA.
+    if let Some(dir) = ui_dir {
+        let index = std::path::Path::new(dir).join("index.html");
+        let serve_dir = ServeDir::new(dir).fallback(ServeFile::new(index));
+        app = app
+            .route("/api/{*rest}", axum::routing::any(api_not_found))
+            .route("/metrics/{*rest}", axum::routing::any(api_not_found))
+            .fallback_service(serve_dir);
+    }
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    tracing::info!("API server listening on {}", addr);
+    tracing::info!("Server listening on {}", addr);
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
     .await?;
     Ok(())
+}
+
+async fn api_not_found() -> (StatusCode, &'static str) {
+    (StatusCode::NOT_FOUND, "API endpoint not found")
 }
 
 // === Auth ===

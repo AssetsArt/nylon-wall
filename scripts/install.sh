@@ -147,8 +147,12 @@ install_nylon_wall() {
     $SUDO mkdir -p "$BIN_DIR"
     $SUDO install -m 755 "$TMPDIR/nylon-wall-daemon" "$BIN_DIR/nylon-wall-daemon"
 
+    # eBPF object file goes in lib (it's not an executable, it's BPF bytecode).
+    EBPF_LIB_DIR="${PREFIX}/lib/nylon-wall"
     if [ -f "$TMPDIR/nylon-wall-ebpf" ]; then
-        $SUDO install -m 644 "$TMPDIR/nylon-wall-ebpf" "$BIN_DIR/nylon-wall-ebpf"
+        $SUDO mkdir -p "$EBPF_LIB_DIR"
+        $SUDO install -m 644 "$TMPDIR/nylon-wall-ebpf" "$EBPF_LIB_DIR/nylon-wall-ebpf"
+        ok "Installed eBPF object to ${EBPF_LIB_DIR}/nylon-wall-ebpf"
     fi
 
     # Install config
@@ -187,19 +191,24 @@ install_systemd_service() {
     fi
 
     log "Installing systemd service..."
-    $SUDO tee "$SERVICE_FILE" > /dev/null << 'UNIT'
+    $SUDO tee "$SERVICE_FILE" > /dev/null << UNIT
 [Unit]
 Description=Nylon Wall Firewall Daemon
+Documentation=https://github.com/${REPO}
 After=network.target
 Wants=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/nylon-wall-daemon
+ExecStart=${BIN_DIR}/nylon-wall-daemon
+WorkingDirectory=${DATA_DIR}
+Environment=NYLON_WALL_EBPF=${PREFIX}/lib/nylon-wall/nylon-wall-ebpf
+Environment=NYLON_WALL_UI_DIR=${PREFIX}/share/nylon-wall/ui
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
 AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_BPF CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_BPF CAP_NET_RAW
 
 [Install]
 WantedBy=multi-user.target
@@ -227,7 +236,7 @@ main() {
     echo ""
     log "Quick start:"
     log "  sudo systemctl enable --now nylon-wall"
-    log "  Open http://localhost:9450 in your browser"
+    log "  Open http://localhost:9450 in your browser (UI + API on the same port)"
     echo ""
     log "Config:  ${CONFIG_DIR}/config.toml"
     log "Data:    ${DATA_DIR}"

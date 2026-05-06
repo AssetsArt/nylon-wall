@@ -6,11 +6,66 @@ use nylon_wall_daemon::{api, auth, changeset, db, ddns, dhcp, events, mdns, rule
 #[cfg(target_os = "linux")]
 use nylon_wall_daemon::{route, state};
 
-/// Minimal config struct for values we read from config.toml.
+/// Config struct for values we read from config.toml.
 #[derive(serde::Deserialize, Default)]
 struct FileConfig {
     #[serde(default)]
+    daemon: DaemonConfig,
+    #[serde(default)]
+    database: DatabaseConfig,
+    #[serde(default)]
+    ebpf: EbpfConfig,
+    #[serde(default)]
+    logging: LoggingConfig,
+    #[serde(default)]
     changes: ChangesConfig,
+    #[serde(default)]
+    ui: UiConfig,
+}
+
+#[derive(serde::Deserialize)]
+struct DaemonConfig {
+    #[serde(default = "default_listen_addr")]
+    listen_addr: String,
+}
+
+impl Default for DaemonConfig {
+    fn default() -> Self {
+        Self { listen_addr: default_listen_addr() }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct DatabaseConfig {
+    #[serde(default = "default_db_path")]
+    path: String,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self { path: default_db_path() }
+    }
+}
+
+#[derive(serde::Deserialize, Default)]
+struct EbpfConfig {
+    #[serde(default)]
+    #[allow(dead_code)] // reserved for future per-mode loader behaviour
+    mode: Option<String>,
+    #[serde(default)]
+    interfaces: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct LoggingConfig {
+    #[serde(default = "default_log_level")]
+    level: String,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self { level: default_log_level() }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -25,6 +80,17 @@ impl Default for ChangesConfig {
     }
 }
 
+#[derive(serde::Deserialize, Default)]
+struct UiConfig {
+    /// Directory containing the built web UI (index.html, assets/, ...).
+    /// If unset, the daemon searches standard paths.
+    #[serde(default)]
+    dir: Option<String>,
+}
+
+fn default_listen_addr() -> String { "0.0.0.0:9450".to_string() }
+fn default_db_path() -> String { "/var/lib/nylon-wall/slatedb".to_string() }
+fn default_log_level() -> String { "info".to_string() }
 fn default_revert_timeout() -> u64 { 6 }
 
 /// Try to load config from standard paths, fall back to defaults.
@@ -50,24 +116,68 @@ fn load_config() -> FileConfig {
     FileConfig::default()
 }
 
+/// Locate the directory containing the built web UI.
+/// Search order: explicit config → standard install paths → cargo target dirs.
+fn resolve_ui_dir(configured: Option<&str>) -> Option<String> {
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(p) = configured {
+        candidates.push(p.to_string());
+    }
+    if let Ok(env_p) = std::env::var("NYLON_WALL_UI_DIR") {
+        candidates.push(env_p);
+    }
+    for path in [
+        "/usr/local/share/nylon-wall/ui",
+        "/usr/share/nylon-wall/ui",
+        "/var/lib/nylon-wall/ui",
+        // dev-mode locations
+        "nylon-wall-ui/target/dx/nylon-wall-ui/release/web/public",
+        "nylon-wall-ui/target/dx/nylon-wall-ui/debug/web/public",
+        "target/dx/nylon-wall-ui/release/web/public",
+    ] {
+        candidates.push(path.to_string());
+    }
+    for c in candidates {
+        let p = std::path::Path::new(&c);
+        if p.is_dir() && p.join("index.html").is_file() {
+            return Some(c);
+        }
+    }
+    None
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "nylon_wall_daemon=info".into()),
-        )
-        .init();
+    // Load configuration first so logging level can be picked up from config.
+    let config = load_config();
+
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            format!("nylon_wall_daemon={}", config.logging.level)
+                .parse()
+                .unwrap_or_else(|_| "nylon_wall_daemon=info".parse().unwrap())
+        });
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     info!("Starting Nylon Wall daemon...");
 
-    // Load configuration
-    let config = load_config();
     changeset::set_revert_timeout(config.changes.revert_timeout_secs);
 
-    // Initialize database
-    let db = db::Database::open("/tmp/nylon-wall/slatedb").await?;
-    info!("Database initialized");
+    // If interfaces were configured, expose the first one to the eBPF loader
+    // (the loader currently attaches to a single interface chosen via env var).
+    if std::env::var_os("NYLON_WALL_IFACE").is_none() {
+        if let Some(iface) = config.ebpf.interfaces.iter().find(|s| !s.is_empty() && s.as_str() != "all") {
+            // SAFETY: setting an env var before any threads spawn that may read it.
+            unsafe { std::env::set_var("NYLON_WALL_IFACE", iface); }
+        }
+    }
+
+    // Initialize database — ensure parent directory exists.
+    if let Some(parent) = std::path::Path::new(&config.database.path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let db = db::Database::open(&config.database.path).await?;
+    info!("Database initialized at {}", config.database.path);
 
     // Initialize rule engine
     let rule_engine = rule_engine::RuleEngine::new();
@@ -222,10 +332,18 @@ async fn main() -> anyhow::Result<()> {
     changeset::spawn_auto_revert_task(Arc::clone(&state));
     info!("Change auto-revert task spawned ({}s timeout)", changeset::revert_timeout_secs());
 
-    // Start API server
-    let listen_addr = "0.0.0.0:9450";
+    // Resolve UI directory (for serving static files from the daemon)
+    let ui_dir = resolve_ui_dir(config.ui.dir.as_deref());
+    if let Some(ref dir) = ui_dir {
+        info!("Serving web UI from {}", dir);
+    } else {
+        info!("Web UI directory not found — only API will be served");
+    }
+
+    // Start API server (and serve UI on the same port if available)
+    let listen_addr = config.daemon.listen_addr.clone();
     info!("Starting API server on {}", listen_addr);
-    api::serve(state, listen_addr).await?;
+    api::serve(state, &listen_addr, ui_dir.as_deref()).await?;
 
     Ok(())
 }

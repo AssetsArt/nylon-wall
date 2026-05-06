@@ -75,9 +75,9 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build eBPF programs
+        working-directory: nylon-wall-ebpf
         run: |
           cargo +nightly build \
-            --manifest-path nylon-wall-ebpf/Cargo.toml \
             --target bpfel-unknown-none \
             -Z build-std=core \
             --release
@@ -98,12 +98,23 @@ jobs:
           if [ -f "$TARGET_DIR/nylon-wall-daemon" ]; then
             cp "$TARGET_DIR/nylon-wall-daemon" "dist/nylon-wall-daemon"
             strip "dist/nylon-wall-daemon" 2>/dev/null || true
+          else
+            echo "::error::Daemon binary missing at $TARGET_DIR/nylon-wall-daemon"
+            exit 1
           fi
 
-          # Include eBPF binary if built
-          EBPF_BIN="target/bpfel-unknown-none/release/nylon-wall-ebpf"
-          if [ -f "$EBPF_BIN" ]; then
-            cp "$EBPF_BIN" "dist/nylon-wall-ebpf"
+          # eBPF object — when building inside nylon-wall-ebpf/, output lives there.
+          for ebpf_path in \
+            "nylon-wall-ebpf/target/bpfel-unknown-none/release/nylon-wall-ebpf" \
+            "target/bpfel-unknown-none/release/nylon-wall-ebpf"; do
+            if [ -f "$ebpf_path" ]; then
+              cp "$ebpf_path" "dist/nylon-wall-ebpf"
+              break
+            fi
+          done
+          if [ ! -f dist/nylon-wall-ebpf ]; then
+            echo "::error::eBPF object not found in any expected target/ dir"
+            exit 1
           fi
 
           # Include default config

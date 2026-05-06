@@ -1,45 +1,42 @@
 # Nylon Wall - Default Configuration
-# Copy to /etc/nylon-wall/config.toml on the target system
+# Installed to: /etc/nylon-wall/config.toml
 
 [daemon]
-# Address the daemon API listens on
+# Address the daemon listens on (serves both API and the bundled web UI).
 listen_addr = "0.0.0.0:9450"
 
 [database]
-# Path to SlateDB storage directory
+# Path to SlateDB storage directory.
 path = "/var/lib/nylon-wall/slatedb"
 
 [ebpf]
-# eBPF program mode: "xdp" (default), "tc", or "both"
+# eBPF program mode: "xdp" (default), "tc", or "both".
 mode = "xdp"
 
-# Network interfaces to attach eBPF programs to
-# Use ["all"] to auto-detect and attach to all non-loopback interfaces
-interfaces = ["eth0"]
+# Network interfaces to attach eBPF programs to.
+# Set the WAN/LAN interface name(s) you want filtered. Leave empty to
+# disable eBPF and run in API-only "demo" mode.
+# Example: ["eth0"]
+interfaces = []
 
 [logging]
-# Log level: "trace", "debug", "info", "warn", "error"
+# Log level: "trace", "debug", "info", "warn", "error".
 level = "info"
 
-# Maximum number of packet logs to retain
+# Maximum number of packet logs to retain.
 max_log_entries = 100000
 
-# Auto-cleanup logs older than this many seconds (0 = no cleanup)
+# Auto-cleanup logs older than this many seconds (0 = no cleanup).
 log_ttl_seconds = 604800  # 7 days
 
 [changes]
-# Seconds before uncommitted changes are automatically reverted (0 = no auto-revert)
+# Seconds before uncommitted changes are automatically reverted (0 = no auto-revert).
 revert_timeout_secs = 6
 
 [ui]
-# Address the UI is served on (via nginx or dx serve)
-bind_addr = "0.0.0.0:8080"
-
-# Daemon API URL that the UI connects to (set in index.html's window.__NYLON_API_URL__)
-# Leave empty to use relative path (requires reverse proxy)
-api_url = "http://localhost:9450"
+# Directory containing the built web UI. Leave unset to use the default
+# search path (/usr/local/share/nylon-wall/ui, /usr/share/nylon-wall/ui).
+# dir = "/usr/local/share/nylon-wall/ui"
 
 [security]
-# Enable API authentication (future)
-# auth_enabled = false
-# auth_token = ""
+# Reserved for future API token / auth knobs.

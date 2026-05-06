@@ -13,21 +13,52 @@ mod linux {
     use nylon_wall_common::zone::EbpfPolicyValue;
     use tracing::info;
 
-    const EBPF_OBJ_PATH: &str = "/usr/lib/nylon-wall/nylon-wall-ebpf";
+    /// Standard locations to look for the compiled eBPF object.
+    /// Checked in order; the first existing file wins.
+    const EBPF_OBJ_CANDIDATES: &[&str] = &[
+        "/usr/lib/nylon-wall/nylon-wall-ebpf",
+        "/usr/local/lib/nylon-wall/nylon-wall-ebpf",
+        "/usr/local/bin/nylon-wall-ebpf",
+        "/usr/bin/nylon-wall-ebpf",
+        "/var/lib/nylon-wall/nylon-wall-ebpf",
+        // dev-mode: built by `cargo +nightly build -p nylon-wall-ebpf ...`
+        "target/bpfel-unknown-none/release/nylon-wall-ebpf",
+        "target/bpfel-unknown-none/debug/nylon-wall-ebpf",
+    ];
+
+    fn locate_ebpf_object() -> anyhow::Result<std::path::PathBuf> {
+        if let Ok(p) = std::env::var("NYLON_WALL_EBPF") {
+            let path = std::path::PathBuf::from(p);
+            if path.exists() {
+                return Ok(path);
+            }
+            return Err(anyhow::anyhow!(
+                "NYLON_WALL_EBPF points to {} but the file does not exist",
+                path.display()
+            ));
+        }
+        for candidate in EBPF_OBJ_CANDIDATES {
+            let p = std::path::Path::new(candidate);
+            if p.is_file() {
+                return Ok(p.to_path_buf());
+            }
+        }
+        Err(anyhow::anyhow!(
+            "Could not find compiled eBPF object. Searched: {}. \
+             Build it first with: cargo +nightly build -p nylon-wall-ebpf \
+             --target bpfel-unknown-none -Z build-std=core --release. \
+             Or set NYLON_WALL_EBPF=/path/to/object.",
+            EBPF_OBJ_CANDIDATES.join(", ")
+        ))
+    }
 
     /// Load eBPF programs and attach them. Returns the Ebpf handle for map access.
     pub async fn load_and_attach() -> anyhow::Result<Ebpf> {
-        info!("Loading eBPF bytecode from {}...", EBPF_OBJ_PATH);
+        let path = locate_ebpf_object()?;
+        info!("Loading eBPF bytecode from {}...", path.display());
 
-        let data = std::fs::read(EBPF_OBJ_PATH).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to read eBPF object at {}: {}. \
-                 Build it first with: cargo build -p nylon-wall-ebpf \
-                 --target bpfel-unknown-none -Z build-std=core",
-                EBPF_OBJ_PATH,
-                e
-            )
-        })?;
+        let data = std::fs::read(&path)
+            .map_err(|e| anyhow::anyhow!("Failed to read eBPF object {}: {}", path.display(), e))?;
 
         let mut bpf = Ebpf::load(&data)?;
 

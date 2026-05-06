@@ -148,13 +148,22 @@ for comp in "${COMPONENTS[@]}"; do
                 continue
             fi
             log "Building nylon-wall-ebpf (nightly)..."
-            if cargo +nightly build \
-                -p nylon-wall-ebpf \
+            # nylon-wall-ebpf is excluded from the workspace, so we build inside
+            # its own directory to keep the bpf target dir self-contained.
+            if (cd "$PROJECT_ROOT/nylon-wall-ebpf" && cargo +nightly build \
                 --target bpfel-unknown-none \
                 -Z build-std=core \
-                --release 2>&1; then
-                EBPF_BIN="$PROJECT_ROOT/target/bpfel-unknown-none/release/nylon-wall-ebpf"
-                if [[ -f "$EBPF_BIN" ]]; then
+                --release 2>&1); then
+                EBPF_BIN=""
+                for candidate in \
+                    "$PROJECT_ROOT/nylon-wall-ebpf/target/bpfel-unknown-none/release/nylon-wall-ebpf" \
+                    "$PROJECT_ROOT/target/bpfel-unknown-none/release/nylon-wall-ebpf"; do
+                    if [[ -f "$candidate" ]]; then
+                        EBPF_BIN="$candidate"
+                        break
+                    fi
+                done
+                if [[ -n "$EBPF_BIN" ]]; then
                     cp "$EBPF_BIN" "$OUTPUT_PATH/nylon-wall-ebpf"
                     BUILT+=(nylon-wall-ebpf)
                     ok "Built nylon-wall-ebpf"

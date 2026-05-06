@@ -28,8 +28,20 @@ After installation:
 
 ```bash
 sudo systemctl enable --now nylon-wall
-# Open http://localhost:9450
+# Then open http://localhost:9450 — the daemon serves both the web UI
+# and the REST API on the same port.
 ```
+
+The installer lays down:
+
+| Path | Purpose |
+|---|---|
+| `/usr/local/bin/nylon-wall-daemon` | The daemon binary |
+| `/usr/local/lib/nylon-wall/nylon-wall-ebpf` | Compiled eBPF object loaded at startup |
+| `/usr/local/share/nylon-wall/ui/` | Web UI static files (served from the daemon) |
+| `/etc/nylon-wall/config.toml` | Editable configuration |
+| `/var/lib/nylon-wall/slatedb/` | Persistent state (rules, leases, logs) |
+| `/etc/systemd/system/nylon-wall.service` | systemd unit |
 
 ## Features
 
@@ -142,22 +154,24 @@ Default config: `/etc/nylon-wall/config.toml`
 
 ```toml
 [daemon]
-listen_addr = "0.0.0.0:9450"
+listen_addr = "0.0.0.0:9450"   # API + web UI share this port
 
 [database]
 path = "/var/lib/nylon-wall/slatedb"
 
 [ebpf]
-mode = "xdp"                # "xdp", "tc", or "both"
-interfaces = ["eth0"]       # or ["all"] for auto-detect
+mode = "xdp"                   # "xdp", "tc", or "both"
+interfaces = ["eth0"]          # leave empty to disable eBPF (demo mode)
 
 [logging]
-level = "info"              # trace, debug, info, warn, error
+level = "info"                 # trace, debug, info, warn, error
 max_log_entries = 100000
-log_ttl_seconds = 604800    # 7 days
+log_ttl_seconds = 604800       # 7 days
 
 [ui]
-bind_addr = "0.0.0.0:8080"
+# Override the directory where the daemon looks for UI static files.
+# Leave unset to use the default search path (/usr/local/share/nylon-wall/ui).
+# dir = "/usr/local/share/nylon-wall/ui"
 ```
 
 ## Releasing
