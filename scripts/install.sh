@@ -3,7 +3,9 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/AssetsArt/nylon-wall/main/scripts/install.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/AssetsArt/nylon-wall/main/scripts/install.sh | sh -s -- --version v0.1.0
+#   curl -fsSL https://raw.githubusercontent.com/AssetsArt/nylon-wall/main/scripts/install.sh | sh -s -- --version v0.1.2
+#
+# Detects glibc vs musl automatically; override with NYLON_WALL_LIBC=gnu|musl.
 #
 # Options:
 #   --version <tag>   Install a specific version (default: latest)
@@ -46,6 +48,26 @@ done
 BIN_DIR="${PREFIX}/bin"
 
 # ─── Platform detection ──────────────────────────────────────────────
+# Detect glibc vs musl. Allow override via NYLON_WALL_LIBC=gnu|musl.
+detect_linux_libc() {
+    if [ "${NYLON_WALL_LIBC:-}" = "musl" ] || [ "${NYLON_WALL_LIBC:-}" = "gnu" ]; then
+        echo "${NYLON_WALL_LIBC}"
+        return
+    fi
+    # musl ld lives at /lib/ld-musl-* on musl distros (Alpine, Void).
+    for d in /lib /usr/lib; do
+        if ls "$d"/ld-musl-* >/dev/null 2>&1; then
+            echo "musl"; return
+        fi
+    done
+    if command -v ldd >/dev/null 2>&1; then
+        if ldd --version 2>&1 | grep -qi musl; then
+            echo "musl"; return
+        fi
+    fi
+    echo "gnu"
+}
+
 detect_platform() {
     OS="$(uname -s)"
     ARCH="$(uname -m)"
@@ -61,7 +83,8 @@ detect_platform() {
         *)              fatal "Unsupported architecture: $ARCH" ;;
     esac
 
-    log "Detected platform: linux/${ARCH}"
+    LIBC="$(detect_linux_libc)"
+    log "Detected platform: linux-${LIBC}/${ARCH}"
 }
 
 # ─── Fetch latest version ────────────────────────────────────────────
@@ -118,7 +141,8 @@ install_nylon_wall() {
     TMPDIR=$(mktemp -d)
     trap 'rm -rf "$TMPDIR"' EXIT
 
-    ARTIFACT_PREFIX="nylon-wall-linux-${ARCH}"
+    # Asset prefix: e.g. nylon-wall-linux-gnu-x86_64 / nylon-wall-linux-musl-aarch64.
+    ARTIFACT_PREFIX="nylon-wall-linux-${LIBC}-${ARCH}"
     BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
 
     # Download daemon

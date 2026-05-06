@@ -40,17 +40,27 @@ jobs:
           RUST_LOG: nylon_wall_daemon=warn
 
   build-daemon:
-    name: Build Daemon (Linux ${{ matrix.arch }})
+    name: Build Daemon (linux-${{ matrix.libc }}/${{ matrix.arch }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: x86_64
+            libc: gnu
             target: x86_64-unknown-linux-gnu
             use-cross: false
           - arch: aarch64
+            libc: gnu
             target: aarch64-unknown-linux-gnu
+            use-cross: true
+          - arch: x86_64
+            libc: musl
+            target: x86_64-unknown-linux-musl
+            use-cross: true
+          - arch: aarch64
+            libc: musl
+            target: aarch64-unknown-linux-musl
             use-cross: true
 
     steps:
@@ -127,7 +137,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
-          name: nylon-wall-linux-${{ matrix.arch }}
+          name: nylon-wall-linux-${{ matrix.libc }}-${{ matrix.arch }}
           path: dist/
 
   build-ui:
