@@ -161,16 +161,30 @@ jobs:
 
       - name: Package UI
         run: |
-          UI_DIR="nylon-wall-ui/target/dx/nylon-wall-ui/release/web/public"
-          if [ -d "$UI_DIR" ]; then
-            tar -czf nylon-wall-ui.tar.gz -C "$UI_DIR" .
+          # `dx build` writes to the workspace target directory, not the
+          # crate-local one — search both for forwards-compat.
+          UI_DIR=""
+          for d in \
+            "target/dx/nylon-wall-ui/release/web/public" \
+            "nylon-wall-ui/target/dx/nylon-wall-ui/release/web/public"; do
+            if [ -d "$d" ] && [ -f "$d/index.html" ]; then
+              UI_DIR="$d"; break
+            fi
+          done
+          if [ -z "$UI_DIR" ]; then
+            echo "::error::UI build output not found in any known target/ dir"
+            ls -la target/dx 2>/dev/null || true
+            ls -la nylon-wall-ui/target/dx 2>/dev/null || true
+            exit 1
           fi
+          tar -czf nylon-wall-ui.tar.gz -C "$UI_DIR" .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v5
         with:
           name: nylon-wall-ui
           path: nylon-wall-ui.tar.gz
+          if-no-files-found: error
 
   release:
     name: Create Release
@@ -199,9 +213,13 @@ jobs:
             done
           done
 
-          # Move UI artifact
+          # Move UI artifact (required)
           if [ -f "artifacts/nylon-wall-ui/nylon-wall-ui.tar.gz" ]; then
             mv "artifacts/nylon-wall-ui/nylon-wall-ui.tar.gz" "release-assets/nylon-wall-ui.tar.gz"
+          else
+            echo "::error::UI tarball missing — release would ship without web UI"
+            ls -laR artifacts || true
+            exit 1
           fi
 
           cd release-assets && sha256sum * > checksums.sha256
